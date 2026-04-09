@@ -110,10 +110,10 @@ $googleAuthUrl = $client->createAuthUrl();
     <title>Sign Up — <?= e(APP_NAME) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
+    <link href="<?= APP_URL ?>/assets/css/style.css?v=<?= APP_VERSION ?>" rel="stylesheet">
 </head>
 <body>
-<div class="auth-wrapper">
+<div class="auth-wrapper-standalone">
     <div class="card auth-card" style="max-width:520px;">
         <div class="card-body">
             <div class="text-center mb-4">

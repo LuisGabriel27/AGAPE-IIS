@@ -13,85 +13,492 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $errorMessages = [
     'unauthenticated' => 'Please choose your portal and sign in to continue.',
-    'select_role' => 'Please select a role before signing in.',
-    'oauth_failed' => 'Google sign-in failed. Please try again.',
-    'account_inactive' => 'Your account has been deactivated. Contact an administrator.',
+    'select_role'     => 'Please select a role before signing in.',
+    'oauth_failed'    => 'Google sign-in failed. Please try again.',
+    'account_inactive'=> 'Your account has been deactivated. Contact an administrator.',
 ];
+
+$baseUrl = rtrim(APP_URL, '/');
 
 $roleCards = [
     'admin' => [
         'label'       => 'Administrator',
-        'icon'        => 'bi-shield-lock-fill',
         'description' => 'Manage users, schedules, sections, payments, and academic records.',
-        'class'       => 'role-admin',
+        'href'        => $baseUrl . '/auth/admin-login.php',
+        'accent'      => '#4366F6',
+        'accentBg'    => '#EEF1FE',
+        'iconBg'      => '#E0EAFF',
+        'iconColor'   => '#1D4ED8',
     ],
     'teacher' => [
         'label'       => 'Teacher',
-        'icon'        => 'bi-easel2-fill',
         'description' => 'Open your teaching dashboard, class schedule, and grading tools.',
-        'class'       => 'role-teacher',
+        'href'        => $baseUrl . '/auth/teacher-login.php',
+        'accent'      => '#22C55E',
+        'accentBg'    => '#F0FDF4',
+        'iconBg'      => '#DCFCE7',
+        'iconColor'   => '#15803D',
     ],
     'guardian' => [
         'label'       => 'Guardian',
-        'icon'        => 'bi-people-fill',
         'description' => 'Track enrollment, grades, payments, and student updates in one place.',
-        'class'       => 'role-guardian',
+        'href'        => $baseUrl . '/auth/guardian-login.php',
+        'accent'      => '#F59E0B',
+        'accentBg'    => '#FFFBEB',
+        'iconBg'      => '#FEF3C7',
+        'iconColor'   => '#B45309',
     ],
 ];
 
-$urlError = $_GET['error'] ?? '';
+$guardianSignupUrl = $baseUrl . '/auth/guardian-register.php';
+
+$urlError  = $_GET['error'] ?? '';
 $pageError = $errorMessages[$urlError] ?? '';
+
+$roleSvgIcons = [
+    'admin' => '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
+    'teacher' => '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
+    'guardian' => '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Choose Portal - <?= e(APP_NAME) ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
+    <title>Choose Portal &mdash; <?= e(APP_NAME) ?></title>
+    <meta name="description" content="Select your role to access the <?= e(APP_NAME) ?> portal. Sign in as Administrator, Teacher, or Guardian.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ── Reset & Base ──────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html {
+            font-size: 16px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background:
+                radial-gradient(circle at top left, rgba(67, 102, 246, 0.12), transparent 40%),
+                radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 35%),
+                linear-gradient(180deg, #F5F7FA 0%, #EDF3FF 100%);
+            color: #1E293B;
+            padding: 2.5rem 1rem;
+        }
+
+        /* ── Page Shell ────────────────────────────────────── */
+        .portal-shell {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* ── Error Alert ───────────────────────────────────── */
+        .portal-alert {
+            width: 100%;
+            max-width: 640px;
+            padding: 0.875rem 1.25rem;
+            margin-bottom: 1.5rem;
+            background: #FEF2F2;
+            border: 1px solid #FECACA;
+            border-left: 4px solid #EF4444;
+            border-radius: 12px;
+            color: #DC2626;
+            font-size: 0.875rem;
+            font-weight: 500;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        /* ── Header Banner ─────────────────────────────────── */
+        .portal-banner {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            background: linear-gradient(135deg, #1D4ED8 0%, #4366F6 45%, #6366F1 100%);
+            color: white;
+            border-radius: 24px;
+            padding: 2.25rem 2.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 20px 50px rgba(29, 78, 216, 0.18);
+        }
+
+        .portal-banner::before,
+        .portal-banner::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .portal-banner::before {
+            width: 220px;
+            height: 220px;
+            top: -90px;
+            right: -70px;
+        }
+
+        .portal-banner::after {
+            width: 150px;
+            height: 150px;
+            bottom: -55px;
+            left: 18%;
+        }
+
+        .portal-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            margin-bottom: 1rem;
+            background: rgba(255,255,255,0.14);
+            border-radius: 100px;
+            font-size: 0.8125rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+
+        .portal-badge svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+        }
+
+        .portal-banner h1 {
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 0.625rem;
+            letter-spacing: -0.03em;
+            position: relative;
+            z-index: 1;
+        }
+
+        .portal-banner p {
+            font-size: 0.9375rem;
+            opacity: 0.92;
+            line-height: 1.6;
+            max-width: 520px;
+            margin: 0;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ── Card Grid ─────────────────────────────────────── */
+        .portal-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.25rem;
+            width: 100%;
+            margin-bottom: 1.75rem;
+        }
+
+        /* ── Role Card ─────────────────────────────────────── */
+        .role-card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            padding: 1.75rem 1.5rem 1.5rem;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
+            text-decoration: none;
+            color: #1E293B;
+            cursor: pointer;
+            outline: none;
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+
+        .role-card:hover,
+        .role-card:focus-visible {
+            transform: translateY(-6px);
+            box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+            border-color: var(--card-accent);
+        }
+
+        .role-card:active {
+            transform: translateY(-2px);
+            transition-duration: 0.08s;
+        }
+
+        .role-card.card-pressed {
+            transform: scale(0.97);
+            opacity: 0.85;
+            transition-duration: 0.1s;
+        }
+
+        /* Focus ring for keyboard */
+        .role-card:focus-visible {
+            box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12), 0 0 0 3px var(--card-accent);
+        }
+
+        /* ── Card Icon ─────────────────────────────────────── */
+        .card-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 64px;
+            height: 64px;
+            border-radius: 18px;
+            background: var(--card-icon-bg);
+            color: var(--card-icon-color);
+            margin-bottom: 1.25rem;
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .role-card:hover .card-icon,
+        .role-card:focus-visible .card-icon {
+            transform: scale(1.05);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+        }
+
+        .card-icon svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        /* ── Card Text ─────────────────────────────────────── */
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .card-desc {
+            font-size: 0.875rem;
+            color: #64748B;
+            line-height: 1.65;
+            flex-grow: 1;
+            margin-bottom: 1.25rem;
+        }
+
+        /* ── Card CTA ──────────────────────────────────────── */
+        .card-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 700;
+            color: var(--card-accent);
+            transition: gap 0.2s ease;
+        }
+
+        .role-card:hover .card-cta,
+        .role-card:focus-visible .card-cta {
+            gap: 0.75rem;
+        }
+
+        .card-cta svg {
+            width: 16px;
+            height: 16px;
+            transition: transform 0.2s ease;
+        }
+
+        .role-card:hover .card-cta svg,
+        .role-card:focus-visible .card-cta svg {
+            transform: translateX(3px);
+        }
+
+        /* ── Guardian Extra Link ───────────────────────────── */
+        .card-extra {
+            display: block;
+            margin-top: 0.875rem;
+            padding-top: 0.875rem;
+            border-top: 1px solid #E2E8F0;
+            font-size: 0.8rem;
+            color: #64748B;
+            line-height: 1.5;
+        }
+
+        .card-extra a {
+            color: #B45309;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.15s ease;
+            position: relative;
+            z-index: 2;
+        }
+
+        .card-extra a:hover,
+        .card-extra a:focus-visible {
+            color: #92400E;
+            text-decoration: underline;
+        }
+
+        .card-extra a:focus-visible {
+            outline: 2px solid #F59E0B;
+            outline-offset: 2px;
+            border-radius: 2px;
+        }
+
+        /* ── Footer ────────────────────────────────────────── */
+        .portal-footer {
+            text-align: center;
+            font-size: 0.78rem;
+            color: #94A3B8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.375rem;
+        }
+
+        .portal-footer svg {
+            width: 14px;
+            height: 14px;
+            opacity: 0.6;
+        }
+
+        /* ── Responsive ────────────────────────────────────── */
+
+        /* Tablet — 2 columns + 1 centered */
+        @media (max-width: 820px) {
+            .portal-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .portal-grid .role-card:last-child {
+                grid-column: 1 / -1;
+                max-width: 380px;
+                justify-self: center;
+            }
+            .portal-banner {
+                padding: 2rem;
+            }
+        }
+
+        /* Mobile — single column */
+        @media (max-width: 540px) {
+            body {
+                padding: 1.5rem 1rem;
+                align-items: flex-start;
+            }
+            .portal-banner {
+                padding: 1.5rem;
+                border-radius: 18px;
+            }
+            .portal-banner h1 {
+                font-size: 1.5rem;
+            }
+            .portal-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            .portal-grid .role-card:last-child {
+                max-width: 100%;
+            }
+            .role-card {
+                padding: 1.25rem;
+                border-radius: 16px;
+            }
+            .card-icon {
+                width: 52px;
+                height: 52px;
+                border-radius: 14px;
+            }
+            .card-icon svg {
+                width: 24px;
+                height: 24px;
+            }
+        }
+    </style>
 </head>
 <body>
-<div class="role-selection-page">
-    <div class="role-selection-shell">
-        <?php if ($pageError !== ''): ?>
-            <div class="alert alert-danger mb-4"><?= e($pageError) ?></div>
-        <?php endif; ?>
 
-        <section class="role-selection-banner">
-            <div class="role-selection-badge">
-                <i class="bi bi-mortarboard-fill"></i>
-                <?= e(APP_NAME) ?>
-            </div>
-            <h1>Choose your portal</h1>
-            <p>Select the role that matches your account, then continue to a dedicated sign-in page.</p>
-        </section>
+<div class="portal-shell">
 
-        <section class="role-selection-grid" aria-label="Role selection">
-            <?php foreach ($roleCards as $roleKey => $card): ?>
-                <a
-                    class="role-card <?= e($card['class']) ?>"
-                    href="<?= APP_URL ?>/auth/login.php?<?= http_build_query(['role' => $roleKey]) ?>"
-                >
-                    <div class="role-card-icon">
-                        <i class="bi <?= e($card['icon']) ?>"></i>
-                    </div>
-                    <div class="role-card-label"><?= e($card['label']) ?></div>
-                    <p class="role-card-description"><?= e($card['description']) ?></p>
-                    <span class="role-card-action">
-                        Continue
-                        <i class="bi bi-arrow-right"></i>
-                    </span>
-                </a>
-            <?php endforeach; ?>
-        </section>
+    <?php if ($pageError !== ''): ?>
+        <div class="portal-alert" role="alert"><?= e($pageError) ?></div>
+    <?php endif; ?>
 
-        <div class="role-selection-footer">
-            Need a guardian account?
-            <a href="<?= APP_URL ?>/auth/signup.php">Sign up here</a>
+    <div class="portal-banner">
+        <div class="portal-badge">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1.657 2.686 3 6 3s6-1.343 6-3v-5"/></svg>
+            <?= e(APP_NAME) ?>
         </div>
+        <h1>Choose your portal</h1>
+        <p>Select the role that matches your account, then continue to a dedicated sign&#8209;in page.</p>
+    </div>
+
+    <section class="portal-grid" aria-label="Role selection">
+        <?php foreach ($roleCards as $roleKey => $card): ?>
+            <div
+                id="role-card-<?= e($roleKey) ?>"
+                class="role-card"
+                data-href="<?= e($card['href']) ?>"
+                role="button"
+                tabindex="0"
+                aria-label="Continue as <?= e($card['label']) ?>"
+                style="--card-accent:<?= $card['accent'] ?>;--card-icon-bg:<?= $card['iconBg'] ?>;--card-icon-color:<?= $card['iconColor'] ?>;"
+            >
+                <div class="card-icon" aria-hidden="true">
+                    <?= $roleSvgIcons[$roleKey] ?>
+                </div>
+                <div class="card-title"><?= e($card['label']) ?></div>
+                <p class="card-desc"><?= e($card['description']) ?></p>
+                <span class="card-cta" aria-hidden="true">
+                    Continue
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </span>
+
+                <?php if ($roleKey === 'guardian'): ?>
+                    <div class="card-extra">
+                        Need a guardian account?
+                        <a href="<?= e($guardianSignupUrl) ?>">Sign up here</a>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+    </section>
+
+    <div class="portal-footer" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Secured portal access
     </div>
 </div>
+
+<script>
+(function () {
+    'use strict';
+
+    document.querySelectorAll('.role-card').forEach(function (card) {
+        card.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                if (e.target.closest('.card-extra a')) return;
+                e.preventDefault();
+                activateCard(card);
+            }
+        });
+
+        card.addEventListener('click', function (e) {
+            if (e.target.closest('.card-extra a')) return;
+            activateCard(card);
+        });
+    });
+
+    function activateCard(card) {
+        card.classList.add('card-pressed');
+        var href = card.getAttribute('data-href');
+        setTimeout(function () {
+            window.location.href = href;
+        }, 140);
+    }
+})();
+</script>
+
 </body>
 </html>
