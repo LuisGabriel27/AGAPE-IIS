@@ -1,0 +1,16 @@
+{
+    "name": "academy/information-system",
+    "description": "Academy Information System with Google OAuth 2.0",
+    "require": {
+        "google/apiclient": "^2.15 <2.18"
+    },
+    "config": {
+        "platform-check": false,
+        "audit": {
+            "block-insecure": false
+        }
+    },
+    "autoload": {
+        "files": []
+    }
+}
