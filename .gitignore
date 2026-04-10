@@ -3,3 +3,4 @@
 config/config.php
 .env
 *.log
+/uploads/attendance-faces/

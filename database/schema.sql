@@ -259,6 +259,46 @@ CREATE TABLE `audit_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
+-- 13. student_face_profiles
+-- ============================================================
+CREATE TABLE `student_face_profiles` (
+  `id`               INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+  `student_id`       INT UNSIGNED    NOT NULL,
+  `face_descriptor`  LONGTEXT        NOT NULL,
+  `face_image_path`  VARCHAR(500)    DEFAULT NULL,
+  `created_at`       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_face_profile_student` (`student_id`),
+  CONSTRAINT `fk_face_profile_student`
+    FOREIGN KEY (`student_id`) REFERENCES `students` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 14. attendance_logs
+-- ============================================================
+CREATE TABLE `attendance_logs` (
+  `id`                 INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+  `student_id`         INT UNSIGNED    NOT NULL,
+  `attendance_date`    DATE            NOT NULL,
+  `attendance_status`  ENUM('present','late','absent') NOT NULL DEFAULT 'present',
+  `method`             ENUM('face','manual') NOT NULL DEFAULT 'face',
+  `confidence`         DECIMAL(6,5)    DEFAULT NULL,
+  `marked_by`          INT UNSIGNED    DEFAULT NULL,
+  `marked_at`          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_attendance_student_day` (`student_id`, `attendance_date`),
+  KEY `idx_attendance_date` (`attendance_date`),
+  CONSTRAINT `fk_attendance_student`
+    FOREIGN KEY (`student_id`) REFERENCES `students` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_attendance_marker`
+    FOREIGN KEY (`marked_by`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
 -- Seed: Default admin account
 -- Email: admin@academy.edu  Password: Admin@1234
 -- ============================================================

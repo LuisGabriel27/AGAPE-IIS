@@ -100,6 +100,10 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
                href="<?= APP_URL ?>/admin/admin-calendar.php">
                 <i class="bi bi-calendar-event-fill"></i> Calendar
             </a>
+            <a class="sidebar-link <?= $currentPage === 'admin-attendance.php' ? 'active' : '' ?>"
+               href="<?= APP_URL ?>/admin/admin-attendance.php">
+                <i class="bi bi-camera-video-fill"></i> Attendance
+            </a>
 
             <div class="sidebar-section">Finance</div>
             <a class="sidebar-link <?= $currentPage === 'admin-payments.php' ? 'active' : '' ?>"

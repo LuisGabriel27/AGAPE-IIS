@@ -173,6 +173,15 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         <div class="qa-sub">Events & holidays</div>
                     </div>
                 </a>
+                <a href="<?= APP_URL ?>/admin/admin-attendance.php" class="quick-action">
+                    <div class="qa-icon" style="background:var(--orange-light);color:var(--orange);">
+                        <i class="bi bi-camera-video-fill"></i>
+                    </div>
+                    <div>
+                        <div class="qa-text">Face Attendance</div>
+                        <div class="qa-sub">Take attendance by camera</div>
+                    </div>
+                </a>
                 <a href="<?= APP_URL ?>/admin/admin-users.php" class="quick-action">
                     <div class="qa-icon" style="background:var(--purple-light);color:var(--purple);">
                         <i class="bi bi-person-gear"></i>
