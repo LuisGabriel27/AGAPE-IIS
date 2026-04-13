@@ -1,7 +1,7 @@
-<?php
+﻿<?php
 /**
  * Teacher Grades Page
- * Select class → student list with grade input fields.
+ * Select class â†’ student list with grade input fields.
  * Auto-compute Final Grade. Save as draft or submit final.
  */
 
@@ -78,7 +78,7 @@ if ($currentClass) {
     $students = $stmt->fetchAll();
 }
 
-// ── Handle grade submission ─────────────────────────────
+// â”€â”€ Handle grade submission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 $errors  = [];
 $success = false;
 
@@ -167,9 +167,9 @@ require_once __DIR__ . '/../includes/header.php';
                 ">
                     <option value="">-- Select a class --</option>
                     <?php foreach ($classes as $c): ?>
-                        <option value="<?= $c['subject_id'] ?>-<?= $c['section_id'] ?>"
-                            <?= ($selSubject == $c['subject_id'] && $selSection == $c['section_id']) ? 'selected' : '' ?>>
-                            <?= e($c['subject_name']) ?> (<?= e($c['subject_code']) ?>) — Section <?= e($c['section_name']) ?> (Grade <?= e($c['grade_level']) ?>)
+                        <option value="<?= (int)$c['subject_id'] ?>-<?= (int)$c['section_id'] ?>"
+                            <?= e(($selSubject == $c['subject_id'] && $selSection == $c['section_id']) ? 'selected' : '') ?>>
+                            <?= e($c['subject_name']) ?> (<?= e($c['subject_code']) ?>) - Section <?= e($c['section_name']) ?> (Grade <?= e($c['grade_level']) ?>)
                         </option>
                     <?php endforeach; ?>
                 </select>
@@ -191,14 +191,14 @@ require_once __DIR__ . '/../includes/header.php';
 <?php if ($currentClass && !empty($students)): ?>
 <div class="card">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-list-check me-2"></i>Student List — <?= e($currentClass['subject_name']) ?> | Section <?= e($currentClass['section_name']) ?></span>
-        <span class="badge bg-secondary"><?= count($students) ?> students</span>
+        <span><i class="bi bi-list-check me-2"></i>Student List - <?= e($currentClass['subject_name']) ?> | Section <?= e($currentClass['section_name']) ?></span>
+        <span class="badge bg-secondary"><?= e((string)count($students)) ?> students</span>
     </div>
     <div class="card-body p-0">
         <form method="POST" action="" id="grades-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
-            <input type="hidden" name="subject_id" value="<?= $selSubject ?>">
-            <input type="hidden" name="section_id" value="<?= $selSection ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="subject_id" value="<?= (int)$selSubject ?>">
+            <input type="hidden" name="section_id" value="<?= (int)$selSection ?>">
             <input type="hidden" name="school_year" value="<?= e($selYear) ?>">
             <input type="hidden" name="term" value="<?= e($selTerm) ?>">
 
@@ -218,30 +218,34 @@ require_once __DIR__ . '/../includes/header.php';
                     <tbody>
                         <?php foreach ($students as $idx => $stu): ?>
                         <tr>
-                            <td><?= $idx + 1 ?></td>
+                            <td><?= e((string)($idx + 1)) ?></td>
                             <td><?= e($stu['full_name']) ?></td>
                             <td><small class="text-muted"><?= e($stu['lrn'] ?? 'N/A') ?></small></td>
                             <td>
-                                <input type="hidden" name="student_ids[]" value="<?= $stu['id'] ?>">
+                                <input type="hidden" name="student_ids[]" value="<?= (int)$stu['id'] ?>">
                                 <input type="number" class="form-control form-control-sm text-center grade-input" 
                                        name="midterm[]" step="0.01" min="50" max="100"
-                                       value="<?= $stu['midterm'] !== null ? number_format($stu['midterm'], 2) : '' ?>"
-                                       data-row="<?= $idx ?>">
+                                       value="<?= e($stu['midterm'] !== null ? number_format($stu['midterm'], 2) : '') ?>"
+                                       data-row="<?= (int)$idx ?>">
                             </td>
                             <td>
                                 <input type="number" class="form-control form-control-sm text-center grade-input" 
                                        name="finals[]" step="0.01" min="50" max="100"
-                                       value="<?= $stu['finals'] !== null ? number_format($stu['finals'], 2) : '' ?>"
-                                       data-row="<?= $idx ?>">
+                                       value="<?= e($stu['finals'] !== null ? number_format($stu['finals'], 2) : '') ?>"
+                                       data-row="<?= (int)$idx ?>">
                             </td>
                             <td>
                                 <input type="text" class="form-control form-control-sm text-center bg-light" 
-                                       id="final_<?= $idx ?>" readonly
-                                       value="<?= $stu['final_grade'] !== null ? number_format($stu['final_grade'], 2) : '' ?>">
+                                       id="final_<?= (int)$idx ?>" readonly
+                                       value="<?= e($stu['final_grade'] !== null ? number_format($stu['final_grade'], 2) : '') ?>">
                             </td>
-                            <td class="text-center" id="remark_<?= $idx ?>">
+                            <td class="text-center" id="remark_<?= (int)$idx ?>">
                                 <?php if ($stu['final_grade'] !== null): ?>
-                                    <?= $stu['final_grade'] >= 75 ? '<span class="badge bg-success">Passed</span>' : '<span class="badge bg-danger">Failed</span>' ?>
+                                    <?php if ($stu['final_grade'] >= 75): ?>
+                                        <span class="badge bg-success">Passed</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-danger">Failed</span>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -287,3 +291,4 @@ document.querySelectorAll('.grade-input').forEach(input => {
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

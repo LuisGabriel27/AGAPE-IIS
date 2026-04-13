@@ -80,10 +80,10 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add Section' : 'Edit Section' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add Section' : 'Edit Section') ?></div>
     <div class="card-body">
         <form method="POST" id="section-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Name <span class="text-danger">*</span></label>
@@ -94,7 +94,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="grade_level" required>
                         <option value="">Select...</option>
                         <?php for ($g = 7; $g <= 12; $g++): ?>
-                            <option value="<?= $g ?>" <?= ($editSection['grade_level'] ?? '') == $g ? 'selected' : '' ?>>Grade <?= $g ?></option>
+                            <option value="<?= e((string)$g) ?>" <?= e(($editSection['grade_level'] ?? '') == $g ? 'selected' : '') ?>>Grade <?= e((string)$g) ?></option>
                         <?php endfor; ?>
                     </select>
                 </div>
@@ -103,13 +103,13 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="adviser_id">
                         <option value="0">None</option>
                         <?php foreach ($teachersList as $t): ?>
-                            <option value="<?= $t['id'] ?>" <?= ($editSection['adviser_id'] ?? 0) == $t['id'] ? 'selected' : '' ?>><?= e($t['full_name']) ?></option>
+                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSection['adviser_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e($t['full_name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2 mb-3">
                     <label class="form-label">Capacity</label>
-                    <input type="number" class="form-control" name="capacity" value="<?= $editSection['capacity'] ?? 40 ?>" min="1">
+                    <input type="number" class="form-control" name="capacity" value="<?= e((string)($editSection['capacity'] ?? 40)) ?>" min="1">
                 </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save</button>
@@ -130,12 +130,12 @@ require_once __DIR__ . '/../includes/header.php';
                 <td class="fw-bold"><?= e($s['name']) ?></td>
                 <td>Grade <?= e($s['grade_level']) ?></td>
                 <td><?= e($s['adviser_name'] ?? 'None') ?></td>
-                <td class="text-center"><?= $s['capacity'] ?></td>
-                <td class="text-center"><?= $s['enrolled'] ?></td>
+                <td class="text-center"><?= e((string)$s['capacity']) ?></td>
+                <td class="text-center"><?= e((string)$s['enrolled']) ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= $s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= $s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>

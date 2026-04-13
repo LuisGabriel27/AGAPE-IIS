@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Guardian Payments Page
  * Full payment history table with sorting and running total.
@@ -12,7 +12,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
 
-// Get guardian → students → enrollments → payments
+// Get guardian â†’ students â†’ enrollments â†’ payments
 $stmt = $pdo->prepare("SELECT id FROM guardians WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
 $guardian = $stmt->fetch();
@@ -59,7 +59,7 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 <div class="row mb-4">
     <div class="col-12 d-flex justify-content-between align-items-center">
         <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Payment History</h4>
-        <span class="badge bg-success fs-6">Total Paid: ₱<?= number_format($totalPaid, 2) ?></span>
+        <span class="badge bg-success fs-6">Total Paid: &#8369;<?= e(number_format($totalPaid, 2)) ?></span>
     </div>
 </div>
 
@@ -76,25 +76,37 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
                     <th>Method</th>
                     <th>Reference No.</th>
                     <th class="text-center"><?= sortLink('status', 'Status', $currentSort, $currentDir) ?></th>
+                    <th class="text-center">Receipt</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($payments)): ?>
-                    <tr><td colspan="8" class="text-center text-muted py-4">No payment records found.</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-4">No payment records found.</td></tr>
                 <?php else: ?>
                     <?php $runningTotal = 0; ?>
                     <?php foreach ($payments as $pay): ?>
                         <?php if ($pay['status'] === 'paid') $runningTotal += $pay['amount']; ?>
                     <tr>
-                        <td><?= $pay['paid_at'] ? e(date('M d, Y', strtotime($pay['paid_at']))) : '—' ?></td>
+                        <td><?= e($pay['paid_at'] ? date('M d, Y', strtotime($pay['paid_at'])) : '-') ?></td>
                         <td><?= e($pay['student_name']) ?></td>
                         <td><?= e($pay['description'] ?? 'Payment') ?></td>
-                        <td><?= e($pay['school_year']) ?> — <?= e($pay['term']) ?></td>
-                        <td class="text-end fw-bold">₱<?= number_format($pay['amount'], 2) ?></td>
+                        <td><?= e($pay['school_year']) ?> - <?= e($pay['term']) ?></td>
+                        <td class="text-end fw-bold">&#8369;<?= e(number_format($pay['amount'], 2)) ?></td>
                         <td><?= e(ucfirst($pay['method'])) ?></td>
                         <td><?= e($pay['reference_no'] ?? 'N/A') ?></td>
                         <td class="text-center">
                             <span class="badge badge-status-<?= e($pay['status']) ?>"><?= e(ucfirst($pay['status'])) ?></span>
+                        </td>
+                        <td class="text-center">
+                            <?php if ($pay['status'] === 'paid'): ?>
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="<?= e(APP_URL . '/guardian/payment-receipt.php?' . http_build_query(['payment_id' => (int)$pay['id']])) ?>"
+                                   target="_blank" rel="noopener">
+                                    <i class="bi bi-receipt"></i>
+                                </a>
+                            <?php else: ?>
+                                <span class="text-muted">-</span>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -105,3 +117,4 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

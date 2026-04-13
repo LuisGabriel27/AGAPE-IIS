@@ -24,7 +24,8 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Academy Information System — Manage students, grades, enrollments, and schedules.">
-    <title><?= $fullTitle ?></title>
+    <title><?= e($fullTitle) ?></title>
+    <link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
@@ -40,7 +41,7 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
 <aside class="sidebar" id="sidebar">
     <a href="<?= getRoleDashboardUrl() ?>" class="sidebar-brand">
         <div class="sidebar-brand-icon">
-            <i class="bi bi-mortarboard-fill"></i>
+            <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg" alt="Agape Logo" class="sidebar-brand-logo">
         </div>
         <div class="sidebar-brand-text">
             AGAPE
@@ -52,61 +53,61 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
         <?php if ($userRole === 'admin'): ?>
 
             <div class="sidebar-section">Main</div>
-            <a class="sidebar-link <?= $currentPage === 'admin-dashboard.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-dashboard.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-dashboard.php">
                 <i class="bi bi-grid-1x2-fill"></i> Dashboard
             </a>
 
             <div class="sidebar-section">People</div>
-            <a class="sidebar-link <?= $currentPage === 'admin-students.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-students.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-students.php">
                 <i class="bi bi-people-fill"></i> Students
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-guardians.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-guardians.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-guardians.php">
                 <i class="bi bi-person-hearts"></i> Guardians
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-teachers.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-teachers.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-teachers.php">
                 <i class="bi bi-person-workspace"></i> Teachers
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-users.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-users.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-users.php">
                 <i class="bi bi-person-gear"></i> User Accounts
             </a>
 
             <div class="sidebar-section">Academics</div>
-            <a class="sidebar-link <?= $currentPage === 'admin-enrollments.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-enrollments.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-enrollments.php">
                 <i class="bi bi-pencil-square"></i> Enrollments
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-subjects.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-subjects.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-subjects.php">
                 <i class="bi bi-book-fill"></i> Subjects
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-sections.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-sections.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-sections.php">
                 <i class="bi bi-diagram-3-fill"></i> Sections
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-grades.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-grades.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-grades.php">
                 <i class="bi bi-card-checklist"></i> Grades
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-schedule.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-schedule.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-schedule.php">
                 <i class="bi bi-calendar2-week-fill"></i> Schedules
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-calendar.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-calendar.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-calendar.php">
                 <i class="bi bi-calendar-event-fill"></i> Calendar
             </a>
-            <a class="sidebar-link <?= $currentPage === 'admin-attendance.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-attendance.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-attendance.php">
                 <i class="bi bi-camera-video-fill"></i> Attendance
             </a>
 
             <div class="sidebar-section">Finance</div>
-            <a class="sidebar-link <?= $currentPage === 'admin-payments.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'admin-payments.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-payments.php">
                 <i class="bi bi-cash-stack"></i> Financial Ledger
             </a>
@@ -114,17 +115,17 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
         <?php elseif ($userRole === 'teacher'): ?>
 
             <div class="sidebar-section">Main</div>
-            <a class="sidebar-link <?= $currentPage === 'teacher-dashboard.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'teacher-dashboard.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/teacher/teacher-dashboard.php">
                 <i class="bi bi-grid-1x2-fill"></i> Dashboard
             </a>
 
             <div class="sidebar-section">Teaching</div>
-            <a class="sidebar-link <?= $currentPage === 'teacher-grades.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'teacher-grades.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/teacher/teacher-grades.php">
                 <i class="bi bi-pencil-square"></i> Grades
             </a>
-            <a class="sidebar-link <?= $currentPage === 'teacher-schedule.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'teacher-schedule.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/teacher/teacher-schedule.php">
                 <i class="bi bi-calendar2-week-fill"></i> Schedule
             </a>
@@ -132,33 +133,41 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
         <?php elseif ($userRole === 'guardian'): ?>
 
             <div class="sidebar-section">Main</div>
-            <a class="sidebar-link <?= $currentPage === 'dashboard.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'dashboard.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/guardian/dashboard.php">
                 <i class="bi bi-grid-1x2-fill"></i> Dashboard
             </a>
 
             <div class="sidebar-section">Academic</div>
-            <a class="sidebar-link <?= $currentPage === 'enrollment.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'enrollment.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/guardian/enrollment.php">
                 <i class="bi bi-pencil-square"></i> Enrollment
             </a>
-            <a class="sidebar-link <?= $currentPage === 'grades.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'grades.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/guardian/grades.php">
                 <i class="bi bi-card-checklist"></i> Grades
             </a>
-            <a class="sidebar-link <?= $currentPage === 'schedule.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'report-card.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/guardian/report-card.php">
+                <i class="bi bi-printer-fill"></i> Report Card
+            </a>
+            <a class="sidebar-link <?= e($currentPage === 'certificate-enrollment.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/guardian/certificate-enrollment.php">
+                <i class="bi bi-patch-check-fill"></i> Certificate
+            </a>
+            <a class="sidebar-link <?= e($currentPage === 'schedule.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/guardian/schedule.php">
                 <i class="bi bi-calendar2-week-fill"></i> Schedule
             </a>
 
             <div class="sidebar-section">Finance</div>
-            <a class="sidebar-link <?= $currentPage === 'payments.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'payments.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/guardian/payments.php">
                 <i class="bi bi-credit-card-fill"></i> Payments
             </a>
 
             <div class="sidebar-section">Account</div>
-            <a class="sidebar-link <?= $currentPage === 'profile-view.php' ? 'active' : '' ?>"
+            <a class="sidebar-link <?= e($currentPage === 'profile-view.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/guardian/profile-view.php">
                 <i class="bi bi-person-circle"></i> My Profile
             </a>
@@ -179,7 +188,7 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
         <button class="sidebar-toggle-btn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
             <i class="bi bi-list"></i>
         </button>
-        <h1><?= $displayTitle ?></h1>
+        <h1><?= e($displayTitle) ?></h1>
     </div>
     <div class="top-header-right">
         <div class="dropdown">
@@ -188,7 +197,7 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
                     <?php if (!empty($userAvatar)): ?>
                         <img src="<?= e($userAvatar) ?>" alt="Avatar">
                     <?php else: ?>
-                        <?= $userInitial ?>
+                        <?= e($userInitial) ?>
                     <?php endif; ?>
                 </div>
                 <div class="header-user-info d-none d-sm-block">

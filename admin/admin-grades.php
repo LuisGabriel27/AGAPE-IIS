@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * Admin Grades — View and override any student's grades with audit trail
+ * Admin Grades â€” View and override any student's grades with audit trail
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -14,7 +14,7 @@ $filterStudent = (int)($_GET['student_id'] ?? 0);
 $filterYear    = $_GET['school_year'] ?? '';
 $errors        = [];
 
-// ── Handle grade override ───────────────────────────────
+// â”€â”€ Handle grade override â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
     $gradeId = (int)($_POST['grade_id'] ?? 0);
@@ -78,7 +78,7 @@ require_once __DIR__ . '/../includes/header.php';
             <select class="form-select" name="student_id" required>
                 <option value="">Select student...</option>
                 <?php foreach ($allStudents as $s): ?>
-                    <option value="<?= $s['id'] ?>" <?= $filterStudent == $s['id'] ? 'selected' : '' ?>><?= e($s['full_name']) ?></option>
+                    <option value="<?= (int)$s['id'] ?>" <?= e($filterStudent == $s['id'] ? 'selected' : '') ?>><?= e($s['full_name']) ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -87,7 +87,7 @@ require_once __DIR__ . '/../includes/header.php';
             <select class="form-select" name="school_year">
                 <option value="">All</option>
                 <?php foreach ($years as $y): ?>
-                    <option value="<?= e($y) ?>" <?= $filterYear === $y ? 'selected' : '' ?>><?= e($y) ?></option>
+                    <option value="<?= e($y) ?>" <?= e($filterYear === $y ? 'selected' : '') ?>><?= e($y) ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -105,20 +105,20 @@ require_once __DIR__ . '/../includes/header.php';
             <?php foreach ($grades as $g): ?>
             <tr>
                 <td><span class="badge bg-secondary"><?= e($g['subject_code']) ?></span> <?= e($g['subject_name']) ?></td>
-                <td><?= e($g['school_year']) ?> — <?= e($g['term']) ?></td>
-                <td class="text-center"><?= $g['midterm'] !== null ? number_format($g['midterm'], 2) : '—' ?></td>
-                <td class="text-center"><?= $g['finals'] !== null ? number_format($g['finals'], 2) : '—' ?></td>
-                <td class="text-center fw-bold"><?= $g['final_grade'] !== null ? number_format($g['final_grade'], 2) : '—' ?></td>
+                <td><?= e($g['school_year']) ?> - <?= e($g['term']) ?></td>
+                <td class="text-center"><?= e($g['midterm'] !== null ? number_format($g['midterm'], 2) : '-') ?></td>
+                <td class="text-center"><?= e($g['finals'] !== null ? number_format($g['finals'], 2) : '-') ?></td>
+                <td class="text-center fw-bold"><?= e($g['final_grade'] !== null ? number_format($g['final_grade'], 2) : '-') ?></td>
                 <td><small><?= e($g['teacher_name'] ?? 'N/A') ?></small></td>
                 <td>
-                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editGrade<?= $g['id'] ?>">
+                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editGrade<?= (int)$g['id'] ?>">
                         <i class="bi bi-pencil"></i> Override
                     </button>
                 </td>
             </tr>
 
             <!-- Override Modal -->
-            <div class="modal fade" id="editGrade<?= $g['id'] ?>" tabindex="-1">
+            <div class="modal fade" id="editGrade<?= (int)$g['id'] ?>" tabindex="-1">
                 <div class="modal-dialog modal-sm">
                     <div class="modal-content">
                         <div class="modal-header">
@@ -127,15 +127,15 @@ require_once __DIR__ . '/../includes/header.php';
                         </div>
                         <form method="POST">
                             <div class="modal-body">
-                                <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
-                                <input type="hidden" name="grade_id" value="<?= $g['id'] ?>">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                                <input type="hidden" name="grade_id" value="<?= (int)$g['id'] ?>">
                                 <div class="mb-2">
                                     <label class="form-label small">Midterm</label>
-                                    <input type="number" class="form-control form-control-sm" name="midterm" step="0.01" min="50" max="100" value="<?= $g['midterm'] ?? '' ?>">
+                                    <input type="number" class="form-control form-control-sm" name="midterm" step="0.01" min="50" max="100" value="<?= e((string)($g['midterm'] ?? '')) ?>">
                                 </div>
                                 <div class="mb-2">
                                     <label class="form-label small">Finals</label>
-                                    <input type="number" class="form-control form-control-sm" name="finals" step="0.01" min="50" max="100" value="<?= $g['finals'] ?? '' ?>">
+                                    <input type="number" class="form-control form-control-sm" name="finals" step="0.01" min="50" max="100" value="<?= e((string)($g['finals'] ?? '')) ?>">
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -154,3 +154,4 @@ require_once __DIR__ . '/../includes/header.php';
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

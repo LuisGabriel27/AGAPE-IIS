@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Admin Dashboard
  * KPI cards, recent transactions, quick links, upcoming events.
@@ -59,7 +59,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-people-fill"></i></div>
             <div>
                 <div class="kpi-label">Total Students</div>
-                <div class="kpi-value"><?= number_format($totalStudents) ?></div>
+                <div class="kpi-value"><?= e(number_format($totalStudents)) ?></div>
             </div>
         </div>
     </div>
@@ -68,7 +68,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-cash-stack"></i></div>
             <div>
                 <div class="kpi-label">Total Revenue</div>
-                <div class="kpi-value">₱<?= number_format($totalRevenue, 0) ?></div>
+                <div class="kpi-value">&#8369;<?= e(number_format($totalRevenue, 0)) ?></div>
             </div>
         </div>
     </div>
@@ -77,7 +77,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-graph-up-arrow"></i></div>
             <div>
                 <div class="kpi-label">Enrollment Rate</div>
-                <div class="kpi-value"><?= $enrollmentRate ?>%</div>
+                <div class="kpi-value"><?= e((string)$enrollmentRate) ?>%</div>
             </div>
         </div>
     </div>
@@ -86,7 +86,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-hourglass-split"></i></div>
             <div>
                 <div class="kpi-label">Pending</div>
-                <div class="kpi-value"><?= number_format($pendingEnroll) ?></div>
+                <div class="kpi-value"><?= e(number_format($pendingEnroll)) ?></div>
             </div>
         </div>
     </div>
@@ -113,14 +113,14 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         $initial = strtoupper(substr($p['student_name'], 0, 1));
                     ?>
                         <div class="transaction-item">
-                            <div class="t-avatar user-avatar <?= $color ?>"><?= $initial ?></div>
+                            <div class="t-avatar user-avatar <?= e($color) ?>"><?= e($initial) ?></div>
                             <div class="t-info">
                                 <div class="t-name"><?= e($p['student_name']) ?></div>
-                                <div class="t-desc"><?= e($p['description'] ?? 'Payment') ?> · <?= e(ucfirst($p['method'])) ?></div>
+                                <div class="t-desc"><?= e($p['description'] ?? 'Payment') ?> &middot; <?= e(ucfirst($p['method'])) ?></div>
                             </div>
                             <div class="text-end">
-                                <div class="t-amount amount-positive">₱<?= number_format($p['amount'], 2) ?></div>
-                                <div class="t-date"><?= $p['paid_at'] ? date('M d', strtotime($p['paid_at'])) : 'Pending' ?></div>
+                                <div class="t-amount amount-positive">&#8369;<?= e(number_format($p['amount'], 2)) ?></div>
+                                <div class="t-date"><?= e($p['paid_at'] ? date('M d', strtotime($p['paid_at'])) : 'Pending') ?></div>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -143,7 +143,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     </div>
                     <div>
                         <div class="qa-text">Pending Enrollments</div>
-                        <div class="qa-sub"><?= $pendingEnroll ?> awaiting review</div>
+                        <div class="qa-sub"><?= e((string)$pendingEnroll) ?> awaiting review</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-students.php" class="quick-action">
@@ -152,7 +152,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     </div>
                     <div>
                         <div class="qa-text">Manage Students</div>
-                        <div class="qa-sub"><?= $totalStudents ?> total students</div>
+                        <div class="qa-sub"><?= e((string)$totalStudents) ?> total students</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-payments.php" class="quick-action">
@@ -188,7 +188,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     </div>
                     <div>
                         <div class="qa-text">User Management</div>
-                        <div class="qa-sub"><?= $totalUsers ?> accounts</div>
+                        <div class="qa-sub"><?= e((string)$totalUsers) ?> accounts</div>
                     </div>
                 </a>
             </div>
@@ -216,7 +216,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         <div class="list-group-item d-flex justify-content-between align-items-start py-3">
                             <div>
                                 <div class="fw-semibold" style="font-size:0.85rem;"><?= e($act['action']) ?></div>
-                                <small class="text-muted"><?= e($act['email'] ?? 'System') ?> · <?= e($act['table_affected'] ?? '') ?></small>
+                                <small class="text-muted"><?= e($act['email'] ?? 'System') ?> &middot; <?= e($act['table_affected'] ?? '') ?></small>
                             </div>
                             <small class="text-muted text-nowrap ms-3"><?= e(date('M d, g:i A', strtotime($act['timestamp']))) ?></small>
                         </div>
@@ -254,10 +254,10 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                             <div class="fw-semibold" style="font-size:0.9rem;"><?= e($ev['title']) ?></div>
                             <small class="text-muted">
                                 <i class="bi bi-calendar3 me-1"></i>
-                                <?= e(date('M d', strtotime($ev['date_start']))) ?> — <?= e(date('M d, Y', strtotime($ev['date_end']))) ?>
+                                <?= e(date('M d', strtotime($ev['date_start']))) ?> - <?= e(date('M d, Y', strtotime($ev['date_end']))) ?>
                             </small>
                         </div>
-                        <span class="badge <?= $badgeClass ?>"><?= e(ucfirst($ev['type'])) ?></span>
+                        <span class="badge <?= e($badgeClass) ?>"><?= e(ucfirst($ev['type'])) ?></span>
                     </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -267,3 +267,4 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

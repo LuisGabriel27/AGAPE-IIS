@@ -117,6 +117,15 @@ body {
     color: white;
     font-size: 1.1rem;
     flex-shrink: 0;
+    overflow: hidden;
+}
+
+.sidebar-brand-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 10px;
+    display: block;
 }
 
 .sidebar-brand-text {
@@ -956,6 +965,7 @@ body {
     padding: 3rem 3.5rem;
     overflow: hidden;
     flex-shrink: 0;
+    isolation: isolate;
 }
 
 .auth-split-left::before {
@@ -1031,6 +1041,15 @@ body {
     z-index: 1;
 }
 
+.auth-left-logo {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.55);
+    display: block;
+}
+
 .auth-left-title {
     font-size: clamp(2rem, 4vw, 2.75rem);
     font-weight: 800;
@@ -1076,17 +1095,35 @@ body {
 
 /* ── Right Panel — Form Area ─────────────────────────── */
 .auth-split-right {
+    position: relative;
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 2.5rem 2rem;
+    overflow: hidden;
+    isolation: isolate;
     background:
         radial-gradient(circle at top right, rgba(67,102,246,0.04), transparent 50%),
         #FFFFFF;
 }
 
+.auth-right-watermark {
+    position: absolute;
+    width: clamp(390px, 44vw, 640px);
+    aspect-ratio: 1 / 1;
+    right: clamp(-220px, -12vw, -70px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: url('../images/branding/agape-logo.jpg') center / contain no-repeat;
+    opacity: 0.12;
+    filter: saturate(0.86) contrast(1.04);
+    pointer-events: none;
+    z-index: 0;
+}
+
 .auth-card {
+    position: relative;
     width: 100%;
     max-width: 420px;
     border-radius: 0;
@@ -1133,65 +1170,6 @@ body {
     font-size: 0.8125rem;
     color: var(--text-muted);
     margin: 0;
-}
-
-.btn-google {
-    background-color: #FFFFFF;
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 11px 1rem;
-    border-radius: 10px;
-    transition: all var(--transition-fast);
-    font-size: 0.875rem;
-    text-decoration: none;
-}
-
-.btn-google:hover {
-    background-color: var(--body-bg);
-    border-color: #CBD5E1;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    color: var(--text-primary);
-    transform: translateY(-1px);
-}
-
-.btn-google:active {
-    transform: translateY(0);
-    box-shadow: none;
-}
-
-.btn-google img,
-.btn-google svg {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-}
-
-.divider-text {
-    display: flex;
-    align-items: center;
-    text-transform: uppercase;
-    font-size: 0.68rem;
-    color: var(--text-muted);
-    margin: 1.5rem 0;
-    letter-spacing: 1.2px;
-    font-weight: 600;
-}
-
-.divider-text::before,
-.divider-text::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border-color);
-}
-
-.divider-text span {
-    padding: 0 0.875rem;
 }
 
 /* Hidden in split — back link is on left panel */
@@ -1323,6 +1301,11 @@ body {
     .auth-split-right {
         padding: 2rem 1.5rem;
     }
+    .auth-right-watermark {
+        width: 360px;
+        right: -130px;
+        opacity: 0.10;
+    }
     .auth-card {
         max-width: 480px;
     }
@@ -1337,6 +1320,11 @@ body {
     }
     .auth-split-right {
         padding: 1.5rem 1rem;
+    }
+    .auth-right-watermark {
+        width: 250px;
+        right: -95px;
+        opacity: 0.08;
     }
     .auth-card-header .role-login-icon {
         width: 40px;
@@ -1396,65 +1384,6 @@ body {
     .auth-wrapper-standalone .auth-card .card-body {
         padding: 2rem 1.5rem;
     }
-}
-
-.btn-google {
-    background-color: #FFFFFF;
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 11px 1rem;
-    border-radius: 10px;
-    transition: all var(--transition-fast);
-    font-size: 0.9rem;
-    text-decoration: none;
-}
-
-.btn-google:hover {
-    background-color: var(--body-bg);
-    border-color: #CBD5E1;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    color: var(--text-primary);
-    transform: translateY(-1px);
-}
-
-.btn-google:active {
-    transform: translateY(0);
-    box-shadow: none;
-}
-
-.btn-google img,
-.btn-google svg {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-}
-
-.divider-text {
-    display: flex;
-    align-items: center;
-    text-transform: uppercase;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    margin: 1.75rem 0;
-    letter-spacing: 1.2px;
-    font-weight: 600;
-}
-
-.divider-text::before,
-.divider-text::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border-color);
-}
-
-.divider-text span {
-    padding: 0 0.875rem;
 }
 
 .auth-back-link {

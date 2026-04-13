@@ -72,10 +72,10 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add Subject' : 'Edit Subject' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add Subject' : 'Edit Subject') ?></div>
     <div class="card-body">
         <form method="POST" id="subject-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Code <span class="text-danger">*</span></label>
@@ -87,7 +87,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-2 mb-3">
                     <label class="form-label">Units</label>
-                    <input type="number" class="form-control" name="units" value="<?= $editSubject['units'] ?? 3 ?>" min="1" max="10">
+                    <input type="number" class="form-control" name="units" value="<?= e((string)($editSubject['units'] ?? 3)) ?>" min="1" max="10">
                 </div>
                 <div class="col-md-2 mb-3">
                     <label class="form-label">Department</label>
@@ -111,12 +111,12 @@ require_once __DIR__ . '/../includes/header.php';
             <tr>
                 <td><span class="badge bg-secondary"><?= e($s['code']) ?></span></td>
                 <td class="fw-bold"><?= e($s['name']) ?></td>
-                <td class="text-center"><?= $s['units'] ?></td>
+                <td class="text-center"><?= e((string)$s['units']) ?></td>
                 <td><?= e($s['department'] ?? 'N/A') ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= $s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= $s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this subject?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this subject?')">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>

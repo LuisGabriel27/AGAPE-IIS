@@ -115,10 +115,10 @@ require_once __DIR__ . '/../includes/header.php';
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <!-- Create / Edit Form -->
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add New Student' : 'Edit Student' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add New Student' : 'Edit Student') ?></div>
     <div class="card-body">
         <form method="POST" id="student-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Full Name <span class="text-danger">*</span></label>
@@ -129,7 +129,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="guardian_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($guardians as $g): ?>
-                            <option value="<?= $g['id'] ?>" <?= ($editStudent['guardian_id'] ?? 0) == $g['id'] ? 'selected' : '' ?>><?= e($g['full_name']) ?></option>
+                            <option value="<?= (int)$g['id'] ?>" <?= e(($editStudent['guardian_id'] ?? 0) == $g['id'] ? 'selected' : '') ?>><?= e($g['full_name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -142,7 +142,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="gender">
                         <option value="">Select...</option>
                         <?php foreach (['male','female','other'] as $g): ?>
-                            <option value="<?= $g ?>" <?= ($editStudent['gender'] ?? '') === $g ? 'selected' : '' ?>><?= ucfirst($g) ?></option>
+                            <option value="<?= e($g) ?>" <?= e(($editStudent['gender'] ?? '') === $g ? 'selected' : '') ?>><?= e(ucfirst($g)) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -151,7 +151,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="grade_level">
                         <option value="">Select...</option>
                         <?php for ($gl = 7; $gl <= 12; $gl++): ?>
-                            <option value="<?= $gl ?>" <?= ($editStudent['grade_level'] ?? '') == $gl ? 'selected' : '' ?>>Grade <?= $gl ?></option>
+                            <option value="<?= e((string)$gl) ?>" <?= e(($editStudent['grade_level'] ?? '') == $gl ? 'selected' : '') ?>>Grade <?= e((string)$gl) ?></option>
                         <?php endfor; ?>
                     </select>
                 </div>
@@ -160,7 +160,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="section_id">
                         <option value="0">None</option>
                         <?php foreach ($sections as $sec): ?>
-                            <option value="<?= $sec['id'] ?>" <?= ($editStudent['section_id'] ?? 0) == $sec['id'] ? 'selected' : '' ?>><?= e($sec['name']) ?> (Grade <?= e($sec['grade_level']) ?>)</option>
+                            <option value="<?= (int)$sec['id'] ?>" <?= e(($editStudent['section_id'] ?? 0) == $sec['id'] ? 'selected' : '') ?>><?= e($sec['name']) ?> (Grade <?= e((string)$sec['grade_level']) ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -206,16 +206,16 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php else: ?>
                     <?php foreach ($students as $i => $s): ?>
                     <tr>
-                        <td><?= $offset + $i + 1 ?></td>
+                        <td><?= e((string)($offset + $i + 1)) ?></td>
                         <td class="fw-bold"><?= e($s['full_name']) ?></td>
                         <td><?= e($s['guardian_name'] ?? 'N/A') ?></td>
                         <td>Grade <?= e($s['grade_level'] ?? 'N/A') ?></td>
                         <td><?= e($s['section_name'] ?? 'N/A') ?></td>
                         <td><small><?= e($s['lrn'] ?? 'N/A') ?></small></td>
                         <td>
-                            <a href="?action=edit&id=<?= $s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                            <form method="POST" action="?action=delete&id=<?= $s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this student?')">
-                                <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                            <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                            <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this student?')">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                                 <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                             </form>
                         </td>

@@ -61,7 +61,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr>
                         <th style="width:12%;">Time</th>
                         <?php foreach ($days as $day): ?>
-                            <th><?= $day ?></th>
+                            <th><?= e($day) ?></th>
                         <?php endforeach; ?>
                     </tr>
                 </thead>

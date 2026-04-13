@@ -1,8 +1,8 @@
-<?php
+﻿<?php
 /**
  * Guardian Profile Edit
  * Editable form for guardian personal info with password confirmation (email/password accounts).
- * Google-only accounts skip password confirmation.
+ * Accounts without a password can set one here.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -23,7 +23,6 @@ $stmt->execute([':uid' => $userId]);
 $guardian = $stmt->fetch();
 
 $hasPassword = !empty($user['password_hash']);
-$isGoogleOnly = !$hasPassword && !empty($user['google_id']);
 
 $errors   = [];
 $success  = false;
@@ -69,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $newData = ['full_name' => $fullName, 'contact' => $contact, 'address' => $address];
 
-        // Optional: set a new password (for Google-only users wanting dual login, or changing password)
+        // Optional: set or update password
         if (!empty($newPassword)) {
             if (strlen($newPassword) < 8) {
                 $errors[] = 'New password must be at least 8 characters.';
@@ -109,15 +108,8 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
     <?php endif; ?>
 
-    <?php if ($isGoogleOnly): ?>
-        <div class="alert alert-info">
-            <i class="bi bi-info-circle me-1"></i>
-            Your account uses Google Sign-In. You can optionally set a password below to enable email/password login as well.
-        </div>
-    <?php endif; ?>
-
     <form method="POST" action="" id="profile-edit-form">
-        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
 
         <div class="mb-3">
             <label for="full_name" class="form-label">Full Name <span class="text-danger">*</span></label>
@@ -145,7 +137,7 @@ require_once __DIR__ . '/../includes/header.php';
             <select class="form-select" id="relationship" name="relationship">
                 <option value="">Select...</option>
                 <?php foreach (['Parent','Guardian','Sibling','Other'] as $r): ?>
-                    <option value="<?= $r ?>" <?= ($guardian['relationship_to_student'] ?? '') === $r ? 'selected' : '' ?>><?= $r ?></option>
+                    <option value="<?= e($r) ?>" <?= e(($guardian['relationship_to_student'] ?? '') === $r ? 'selected' : '') ?>><?= e($r) ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -177,3 +169,4 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

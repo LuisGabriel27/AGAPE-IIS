@@ -76,11 +76,11 @@ require_once __DIR__ . '/../includes/header.php';
 <!-- Create / Edit Form -->
 <div class="card mb-4">
     <div class="card-header">
-        <span><i class="bi bi-calendar-plus-fill"></i><?= $action === 'create' ? 'Add New Event' : 'Edit Event' ?></span>
+        <span><i class="bi bi-calendar-plus-fill"></i><?= e($action === 'create' ? 'Add New Event' : 'Edit Event') ?></span>
     </div>
     <div class="card-body">
         <form method="POST" id="calendar-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Event Title <span class="text-danger">*</span></label>
@@ -90,7 +90,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Event Type</label>
                     <select class="form-select" name="type">
                         <?php foreach (['event'=>'Academic Event','holiday'=>'Holiday','exam'=>'Exam','other'=>'Other'] as $val => $label): ?>
-                            <option value="<?= $val ?>" <?= ($editEvent['type'] ?? 'event') === $val ? 'selected' : '' ?>><?= $label ?></option>
+                            <option value="<?= e($val) ?>" <?= e(($editEvent['type'] ?? 'event') === $val ? 'selected' : '') ?>><?= e($label) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -123,7 +123,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="card mt-4">
     <div class="card-header">
         <span><i class="bi bi-list-ul"></i>All Events</span>
-        <span class="badge bg-primary rounded-pill"><?= count($calendarEvents) ?></span>
+        <span class="badge bg-primary rounded-pill"><?= e((string)count($calendarEvents)) ?></span>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -154,15 +154,15 @@ require_once __DIR__ . '/../includes/header.php';
                                 <?php endif; ?>
                             </small>
                         </td>
-                        <td><span class="badge <?= $badge ?>"><?= e(ucfirst($ev['type'])) ?></span></td>
+                        <td><span class="badge <?= e($badge) ?>"><?= e(ucfirst($ev['type'])) ?></span></td>
                         <td><small class="text-muted"><?= e(mb_substr($ev['description'] ?? '', 0, 50)) ?><?= strlen($ev['description'] ?? '') > 50 ? '…' : '' ?></small></td>
                         <td class="text-center">
                             <div class="d-flex gap-1 justify-content-center">
-                                <a href="?action=edit&id=<?= $ev['id'] ?>" class="btn btn-sm btn-outline-primary btn-icon" title="Edit">
+                                <a href="?action=edit&id=<?= (int)$ev['id'] ?>" class="btn btn-sm btn-outline-primary btn-icon" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
-                                <form method="POST" action="?action=delete&id=<?= $ev['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this event?')">
-                                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                                <form method="POST" action="?action=delete&id=<?= (int)$ev['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this event?')">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                                     <button class="btn btn-sm btn-outline-danger btn-icon" title="Delete">
                                         <i class="bi bi-trash"></i>
                                     </button>

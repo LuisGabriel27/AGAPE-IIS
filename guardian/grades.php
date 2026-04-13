@@ -64,8 +64,17 @@ require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="row mb-4">
-    <div class="col-12">
-        <h4 class="fw-bold"><i class="bi bi-card-checklist me-2"></i>Student Grades</h4>
+    <div class="col-md-8">
+        <h4 class="fw-bold mb-0"><i class="bi bi-card-checklist me-2"></i>Student Grades</h4>
+    </div>
+    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+        <?php if ($selectedStudent > 0): ?>
+            <a class="btn btn-outline-primary"
+               href="<?= e(APP_URL . '/guardian/report-card.php?' . http_build_query(['student_id' => $selectedStudent, 'school_year' => $selectedYear, 'term' => $selectedTerm])) ?>"
+               target="_blank" rel="noopener">
+                <i class="bi bi-printer me-1"></i>Print Report Card
+            </a>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -77,7 +86,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <label for="student_id" class="form-label">Student</label>
                 <select class="form-select" name="student_id" id="student_id">
                     <?php foreach ($students as $stu): ?>
-                        <option value="<?= $stu['id'] ?>" <?= $selectedStudent == $stu['id'] ? 'selected' : '' ?>><?= e($stu['full_name']) ?></option>
+                        <option value="<?= (int)$stu['id'] ?>" <?= $selectedStudent == $stu['id'] ? 'selected' : '' ?>><?= e($stu['full_name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -126,10 +135,10 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr>
                         <td><?= e($g['code']) ?></td>
                         <td><?= e($g['subject_name']) ?></td>
-                        <td class="text-center"><?= $g['units'] ?></td>
-                        <td class="text-center"><?= $g['midterm'] !== null ? number_format($g['midterm'], 2) : '—' ?></td>
-                        <td class="text-center"><?= $g['finals'] !== null ? number_format($g['finals'], 2) : '—' ?></td>
-                        <td class="text-center fw-bold"><?= $g['final_grade'] !== null ? number_format($g['final_grade'], 2) : '—' ?></td>
+                        <td class="text-center"><?= e((string)$g['units']) ?></td>
+                        <td class="text-center"><?= e($g['midterm'] !== null ? number_format((float)$g['midterm'], 2) : '—') ?></td>
+                        <td class="text-center"><?= e($g['finals'] !== null ? number_format((float)$g['finals'], 2) : '—') ?></td>
+                        <td class="text-center fw-bold"><?= e($g['final_grade'] !== null ? number_format((float)$g['final_grade'], 2) : '—') ?></td>
                         <td class="text-center">
                             <?php if ($g['final_grade'] !== null): ?>
                                 <?php if ($g['final_grade'] >= 75): ?>
@@ -149,7 +158,7 @@ require_once __DIR__ . '/../includes/header.php';
             <tfoot>
                 <tr class="table-primary fw-bold">
                     <td colspan="5" class="text-end">General Weighted Average (GWA):</td>
-                    <td class="text-center"><?= $gwa > 0 ? number_format($gwa, 2) : 'N/A' ?></td>
+                    <td class="text-center"><?= e($gwa > 0 ? number_format((float)$gwa, 2) : 'N/A') ?></td>
                     <td></td>
                 </tr>
             </tfoot>

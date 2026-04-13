@@ -95,10 +95,10 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add Teacher' : 'Edit Teacher' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add Teacher' : 'Edit Teacher') ?></div>
     <div class="card-body">
         <form method="POST" id="teacher-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Full Name <span class="text-danger">*</span></label>
@@ -147,15 +147,15 @@ require_once __DIR__ . '/../includes/header.php';
                 <tr><td colspan="6" class="text-center text-muted py-3">No teachers found.</td></tr>
             <?php else: foreach ($teachers as $i => $t): ?>
             <tr>
-                <td><?= $offset + $i + 1 ?></td>
+                <td><?= e((string)($offset + $i + 1)) ?></td>
                 <td class="fw-bold"><?= e($t['full_name']) ?></td>
                 <td><?= e($t['email']) ?></td>
                 <td><?= e($t['contact_number'] ?? 'N/A') ?></td>
                 <td><?= e($t['department'] ?? 'N/A') ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= $t['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= $t['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <a href="?action=edit&id=<?= (int)$t['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$t['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>

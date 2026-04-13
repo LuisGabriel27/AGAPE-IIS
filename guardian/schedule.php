@@ -126,7 +126,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr>
                         <th style="width:12%;">Time</th>
                         <?php foreach ($days as $day): ?>
-                            <th><?= $day ?></th>
+                            <th><?= e($day) ?></th>
                         <?php endforeach; ?>
                     </tr>
                 </thead>
@@ -156,14 +156,14 @@ require_once __DIR__ . '/../includes/header.php';
     <!-- Tab 2: School Calendar -->
     <div class="tab-pane fade" id="schoolCalendar">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <a href="?month=<?= $prevMonth ?>&year=<?= $prevYear ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></a>
-            <h5 class="fw-bold mb-0"><?= date('F Y', $firstDay) ?></h5>
-            <a href="?month=<?= $nextMonth ?>&year=<?= $nextYear ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></a>
+            <a href="?month=<?= (int)$prevMonth ?>&year=<?= (int)$prevYear ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></a>
+            <h5 class="fw-bold mb-0"><?= e(date('F Y', $firstDay)) ?></h5>
+            <a href="?month=<?= (int)$nextMonth ?>&year=<?= (int)$nextYear ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></a>
         </div>
 
         <div class="calendar-grid">
             <?php foreach (['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as $dh): ?>
-                <div class="day-header"><?= $dh ?></div>
+                <div class="day-header"><?= e($dh) ?></div>
             <?php endforeach; ?>
 
             <?php
@@ -175,7 +175,7 @@ require_once __DIR__ . '/../includes/header.php';
 
             <?php for ($d = 1; $d <= $daysInMonth; $d++): ?>
                 <div class="day-cell">
-                    <div class="day-number"><?= $d ?></div>
+                    <div class="day-number"><?= e((string)$d) ?></div>
                     <?php if (isset($eventsByDay[$d])): ?>
                         <?php foreach ($eventsByDay[$d] as $ev):
                             $badgeClass = match($ev['type']) {
@@ -185,7 +185,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 default   => 'bg-secondary text-white',
                             };
                         ?>
-                            <div class="event-badge <?= $badgeClass ?>" title="<?= e($ev['title']) ?>"><?= e($ev['title']) ?></div>
+                            <div class="event-badge <?= e($badgeClass) ?>" title="<?= e($ev['title']) ?>"><?= e($ev['title']) ?></div>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </div>

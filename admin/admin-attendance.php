@@ -357,6 +357,10 @@ require_once __DIR__ . '/../includes/header.php';
     border-radius: 10px;
     background: #0f172a;
 }
+.camera-stage.preview-flipped video,
+.camera-stage.preview-flipped .camera-overlay {
+    transform: scaleX(-1);
+}
 .camera-overlay {
     position: absolute;
     inset: 0;
@@ -422,6 +426,10 @@ require_once __DIR__ . '/../includes/header.php';
                 <button class="nav-link" id="scanner-tab" data-bs-toggle="tab" data-bs-target="#scanner-tab-pane" type="button" role="tab" aria-controls="scanner-tab-pane" aria-selected="false">Take Attendance</button>
             </li>
         </ul>
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="mirrorFixToggle" checked>
+            <label class="form-check-label small text-muted" for="mirrorFixToggle">Fix inverted camera preview</label>
+        </div>
 
         <div class="tab-content">
             <div class="tab-pane fade show active" id="register-tab-pane" role="tabpanel" aria-labelledby="register-tab" tabindex="0">
@@ -590,9 +598,9 @@ require_once __DIR__ . '/../includes/header.php';
 <script src="<?= APP_URL ?>/assets/js/face-api.min.js"></script>
 <script>
 (() => {
-    const apiUrl = '<?= APP_URL ?>/admin/admin-attendance.php';
-    const csrfToken = '<?= csrfToken() ?>';
-    const modelsUrl = '<?= APP_URL ?>/models';
+    const apiUrl = <?= json_encode(APP_URL . '/admin/admin-attendance.php') ?>;
+    const csrfToken = <?= json_encode(csrfToken()) ?>;
+    const modelsUrl = <?= json_encode(APP_URL . '/models') ?>;
 
     const registerVideo = document.getElementById('registerVideo');
     const registerCanvas = document.getElementById('registerCanvas');
@@ -600,12 +608,15 @@ require_once __DIR__ . '/../includes/header.php';
     const registerPlaceholder = document.getElementById('registerCameraPlaceholder');
     const capturePreview = document.getElementById('capturePreview');
     const registerCameraDevice = document.getElementById('registerCameraDevice');
+    const mirrorFixToggle = document.getElementById('mirrorFixToggle');
 
     const scanVideo = document.getElementById('scanVideo');
     const scanCanvas = document.getElementById('scanCanvas');
     const scanStatus = document.getElementById('scanStatus');
     const scanPlaceholder = document.getElementById('scanCameraPlaceholder');
     const scanCameraDevice = document.getElementById('scanCameraDevice');
+    const registerStage = registerVideo.closest('.camera-stage');
+    const scanStage = scanVideo.closest('.camera-stage');
 
     const recognitionLog = document.getElementById('recognitionLog');
     const todayAttendanceBody = document.getElementById('todayAttendanceBody');
@@ -620,6 +631,12 @@ require_once __DIR__ . '/../includes/header.php';
     let modelsLoaded = false;
     let scanTimer = null;
     let scanBusy = false;
+
+    function applyPreviewOrientationFix() {
+        const shouldFlipPreview = mirrorFixToggle ? mirrorFixToggle.checked : true;
+        if (registerStage) registerStage.classList.toggle('preview-flipped', shouldFlipPreview);
+        if (scanStage) scanStage.classList.toggle('preview-flipped', shouldFlipPreview);
+    }
     let faceMatcher = null;
     let profileMap = new Map();
     const recentMarks = new Map();
@@ -1005,6 +1022,11 @@ require_once __DIR__ . '/../includes/header.php';
     document.getElementById('captureRegisterBtn').addEventListener('click', captureAndRegister);
     document.getElementById('startScanBtn').addEventListener('click', startScanner);
     document.getElementById('stopScanBtn').addEventListener('click', stopScanner);
+    if (mirrorFixToggle) {
+        mirrorFixToggle.addEventListener('change', applyPreviewOrientationFix);
+    }
+
+    applyPreviewOrientationFix();
 
     refreshCameraDevices().catch(error => {
         console.warn('Unable to list cameras yet:', error);

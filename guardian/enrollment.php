@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * Enrollment Page — Multi-step enrollment form
+ * Enrollment Page â€” Multi-step enrollment form
  * Step 1: Student details
  * Step 2: Grade level / Section selection
  * Step 3: Payment method & fee breakdown
@@ -23,7 +23,7 @@ $guardian = $stmt->fetch();
 
 if (!$guardian) {
     setFlash('danger', 'Guardian profile not found. Please complete your profile first.');
-    redirect(APP_URL . '/auth/complete-profile.php');
+    redirect(APP_URL . '/guardian/complete-profile.php');
 }
 
 $step   = (int)($_POST['step'] ?? $_GET['step'] ?? 1);
@@ -32,7 +32,7 @@ $errors = [];
 // Get sections for dropdown
 $sections = $pdo->query("SELECT id, name, grade_level, capacity FROM sections ORDER BY grade_level, name")->fetchAll();
 
-// ── Handle form submissions ─────────────────────────────
+// â”€â”€ Handle form submissions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
@@ -128,29 +128,34 @@ require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="row mb-4">
-    <div class="col-12">
-        <h4 class="fw-bold"><i class="bi bi-pencil-square me-2"></i>Student Enrollment</h4>
+    <div class="col-md-8">
+        <h4 class="fw-bold mb-0"><i class="bi bi-pencil-square me-2"></i>Student Enrollment</h4>
+    </div>
+    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+        <a class="btn btn-outline-primary" href="<?= APP_URL ?>/guardian/certificate-enrollment.php" target="_blank" rel="noopener">
+            <i class="bi bi-printer me-1"></i>Print Certificate
+        </a>
     </div>
 </div>
 
 <!-- Step Indicator -->
 <div class="step-indicator mb-4">
-    <div class="step <?= $step >= 1 ? ($step > 1 ? 'completed' : 'active') : '' ?>">
-        <span class="step-number"><?= $step > 1 ? '✓' : '1' ?></span>
+    <div class="step <?= e($step >= 1 ? ($step > 1 ? 'completed' : 'active') : '') ?>">
+        <span class="step-number"><?= $step > 1 ? '&#10003;' : '1' ?></span>
         <span>Student Info</span>
     </div>
     <div class="step-line"></div>
-    <div class="step <?= $step >= 2 ? ($step > 2 ? 'completed' : 'active') : '' ?>">
-        <span class="step-number"><?= $step > 2 ? '✓' : '2' ?></span>
+    <div class="step <?= e($step >= 2 ? ($step > 2 ? 'completed' : 'active') : '') ?>">
+        <span class="step-number"><?= $step > 2 ? '&#10003;' : '2' ?></span>
         <span>Grade & Section</span>
     </div>
     <div class="step-line"></div>
-    <div class="step <?= $step >= 3 ? ($step > 3 ? 'completed' : 'active') : '' ?>">
-        <span class="step-number"><?= $step > 3 ? '✓' : '3' ?></span>
+    <div class="step <?= e($step >= 3 ? ($step > 3 ? 'completed' : 'active') : '') ?>">
+        <span class="step-number"><?= $step > 3 ? '&#10003;' : '3' ?></span>
         <span>Payment</span>
     </div>
     <div class="step-line"></div>
-    <div class="step <?= $step >= 4 ? 'active' : '' ?>">
+    <div class="step <?= e($step >= 4 ? 'active' : '') ?>">
         <span class="step-number">4</span>
         <span>Confirmation</span>
     </div>
@@ -171,7 +176,7 @@ require_once __DIR__ . '/../includes/header.php';
 <!-- STEP 1: Student Details -->
 <h5 class="fw-bold mb-3">Step 1: Student Information</h5>
 <form method="POST" action="" id="enrollment-step1">
-    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+    <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
     <input type="hidden" name="step" value="2">
 
     <div class="mb-3">
@@ -207,7 +212,7 @@ require_once __DIR__ . '/../includes/header.php';
 <!-- STEP 2: Grade Level & Section -->
 <h5 class="fw-bold mb-3">Step 2: Grade Level & Section</h5>
 <form method="POST" action="" id="enrollment-step2">
-    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+    <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
     <input type="hidden" name="step" value="3">
 
     <div class="mb-3">
@@ -215,7 +220,7 @@ require_once __DIR__ . '/../includes/header.php';
         <select class="form-select" id="grade_level" name="grade_level" required>
             <option value="">Select...</option>
             <?php for ($g = 7; $g <= 12; $g++): ?>
-                <option value="<?= $g ?>" <?= ($enrollData['grade_level'] ?? '') == $g ? 'selected' : '' ?>>Grade <?= $g ?></option>
+                <option value="<?= e((string)$g) ?>" <?= ($enrollData['grade_level'] ?? '') == $g ? 'selected' : '' ?>>Grade <?= e((string)$g) ?></option>
             <?php endfor; ?>
         </select>
     </div>
@@ -225,8 +230,8 @@ require_once __DIR__ . '/../includes/header.php';
         <select class="form-select" id="section_id" name="section_id">
             <option value="0">To be assigned</option>
             <?php foreach ($sections as $sec): ?>
-                <option value="<?= $sec['id'] ?>" <?= ($enrollData['section_id'] ?? 0) == $sec['id'] ? 'selected' : '' ?>>
-                    <?= e($sec['name']) ?> (Grade <?= e($sec['grade_level']) ?>, Capacity: <?= $sec['capacity'] ?>)
+                <option value="<?= (int)$sec['id'] ?>" <?= ($enrollData['section_id'] ?? 0) == $sec['id'] ? 'selected' : '' ?>>
+                    <?= e($sec['name']) ?> (Grade <?= e((string)$sec['grade_level']) ?>, Capacity: <?= e((string)$sec['capacity']) ?>)
                 </option>
             <?php endforeach; ?>
         </select>
@@ -256,17 +261,17 @@ require_once __DIR__ . '/../includes/header.php';
 <!-- STEP 3: Payment -->
 <h5 class="fw-bold mb-3">Step 3: Payment Method & Fee Breakdown</h5>
 <form method="POST" action="" id="enrollment-step3">
-    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+    <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
     <input type="hidden" name="step" value="4">
 
     <div class="card bg-light mb-3">
         <div class="card-body">
             <h6 class="fw-bold">Fee Breakdown</h6>
             <table class="table table-sm mb-0">
-                <tr><td>Tuition Fee</td><td class="text-end">₱12,000.00</td></tr>
-                <tr><td>Miscellaneous Fee</td><td class="text-end">₱2,000.00</td></tr>
-                <tr><td>Lab Fee</td><td class="text-end">₱1,000.00</td></tr>
-                <tr class="fw-bold border-top"><td>Total</td><td class="text-end">₱15,000.00</td></tr>
+                <tr><td>Tuition Fee</td><td class="text-end">&#8369;12,000.00</td></tr>
+                <tr><td>Miscellaneous Fee</td><td class="text-end">&#8369;2,000.00</td></tr>
+                <tr><td>Lab Fee</td><td class="text-end">&#8369;1,000.00</td></tr>
+                <tr class="fw-bold border-top"><td>Total</td><td class="text-end">&#8369;15,000.00</td></tr>
             </table>
         </div>
     </div>
@@ -306,12 +311,12 @@ require_once __DIR__ . '/../includes/header.php';
         <tr><th class="bg-light">School Year</th><td><?= e($enrollData['school_year'] ?? currentSchoolYear()) ?></td></tr>
         <tr><th class="bg-light">Term</th><td><?= e($enrollData['term'] ?? '1st Semester') ?></td></tr>
         <tr><th class="bg-light">Payment Method</th><td><?= e(ucfirst($enrollData['payment_method'] ?? 'cash')) ?></td></tr>
-        <tr class="fw-bold"><th class="bg-light">Total Fee</th><td>₱15,000.00</td></tr>
+        <tr class="fw-bold"><th class="bg-light">Total Fee</th><td>&#8369;15,000.00</td></tr>
     </table>
 </div>
 
 <form method="POST" action="" id="enrollment-confirm">
-    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+    <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
     <input type="hidden" name="step" value="5">
 
     <div class="alert alert-info">
@@ -332,3 +337,4 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

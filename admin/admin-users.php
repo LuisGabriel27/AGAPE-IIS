@@ -102,7 +102,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="card-header bg-white fw-bold">Create User Account</div>
     <div class="card-body">
         <form method="POST" id="user-create-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <input type="hidden" name="action" value="create_user">
             <div class="row">
                 <div class="col-md-4 mb-3">
@@ -141,19 +141,17 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="table-container"><div class="table-responsive">
     <table class="table table-hover mb-0" id="users-table">
-        <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Login Method</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Password Login</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($users)): ?>
                 <tr><td colspan="7" class="text-center text-muted py-3">No users found.</td></tr>
             <?php else: foreach ($users as $u):
                 $hasPass = !empty($u['password_hash']);
-                $hasGoog = !empty($u['google_id']);
-                if ($hasPass && $hasGoog) $method = '<span class="badge bg-success">Both</span>';
-                elseif ($hasGoog) $method = '<span class="badge bg-info">Google</span>';
-                else $method = '<span class="badge bg-secondary">Email</span>';
+                $methodClass = $hasPass ? 'bg-secondary' : 'bg-warning text-dark';
+                $methodLabel = $hasPass ? 'Enabled' : 'Not Set';
             ?>
             <tr>
-                <td><?= $u['id'] ?></td>
+                <td><?= e((string)(int)$u['id']) ?></td>
                 <td class="fw-bold">
                     <?php if (!empty($u['google_avatar'])): ?>
                         <img src="<?= e($u['google_avatar']) ?>" class="rounded-circle me-1" width="20" height="20">
@@ -161,17 +159,17 @@ require_once __DIR__ . '/../includes/header.php';
                     <?= e($u['email']) ?>
                 </td>
                 <td>
-                    <form method="POST" action="?id=<?= $u['id'] ?>" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <form method="POST" action="?id=<?= (int)$u['id'] ?>" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <input type="hidden" name="action" value="change_role">
                         <select class="form-select form-select-sm d-inline-block" style="width:auto;" name="new_role" onchange="this.form.submit()">
                             <?php foreach (['admin','teacher','guardian'] as $r): ?>
-                                <option value="<?= $r ?>" <?= $u['role'] === $r ? 'selected' : '' ?>><?= ucfirst($r) ?></option>
+                                <option value="<?= e($r) ?>" <?= e($u['role'] === $r ? 'selected' : '') ?>><?= e(ucfirst($r)) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </form>
                 </td>
-                <td><?= $method ?></td>
+                <td><span class="badge <?= e($methodClass) ?>"><?= e($methodLabel) ?></span></td>
                 <td>
                     <?php if ($u['is_active']): ?>
                         <span class="badge bg-success">Active</span>
@@ -179,17 +177,17 @@ require_once __DIR__ . '/../includes/header.php';
                         <span class="badge bg-danger">Inactive</span>
                     <?php endif; ?>
                 </td>
-                <td><small><?= $u['last_login'] ? e(date('M d, Y g:i A', strtotime($u['last_login']))) : 'Never' ?></small></td>
+                <td><small><?= e($u['last_login'] ? date('M d, Y g:i A', strtotime($u['last_login'])) : 'Never') ?></small></td>
                 <td>
-                    <form method="POST" action="?id=<?= $u['id'] ?>" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <form method="POST" action="?id=<?= (int)$u['id'] ?>" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <input type="hidden" name="action" value="toggle_active">
-                        <button class="btn btn-sm btn-outline-<?= $u['is_active'] ? 'warning' : 'success' ?>" title="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?>">
-                            <i class="bi bi-<?= $u['is_active'] ? 'pause-circle' : 'play-circle' ?>"></i>
+                        <button class="btn btn-sm btn-outline-<?= e($u['is_active'] ? 'warning' : 'success') ?>" title="<?= e($u['is_active'] ? 'Deactivate' : 'Activate') ?>">
+                            <i class="bi bi-<?= e($u['is_active'] ? 'pause-circle' : 'play-circle') ?>"></i>
                         </button>
                     </form>
-                    <form method="POST" action="?id=<?= $u['id'] ?>" class="d-inline" onsubmit="return confirm('Reset password?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <form method="POST" action="?id=<?= (int)$u['id'] ?>" class="d-inline" onsubmit="return confirm('Reset password?')">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <input type="hidden" name="action" value="reset_password">
                         <button class="btn btn-sm btn-outline-info" title="Reset Password"><i class="bi bi-key"></i></button>
                     </form>

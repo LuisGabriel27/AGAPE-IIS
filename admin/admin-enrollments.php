@@ -73,7 +73,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-people-fill"></i></div>
             <div>
                 <div class="kpi-label">Total</div>
-                <div class="kpi-value"><?= number_format($totalEnrollments) ?></div>
+                <div class="kpi-value"><?= e(number_format($totalEnrollments)) ?></div>
             </div>
         </div>
     </div>
@@ -82,7 +82,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
             <div>
                 <div class="kpi-label">Enrolled</div>
-                <div class="kpi-value"><?= number_format($enrolledCount) ?></div>
+                <div class="kpi-value"><?= e(number_format($enrolledCount)) ?></div>
             </div>
         </div>
     </div>
@@ -91,7 +91,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-hand-thumbs-up-fill"></i></div>
             <div>
                 <div class="kpi-label">Approved</div>
-                <div class="kpi-value"><?= number_format($approvedCount) ?></div>
+                <div class="kpi-value"><?= e(number_format($approvedCount)) ?></div>
             </div>
         </div>
     </div>
@@ -100,7 +100,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-hourglass-split"></i></div>
             <div>
                 <div class="kpi-label">Pending</div>
-                <div class="kpi-value"><?= number_format($pendingCount) ?></div>
+                <div class="kpi-value"><?= e(number_format($pendingCount)) ?></div>
             </div>
         </div>
     </div>
@@ -109,7 +109,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             <div class="kpi-icon-wrap"><i class="bi bi-x-circle-fill"></i></div>
             <div>
                 <div class="kpi-label">Rejected</div>
-                <div class="kpi-value"><?= number_format($rejectedCount) ?></div>
+                <div class="kpi-value"><?= e(number_format($rejectedCount)) ?></div>
             </div>
         </div>
     </div>
@@ -123,7 +123,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 <select class="form-select form-select-sm" name="status">
                     <option value="">All Statuses</option>
                     <?php foreach (['pending','approved','rejected','enrolled'] as $st): ?>
-                        <option value="<?= $st ?>" <?= $filterStatus === $st ? 'selected' : '' ?>><?= ucfirst($st) ?></option>
+                        <option value="<?= e($st) ?>" <?= e($filterStatus === $st ? 'selected' : '') ?>><?= e(ucfirst($st)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -131,7 +131,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 <select class="form-select form-select-sm" name="year">
                     <option value="">All Years</option>
                     <?php foreach ($years as $y): ?>
-                        <option value="<?= e($y) ?>" <?= $filterYear === $y ? 'selected' : '' ?>><?= e($y) ?></option>
+                        <option value="<?= e($y) ?>" <?= e($filterYear === $y ? 'selected' : '') ?>><?= e($y) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -161,10 +161,10 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 $initial = strtoupper(substr($en['student_name'], 0, 1));
             ?>
             <tr>
-                <td><?= $offset + $i + 1 ?></td>
+                <td><?= e((string)($offset + $i + 1)) ?></td>
                 <td>
                     <div class="user-row">
-                        <div class="user-avatar <?= $color ?>"><?= $initial ?></div>
+                        <div class="user-avatar <?= e($color) ?>"><?= e($initial) ?></div>
                         <div>
                             <div class="user-name"><?= e($en['student_name']) ?></div>
                         </div>
@@ -177,13 +177,13 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 <td><small class="text-muted"><?= e($en['remarks'] ?? '') ?></small></td>
                 <td>
                     <?php if ($en['status'] === 'pending'): ?>
-                        <button class="btn btn-sm btn-success btn-icon" data-bs-toggle="modal" data-bs-target="#actionModal<?= $en['id'] ?>" title="Review">
+                        <button class="btn btn-sm btn-success btn-icon" data-bs-toggle="modal" data-bs-target="#actionModal<?= (int)$en['id'] ?>" title="Review">
                             <i class="bi bi-check-lg"></i>
                         </button>
                     <?php elseif ($en['status'] === 'approved'): ?>
                         <form method="POST" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
-                            <input type="hidden" name="enrollment_id" value="<?= $en['id'] ?>">
+                            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                            <input type="hidden" name="enrollment_id" value="<?= (int)$en['id'] ?>">
                             <input type="hidden" name="new_status" value="enrolled">
                             <input type="hidden" name="remarks" value="">
                             <button class="btn btn-sm btn-primary btn-icon" title="Mark as Enrolled"><i class="bi bi-mortarboard-fill"></i></button>
@@ -194,7 +194,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
 
             <?php if ($en['status'] === 'pending'): ?>
             <!-- Action Modal -->
-            <div class="modal fade" id="actionModal<?= $en['id'] ?>" tabindex="-1">
+            <div class="modal fade" id="actionModal<?= (int)$en['id'] ?>" tabindex="-1">
                 <div class="modal-dialog">
                     <div class="modal-content">
                         <div class="modal-header">
@@ -203,8 +203,8 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         </div>
                         <form method="POST">
                             <div class="modal-body">
-                                <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
-                                <input type="hidden" name="enrollment_id" value="<?= $en['id'] ?>">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                                <input type="hidden" name="enrollment_id" value="<?= (int)$en['id'] ?>">
                                 <div class="mb-3">
                                     <label class="form-label">Decision</label>
                                     <select class="form-select" name="new_status" required>

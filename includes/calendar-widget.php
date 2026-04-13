@@ -1,13 +1,13 @@
-<?php
+﻿<?php
 /**
  * Shared Calendar Widget
  * Renders a visual monthly calendar grid with event badges.
  * Used on all dashboard pages and the dedicated calendar page.
  *
  * Required variables before including:
- *   $calendarEvents (array) — all calendar_events rows
- *   $isAdmin (bool) — whether to show add/edit/delete controls
- *   $calendarFullPage (bool, optional) — true for full-page calendar with management UI
+ *   $calendarEvents (array) â€” all calendar_events rows
+ *   $isAdmin (bool) â€” whether to show add/edit/delete controls
+ *   $calendarFullPage (bool, optional) â€” true for full-page calendar with management UI
  *
  * Usage:
  *   $calendarEvents = $pdo->query("SELECT * FROM calendar_events ORDER BY date_start")->fetchAll();
@@ -79,15 +79,15 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
         <div class="d-flex justify-content-between align-items-center p-3 pb-2">
             <div>
                 <h5 class="fw-bold mb-0">Academic Year Calendar</h5>
-                <small class="text-muted"><?= currentSchoolYear() ?> Academic Schedule</small>
+                <small class="text-muted"><?= e(currentSchoolYear()) ?> Academic Schedule</small>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <!-- Legend -->
                 <div class="d-none d-lg-flex align-items-center gap-3 me-3">
                     <?php foreach ($typeColors as $type => $color): ?>
                     <div class="d-flex align-items-center gap-1">
-                        <span style="width:10px;height:10px;border-radius:3px;background:<?= $color['bg'] ?>;display:inline-block;"></span>
-                        <small class="text-muted" style="font-size:0.72rem;"><?= $color['label'] ?></small>
+                        <span style="width:10px;height:10px;border-radius:3px;background:<?= e($color['bg']) ?>;display:inline-block;"></span>
+                        <small class="text-muted" style="font-size:0.72rem;"><?= e($color['label']) ?></small>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -100,15 +100,15 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
         <!-- Month Navigation -->
         <div class="d-flex justify-content-between align-items-center px-3 pb-3">
             <div class="d-flex align-items-center gap-2">
-                <a href="<?= $navBase ?>cal_month=<?= $prevMonth ?>&cal_year=<?= $prevYear ?>" class="btn btn-sm btn-outline-secondary btn-icon" style="width:30px;height:30px;">
+                <a href="<?= e($navBase . 'cal_month=' . (int)$prevMonth . '&cal_year=' . (int)$prevYear) ?>" class="btn btn-sm btn-outline-secondary btn-icon" style="width:30px;height:30px;">
                     <i class="bi bi-chevron-left" style="font-size:0.75rem;"></i>
                 </a>
-                <h6 class="fw-bold mb-0"><?= $monthName ?> <?= $calYear ?></h6>
-                <a href="<?= $navBase ?>cal_month=<?= $nextMonth ?>&cal_year=<?= $nextYear ?>" class="btn btn-sm btn-outline-secondary btn-icon" style="width:30px;height:30px;">
+                <h6 class="fw-bold mb-0"><?= e($monthName . ' ' . $calYear) ?></h6>
+                <a href="<?= e($navBase . 'cal_month=' . (int)$nextMonth . '&cal_year=' . (int)$nextYear) ?>" class="btn btn-sm btn-outline-secondary btn-icon" style="width:30px;height:30px;">
                     <i class="bi bi-chevron-right" style="font-size:0.75rem;"></i>
                 </a>
             </div>
-            <a href="<?= $navBase ?>cal_month=<?= date('n') ?>&cal_year=<?= date('Y') ?>" class="btn btn-sm btn-outline-primary" style="font-size:0.78rem;">Today</a>
+            <a href="<?= e($navBase . 'cal_month=' . date('n') . '&cal_year=' . date('Y')) ?>" class="btn btn-sm btn-outline-primary" style="font-size:0.78rem;">Today</a>
         </div>
 
         <!-- Calendar Grid -->
@@ -117,7 +117,7 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
             $dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             foreach ($dayNames as $dn):
             ?>
-                <div class="day-header"><?= $dn ?></div>
+                <div class="day-header"><?= e($dn) ?></div>
             <?php endforeach; ?>
 
             <?php
@@ -127,7 +127,7 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
                 $showDay = $prevMonthDays - $startDow + $i + 1;
             ?>
                 <div class="day-cell inactive">
-                    <div class="day-number" style="opacity:0.4;"><?= $showDay ?></div>
+                    <div class="day-number" style="opacity:0.4;"><?= e((string)(int)$showDay) ?></div>
                 </div>
             <?php endfor; ?>
 
@@ -147,17 +147,23 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
                     }
                 }
             ?>
-                <div class="day-cell <?= $isToday ? 'today' : '' ?>">
-                    <div class="day-number"><?= $isToday ? "<span>{$day}</span>" : $day ?></div>
+                <div class="day-cell <?= e($isToday ? 'today' : '') ?>">
+                    <div class="day-number">
+                        <?php if ($isToday): ?>
+                            <span><?= e((string)(int)$day) ?></span>
+                        <?php else: ?>
+                            <?= e((string)(int)$day) ?>
+                        <?php endif; ?>
+                    </div>
                     <?php foreach (array_slice($uniqueDayEvents, 0, 2) as $de):
                         $tc = $typeColors[$de['type']] ?? $typeColors['other'];
                     ?>
-                        <div class="event-badge" style="background:<?= $tc['bg'] ?>;color:<?= $tc['text'] ?>;" title="<?= e($de['title']) ?>">
-                            <?= e(mb_substr($de['title'], 0, 14)) ?><?= mb_strlen($de['title']) > 14 ? '…' : '' ?>
+                        <div class="event-badge" style="background:<?= e($tc['bg']) ?>;color:<?= e($tc['text']) ?>;" title="<?= e($de['title']) ?>">
+                            <?= e(mb_substr($de['title'], 0, 14)) ?><?= mb_strlen($de['title']) > 14 ? '...' : '' ?>
                         </div>
                     <?php endforeach; ?>
                     <?php if (count($uniqueDayEvents) > 2): ?>
-                        <div class="event-badge" style="background:var(--secondary-light);color:var(--text-secondary);font-size:0.6rem;">+<?= count($uniqueDayEvents) - 2 ?> more</div>
+                        <div class="event-badge" style="background:var(--secondary-light);color:var(--text-secondary);font-size:0.6rem;">+<?= e((string)(count($uniqueDayEvents) - 2)) ?> more</div>
                     <?php endif; ?>
                 </div>
             <?php endfor; ?>
@@ -169,7 +175,7 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
             for ($i = 1; $i <= $remaining; $i++):
             ?>
                 <div class="day-cell inactive">
-                    <div class="day-number" style="opacity:0.4;"><?= $i ?></div>
+                    <div class="day-number" style="opacity:0.4;"><?= e((string)(int)$i) ?></div>
                 </div>
             <?php endfor; ?>
         </div>
@@ -194,13 +200,13 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
                         $tc = $typeColors[$ue['type']] ?? $typeColors['other'];
                     ?>
                     <div class="d-flex align-items-start gap-3 mb-3">
-                        <div style="width:6px;height:6px;border-radius:50%;background:<?= $tc['bg'] ?>;margin-top:7px;flex-shrink:0;"></div>
+                        <div style="width:6px;height:6px;border-radius:50%;background:<?= e($tc['bg']) ?>;margin-top:7px;flex-shrink:0;"></div>
                         <div>
                             <div class="fw-semibold" style="font-size:0.9rem;"><?= e($ue['title']) ?></div>
                             <small class="text-muted">
                                 <?= e(date('F d, Y', strtotime($ue['date_start']))) ?>
                                 <?php if ($ue['date_start'] !== $ue['date_end']): ?>
-                                    – <?= e(date('F d, Y', strtotime($ue['date_end']))) ?>
+                                    - <?= e(date('F d, Y', strtotime($ue['date_end']))) ?>
                                 <?php endif; ?>
                             </small>
                             <?php if (!empty($ue['description'])): ?>
@@ -223,7 +229,7 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
                 <div class="p-3 rounded" style="background:var(--danger-light);border-left:4px solid var(--danger);">
                     <div class="fw-bold mb-2"><i class="bi bi-megaphone-fill me-1"></i> Academic Reminders</div>
                     <ul class="mb-0" style="font-size:0.85rem;padding-left:18px;">
-                        <li class="mb-1">School Year: <strong><?= currentSchoolYear() ?></strong></li>
+                        <li class="mb-1">School Year: <strong><?= e(currentSchoolYear()) ?></strong></li>
                         <li class="mb-1">Check the calendar regularly for schedule updates</li>
                         <li>Contact the admin office for event inquiries</li>
                     </ul>
@@ -232,3 +238,6 @@ $upcomingEvts = array_slice($upcomingEvts, 0, 5);
         </div>
     </div>
 </div>
+
+
+

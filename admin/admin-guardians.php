@@ -75,7 +75,7 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
 $editGuardian = null;
 $editUser = null;
 if ($action === 'edit' && $id) {
-    $stmt = $pdo->prepare("SELECT g.*, u.email, u.google_id, u.password_hash FROM guardians g JOIN users u ON g.user_id = u.id WHERE g.id = :id LIMIT 1");
+    $stmt = $pdo->prepare("SELECT g.*, u.email, u.password_hash FROM guardians g JOIN users u ON g.user_id = u.id WHERE g.id = :id LIMIT 1");
     $stmt->execute([':id' => $id]);
     $editGuardian = $stmt->fetch();
 }
@@ -89,7 +89,7 @@ $total->execute($params);
 [$offset, $limit, $page, $totalPages] = paginate($total->fetchColumn());
 
 $stmt = $pdo->prepare("
-    SELECT g.*, u.email, u.google_id, u.password_hash
+    SELECT g.*, u.email, u.password_hash
     FROM guardians g JOIN users u ON g.user_id = u.id
     {$where} ORDER BY g.full_name LIMIT {$limit} OFFSET {$offset}
 ");
@@ -111,10 +111,10 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add Guardian' : 'Edit Guardian' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add Guardian' : 'Edit Guardian') ?></div>
     <div class="card-body">
         <form method="POST" id="guardian-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Full Name <span class="text-danger">*</span></label>
@@ -136,7 +136,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="relationship">
                         <option value="">Select...</option>
                         <?php foreach (['Parent','Guardian','Sibling','Other'] as $r): ?>
-                            <option value="<?= $r ?>" <?= ($editGuardian['relationship_to_student'] ?? '') === $r ? 'selected' : '' ?>><?= $r ?></option>
+                            <option value="<?= e($r) ?>" <?= e(($editGuardian['relationship_to_student'] ?? '') === $r ? 'selected' : '') ?>><?= e($r) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -164,28 +164,26 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="table-container"><div class="table-responsive">
     <table class="table table-hover mb-0" id="guardians-table">
-        <thead><tr><th>#</th><th>Full Name</th><th>Email</th><th>Contact</th><th>Relationship</th><th>Login Method</th><th>Actions</th></tr></thead>
+        <thead><tr><th>#</th><th>Full Name</th><th>Email</th><th>Contact</th><th>Relationship</th><th>Password Login</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($guardians)): ?>
                 <tr><td colspan="7" class="text-center text-muted py-3">No guardians found.</td></tr>
             <?php else: foreach ($guardians as $i => $g):
                 $hasPass = !empty($g['password_hash']);
-                $hasGoog = !empty($g['google_id']);
-                if ($hasPass && $hasGoog) $method = '<span class="badge bg-success">Both</span>';
-                elseif ($hasGoog) $method = '<span class="badge bg-info">Google</span>';
-                else $method = '<span class="badge bg-secondary">Email</span>';
+                $methodClass = $hasPass ? 'bg-secondary' : 'bg-warning text-dark';
+                $methodLabel = $hasPass ? 'Enabled' : 'Not Set';
             ?>
             <tr>
-                <td><?= $offset + $i + 1 ?></td>
+                <td><?= e((string)($offset + $i + 1)) ?></td>
                 <td class="fw-bold"><?= e($g['full_name']) ?></td>
                 <td><?= e($g['email']) ?></td>
                 <td><?= e($g['contact_number'] ?? 'N/A') ?></td>
                 <td><?= e($g['relationship_to_student'] ?? 'N/A') ?></td>
-                <td><?= $method ?></td>
+                <td><span class="badge <?= e($methodClass) ?>"><?= e($methodLabel) ?></span></td>
                 <td>
-                    <a href="?action=edit&id=<?= $g['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= $g['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <a href="?action=edit&id=<?= (int)$g['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$g['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>

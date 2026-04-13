@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * Complete Profile — Post-Google Signup
+ * Complete Profile â€” Post-Google Signup
  * New Google users must fill in guardian details before entering the system.
  */
 
@@ -74,7 +74,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php endif; ?>
 
                 <form method="POST" action="" id="complete-profile-form">
-                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
 
                     <div class="mb-3">
                         <label for="contact" class="form-label">Contact Number <span class="text-danger">*</span></label>
@@ -90,10 +90,10 @@ require_once __DIR__ . '/../includes/header.php';
                         <label for="relationship" class="form-label">Relationship to Student <span class="text-danger">*</span></label>
                         <select class="form-select" id="relationship" name="relationship" required>
                             <option value="">Select...</option>
-                            <option value="Parent" <?= $formData['relationship'] === 'Parent' ? 'selected' : '' ?>>Parent</option>
-                            <option value="Guardian" <?= $formData['relationship'] === 'Guardian' ? 'selected' : '' ?>>Guardian</option>
-                            <option value="Sibling" <?= $formData['relationship'] === 'Sibling' ? 'selected' : '' ?>>Sibling</option>
-                            <option value="Other" <?= $formData['relationship'] === 'Other' ? 'selected' : '' ?>>Other</option>
+                            <option value="Parent" <?= e($formData['relationship'] === 'Parent' ? 'selected' : '') ?>>Parent</option>
+                            <option value="Guardian" <?= e($formData['relationship'] === 'Guardian' ? 'selected' : '') ?>>Guardian</option>
+                            <option value="Sibling" <?= e($formData['relationship'] === 'Sibling' ? 'selected' : '') ?>>Sibling</option>
+                            <option value="Other" <?= e($formData['relationship'] === 'Other' ? 'selected' : '') ?>>Other</option>
                         </select>
                     </div>
 
@@ -107,3 +107,4 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

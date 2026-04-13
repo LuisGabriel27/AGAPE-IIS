@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * Admin Payments — View all payments, record manual, export CSV
+ * Admin Payments â€” View all payments, record manual, export CSV
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -13,7 +13,7 @@ $pdo = getDB();
 $action = $_GET['action'] ?? '';
 $errors = [];
 
-// ── Export CSV ──────────────────────────────────────────
+// â”€â”€ Export CSV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ($action === 'export') {
     $stmt = $pdo->query("
         SELECT p.id, s.full_name AS student, e.school_year, e.term, p.amount, p.method, p.reference_no, p.description, p.status, p.paid_at
@@ -33,7 +33,7 @@ if ($action === 'export') {
     exit;
 }
 
-// ── Record Manual Payment ───────────────────────────────
+// â”€â”€ Record Manual Payment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ($action === 'record' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
     $enrollmentId = (int)($_POST['enrollment_id'] ?? 0);
@@ -86,7 +86,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-md-4"><h4 class="fw-bold"><i class="bi bi-cash-stack me-2"></i>Payments</h4></div>
     <div class="col-md-8 text-md-end d-flex justify-content-md-end gap-2">
-        <span class="badge bg-success fs-6 align-self-center">Total Collected: ₱<?= number_format($totalPaid, 2) ?></span>
+        <span class="badge bg-success fs-6 align-self-center">Total Collected: &#8369;<?= e(number_format($totalPaid, 2)) ?></span>
         <a href="?action=record" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i>Record Payment</a>
         <a href="?action=export" class="btn btn-outline-success btn-sm"><i class="bi bi-download me-1"></i>Export CSV</a>
     </div>
@@ -101,14 +101,14 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="card-header bg-white fw-bold">Record Manual Payment</div>
     <div class="card-body">
         <form method="POST" id="payment-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Enrollment <span class="text-danger">*</span></label>
                     <select class="form-select" name="enrollment_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($enrollmentsList as $en): ?>
-                            <option value="<?= $en['id'] ?>"><?= e($en['full_name']) ?> — <?= e($en['school_year']) ?> (<?= e($en['term']) ?>)</option>
+                            <option value="<?= (int)$en['id'] ?>"><?= e($en['full_name']) ?> - <?= e($en['school_year']) ?> (<?= e($en['term']) ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -155,15 +155,15 @@ require_once __DIR__ . '/../includes/header.php';
                 <tr><td colspan="9" class="text-center text-muted py-3">No payments found.</td></tr>
             <?php else: foreach ($payments as $i => $p): ?>
             <tr>
-                <td><?= $offset + $i + 1 ?></td>
+                <td><?= e((string)($offset + $i + 1)) ?></td>
                 <td class="fw-bold"><?= e($p['student_name']) ?></td>
-                <td><?= e($p['school_year']) ?> — <?= e($p['term']) ?></td>
+                <td><?= e($p['school_year']) ?> - <?= e($p['term']) ?></td>
                 <td><?= e($p['description'] ?? '') ?></td>
-                <td class="text-end">₱<?= number_format($p['amount'], 2) ?></td>
+                <td class="text-end">&#8369;<?= e(number_format($p['amount'], 2)) ?></td>
                 <td><?= e(ucfirst($p['method'])) ?></td>
                 <td><small><?= e($p['reference_no'] ?? 'N/A') ?></small></td>
                 <td><span class="badge badge-status-<?= e($p['status']) ?>"><?= e(ucfirst($p['status'])) ?></span></td>
-                <td><?= $p['paid_at'] ? e(date('M d, Y', strtotime($p['paid_at']))) : '—' ?></td>
+                <td><?= $p['paid_at'] ? e(date('M d, Y', strtotime($p['paid_at']))) : '-' ?></td>
             </tr>
             <?php endforeach; endif; ?>
         </tbody>
@@ -171,3 +171,4 @@ require_once __DIR__ . '/../includes/header.php';
 </div></div>
 <?= paginationLinks($page, $totalPages, '?x=1') ?>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

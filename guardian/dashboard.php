@@ -96,28 +96,28 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="kpi-card bg-gradient-primary">
             <div class="kpi-icon"><i class="bi bi-people"></i></div>
             <div class="kpi-label">Students</div>
-            <div class="kpi-value"><?= $studentCount ?></div>
+            <div class="kpi-value"><?= e((string)$studentCount) ?></div>
         </div>
     </div>
     <div class="col-md-3 col-6">
         <div class="kpi-card bg-gradient-success">
             <div class="kpi-icon"><i class="bi bi-trophy"></i></div>
             <div class="kpi-label">GWA</div>
-            <div class="kpi-value"><?= $gwa > 0 ? $gwa : 'N/A' ?></div>
+            <div class="kpi-value"><?= e($gwa > 0 ? number_format((float)$gwa, 2) : 'N/A') ?></div>
         </div>
     </div>
     <div class="col-md-3 col-6">
         <div class="kpi-card bg-gradient-info">
             <div class="kpi-icon"><i class="bi bi-calendar-check"></i></div>
             <div class="kpi-label">Days Present</div>
-            <div class="kpi-value"><?= $attendanceDays ?></div>
+            <div class="kpi-value"><?= e((string)$attendanceDays) ?></div>
         </div>
     </div>
     <div class="col-md-3 col-6">
         <div class="kpi-card bg-gradient-warning">
             <div class="kpi-icon"><i class="bi bi-calendar-x"></i></div>
             <div class="kpi-label">Days Absent</div>
-            <div class="kpi-value"><?= $absentDays ?></div>
+            <div class="kpi-value"><?= e((string)$absentDays) ?></div>
         </div>
     </div>
 </div>
@@ -135,7 +135,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="d-flex align-items-center mb-3 p-2 rounded bg-light">
                         <div class="me-3">
                             <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:1.2rem;">
-                                <?= strtoupper(substr($stu['full_name'], 0, 1)) ?>
+                                <?= e(strtoupper(substr($stu['full_name'], 0, 1))) ?>
                             </div>
                         </div>
                         <div>
@@ -186,7 +186,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <table class="table table-sm mb-0">
                         <tr>
                             <th>Date</th><td><?= e($latestPayment['paid_at'] ? date('M d, Y', strtotime($latestPayment['paid_at'])) : 'Pending') ?></td>
-                            <th>Amount</th><td>₱<?= number_format($latestPayment['amount'], 2) ?></td>
+                            <th>Amount</th><td>₱<?= e(number_format((float)$latestPayment['amount'], 2)) ?></td>
                         </tr>
                         <tr>
                             <th>Method</th><td><?= e(ucfirst($latestPayment['method'])) ?></td>

@@ -69,21 +69,21 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="kpi-card bg-gradient-primary">
             <div class="kpi-icon"><i class="bi bi-book"></i></div>
             <div class="kpi-label">Subjects</div>
-            <div class="kpi-value"><?= count(array_unique(array_column($assignments, 'subject_id'))) ?></div>
+            <div class="kpi-value"><?= e((string)count(array_unique(array_column($assignments, 'subject_id')))) ?></div>
         </div>
     </div>
     <div class="col-md-4 col-6">
         <div class="kpi-card bg-gradient-success">
             <div class="kpi-icon"><i class="bi bi-people"></i></div>
             <div class="kpi-label">Sections</div>
-            <div class="kpi-value"><?= count(array_unique(array_column($assignments, 'section_id'))) ?></div>
+            <div class="kpi-value"><?= e((string)count(array_unique(array_column($assignments, 'section_id')))) ?></div>
         </div>
     </div>
     <div class="col-md-4 col-6">
         <div class="kpi-card bg-gradient-info">
             <div class="kpi-icon"><i class="bi bi-clock"></i></div>
             <div class="kpi-label">Classes/Week</div>
-            <div class="kpi-value"><?= count($assignments) ?></div>
+            <div class="kpi-value"><?= e((string)count($assignments)) ?></div>
         </div>
     </div>
 </div>
@@ -109,9 +109,9 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td><span class="badge bg-secondary"><?= e($a['subject_code']) ?></span></td>
                                 <td><?= e($a['section_name']) ?></td>
                                 <td>Grade <?= e($a['grade_level']) ?></td>
-                                <td><?= $a['units'] ?></td>
+                                <td><?= e((string)$a['units']) ?></td>
                                 <td>
-                                    <a href="<?= APP_URL ?>/teacher/teacher-grades.php?subject_id=<?= $a['subject_id'] ?>&section_id=<?= $a['section_id'] ?>" class="btn btn-sm btn-outline-primary">
+                                    <a href="<?= APP_URL ?>/teacher/teacher-grades.php?subject_id=<?= (int)$a['subject_id'] ?>&section_id=<?= (int)$a['section_id'] ?>" class="btn btn-sm btn-outline-primary">
                                         <i class="bi bi-pencil-square me-1"></i>Grades
                                     </a>
                                 </td>
@@ -145,7 +145,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <div class="list-group-item px-0">
                             <div class="d-flex justify-content-between">
                                 <strong><?= e($ev['title']) ?></strong>
-                                <span class="badge <?= $badgeClass ?>"><?= e(ucfirst($ev['type'])) ?></span>
+                                <span class="badge <?= e($badgeClass) ?>"><?= e(ucfirst($ev['type'])) ?></span>
                             </div>
                             <small class="text-muted"><?= e(date('M d', strtotime($ev['date_start']))) ?> — <?= e(date('M d, Y', strtotime($ev['date_end']))) ?></small>
                         </div>

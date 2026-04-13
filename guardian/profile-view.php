@@ -1,7 +1,6 @@
 <?php
 /**
  * Guardian Profile View — Read-only display of personal and student info.
- * Shows Google account link status.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -34,7 +33,6 @@ if ($guardian) {
     $students = $stmt->fetchAll();
 }
 
-$hasGoogle   = !empty($user['google_id']);
 $hasPassword = !empty($user['password_hash']);
 
 $pageTitle = 'My Profile';
@@ -70,25 +68,12 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr><th>Member Since</th><td><?= e(date('M d, Y', strtotime($user['created_at']))) ?></td></tr>
                     <tr><th>Last Login</th><td><?= $user['last_login'] ? e(date('M d, Y g:i A', strtotime($user['last_login']))) : 'Never' ?></td></tr>
                     <tr>
-                        <th>Login Method</th>
+                        <th>Password Login</th>
                         <td>
-                            <?php if ($hasPassword && $hasGoogle): ?>
-                                <span class="badge bg-success">Email & Google</span>
-                            <?php elseif ($hasGoogle): ?>
-                                <span class="badge bg-info">Google Only</span>
+                            <?php if ($hasPassword): ?>
+                                <span class="badge bg-secondary">Enabled</span>
                             <?php else: ?>
-                                <span class="badge bg-secondary">Email/Password</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th>Google Account</th>
-                        <td>
-                            <?php if ($hasGoogle): ?>
-                                <span class="text-success"><i class="bi bi-check-circle me-1"></i>Linked</span>
-                            <?php else: ?>
-                                <span class="text-muted"><i class="bi bi-x-circle me-1"></i>Not Linked</span>
-                                — <a href="<?= APP_URL ?>/auth/login.php" class="small">Link Google Account</a>
+                                <span class="badge bg-warning text-dark">Not Set</span>
                             <?php endif; ?>
                         </td>
                     </tr>

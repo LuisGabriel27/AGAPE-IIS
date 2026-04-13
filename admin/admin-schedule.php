@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * Admin Schedules — CRUD: assign subject + section + teacher + room + day/time
+ * Admin Schedules â€” CRUD: assign subject + section + teacher + room + day/time
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -100,17 +100,17 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add Schedule' : 'Edit Schedule' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add Schedule' : 'Edit Schedule') ?></div>
     <div class="card-body">
         <form method="POST" id="schedule-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Subject <span class="text-danger">*</span></label>
                     <select class="form-select" name="subject_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($subjectsList as $s): ?>
-                            <option value="<?= $s['id'] ?>" <?= ($editSched['subject_id'] ?? 0) == $s['id'] ? 'selected' : '' ?>><?= e($s['code'] . ' — ' . $s['name']) ?></option>
+                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['subject_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>><?= e($s['code'] . ' - ' . $s['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -119,7 +119,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <select class="form-select" name="section_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($sectionsList as $s): ?>
-                            <option value="<?= $s['id'] ?>" <?= ($editSched['section_id'] ?? 0) == $s['id'] ? 'selected' : '' ?>><?= e($s['name'] . ' (Gr. ' . $s['grade_level'] . ')') ?></option>
+                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['section_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>><?= e($s['name'] . ' (Gr. ' . $s['grade_level'] . ')') ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -128,7 +128,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <select class="form-select" name="teacher_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($teachersList as $t): ?>
-                            <option value="<?= $t['id'] ?>" <?= ($editSched['teacher_id'] ?? 0) == $t['id'] ? 'selected' : '' ?>><?= e($t['full_name']) ?></option>
+                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSched['teacher_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e($t['full_name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -136,7 +136,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <label class="form-label">Day <span class="text-danger">*</span></label>
                     <select class="form-select" name="day_of_week" required>
                         <?php foreach ($days as $d): ?>
-                            <option value="<?= $d ?>" <?= ($editSched['day_of_week'] ?? '') === $d ? 'selected' : '' ?>><?= $d ?></option>
+                            <option value="<?= e($d) ?>" <?= e(($editSched['day_of_week'] ?? '') === $d ? 'selected' : '') ?>><?= e($d) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -174,15 +174,15 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
             <?php else: foreach ($schedules as $s): ?>
             <tr>
                 <td><?= e($s['day_of_week']) ?></td>
-                <td><?= e(date('g:i A', strtotime($s['time_start']))) ?> – <?= e(date('g:i A', strtotime($s['time_end']))) ?></td>
+                <td><?= e(date('g:i A', strtotime($s['time_start']))) ?> - <?= e(date('g:i A', strtotime($s['time_end']))) ?></td>
                 <td><span class="badge bg-secondary"><?= e($s['subject_code']) ?></span> <?= e($s['subject_name']) ?></td>
-                <td><?= e($s['section_name']) ?> (Gr. <?= e($s['grade_level']) ?>)</td>
+                <td><?= e($s['section_name']) ?> (Gr. <?= e((string)$s['grade_level']) ?>)</td>
                 <td><?= e($s['teacher_name']) ?></td>
                 <td><?= e($s['room'] ?? 'TBD') ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= $s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= $s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>
@@ -193,3 +193,4 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 </div></div>
 <?= paginationLinks($page, $totalPages, '?x=1') ?>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
