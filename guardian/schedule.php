@@ -96,7 +96,9 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="row mb-4">
     <div class="col-12">
-        <h4 class="fw-bold"><i class="bi bi-calendar-week me-2"></i>Schedule & Calendar</h4>
+        <div class="page-header-guardian">
+            <h4><i class="bi bi-calendar-week me-2"></i>Schedule & Calendar</h4>
+        </div>
     </div>
 </div>
 

@@ -37,7 +37,7 @@ if ($selectedStudent) {
         SELECT g.*, sub.code, sub.name AS subject_name, sub.units
         FROM grades g
         JOIN subjects sub ON g.subject_id = sub.id
-        WHERE g.student_id = :sid AND g.school_year = :sy AND g.term = :term
+        WHERE g.student_id = :sid AND g.school_year = :sy AND g.term = :term AND g.published = 1
         ORDER BY sub.name
     ");
     $stmt->execute([':sid' => $selectedStudent, ':sy' => $selectedYear, ':term' => $selectedTerm]);
@@ -65,7 +65,9 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="row mb-4">
     <div class="col-md-8">
-        <h4 class="fw-bold mb-0"><i class="bi bi-card-checklist me-2"></i>Student Grades</h4>
+        <div class="page-header-guardian">
+            <h4><i class="bi bi-card-checklist me-2"></i>Student Grades</h4>
+        </div>
     </div>
     <div class="col-md-4 text-md-end mt-3 mt-md-0">
         <?php if ($selectedStudent > 0): ?>

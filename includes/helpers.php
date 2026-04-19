@@ -102,16 +102,40 @@ function displayFlash(): string
 }
 
 /**
- * Get current school year string, e.g. "2025-2026".
+ * Get current school year string from the settings table.
+ * Result is cached in $_SESSION for the request lifetime.
+ * Falls back to date-based calculation if settings table is unavailable.
  */
 function currentSchoolYear(): string
 {
+    // Check session cache first
+    if (!empty($_SESSION['_cached_school_year'])) {
+        return $_SESSION['_cached_school_year'];
+    }
+
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("SELECT `value` FROM `settings` WHERE `key` = 'active_school_year' LIMIT 1");
+        $stmt->execute();
+        $result = $stmt->fetchColumn();
+        if ($result) {
+            $_SESSION['_cached_school_year'] = $result;
+            return $result;
+        }
+    } catch (Exception $e) {
+        // Fall through to date-based calculation
+    }
+
+    // Fallback: date-based calculation
     $year = (int)date('Y');
     $month = (int)date('m');
     if ($month >= 6) {
-        return $year . '-' . ($year + 1);
+        $sy = $year . '-' . ($year + 1);
+    } else {
+        $sy = ($year - 1) . '-' . $year;
     }
-    return ($year - 1) . '-' . $year;
+    $_SESSION['_cached_school_year'] = $sy;
+    return $sy;
 }
 
 /**
@@ -141,6 +165,14 @@ function generateSchoolYearCalendar(string $schoolYear): array
             'type' => 'event',
             'description' => 'National Schools Maintenance Week and Volunteer Teachers\' Month'
         ],
+        // Nutrition Month
+        [
+            'title' => 'Nutrition Month',
+            'date_start' => sprintf('%04d-07-01', $startYear),
+            'date_end' => sprintf('%04d-07-31', $startYear),
+            'type' => 'event',
+            'description' => 'National Nutrition Month celebration'
+        ],
         // Mid-Year Break
         [
             'title' => 'Mid-Year Break',
@@ -157,13 +189,21 @@ function generateSchoolYearCalendar(string $schoolYear): array
             'type' => 'event',
             'description' => 'Classes resume after mid-year break'
         ],
-        // National Teachers' Institute Founding
+        // National Heroes Day (last Monday of August)
         [
-            'title' => 'Founding of the National Teachers\' Institute',
-            'date_start' => sprintf('%04d-08-21', $startYear),
-            'date_end' => sprintf('%04d-08-21', $startYear),
+            'title' => 'National Heroes Day',
+            'date_start' => sprintf('%04d-08-25', $startYear),
+            'date_end' => sprintf('%04d-08-25', $startYear),
             'type' => 'holiday',
-            'description' => 'Special non-working day'
+            'description' => 'National holiday honoring Filipino heroes (last Monday of August)'
+        ],
+        // Linggo ng Wika / Buwan ng Wika culmination
+        [
+            'title' => 'Linggo ng Wika / Buwan ng Wika Culmination',
+            'date_start' => sprintf('%04d-08-25', $startYear),
+            'date_end' => sprintf('%04d-08-31', $startYear),
+            'type' => 'event',
+            'description' => 'Celebration of Filipino language — Buwan ng Wika culmination week'
         ],
         // All Saints' Day Break
         [
@@ -184,10 +224,26 @@ function generateSchoolYearCalendar(string $schoolYear): array
         // Christmas/New Year Break
         [
             'title' => 'Christmas/New Year Break',
-            'date_start' => sprintf('%04d-12-08', $startYear),
+            'date_start' => sprintf('%04d-12-22', $startYear),
             'date_end' => sprintf('%04d-01-02', $endYear),
             'type' => 'holiday',
             'description' => 'Extended holiday break for Christmas and New Year celebrations'
+        ],
+        // Rizal Day
+        [
+            'title' => 'Rizal Day',
+            'date_start' => sprintf('%04d-12-30', $startYear),
+            'date_end' => sprintf('%04d-12-30', $startYear),
+            'type' => 'holiday',
+            'description' => 'National holiday commemorating Dr. Jose Rizal'
+        ],
+        // New Year's Day
+        [
+            'title' => 'New Year\'s Day',
+            'date_start' => sprintf('%04d-01-01', $endYear),
+            'date_end' => sprintf('%04d-01-01', $endYear),
+            'type' => 'holiday',
+            'description' => 'New Year\'s Day national holiday'
         ],
         // First Semester Examinations
         [
@@ -197,21 +253,29 @@ function generateSchoolYearCalendar(string $schoolYear): array
             'type' => 'exam',
             'description' => 'Final examinations for the first semester'
         ],
+        // Valentine's / Friendship Day
+        [
+            'title' => 'Valentine\'s / Friendship Day',
+            'date_start' => sprintf('%04d-02-14', $endYear),
+            'date_end' => sprintf('%04d-02-14', $endYear),
+            'type' => 'event',
+            'description' => 'Valentine\'s Day / National Friendship Day celebration'
+        ],
         // EDSA Revolution Anniversary
         [
             'title' => 'EDSA Revolution Anniversary',
-            'date_start' => sprintf('%04d-02-10', $endYear),
-            'date_end' => sprintf('%04d-02-10', $endYear),
-            'type' => 'holiday',
-            'description' => 'Commemoration of the 1986 EDSA People Power Revolution'
-        ],
-        // EDSA Revolution Day (observed)
-        [
-            'title' => 'EDSA Revolution Day (observed)',
             'date_start' => sprintf('%04d-02-25', $endYear),
             'date_end' => sprintf('%04d-02-25', $endYear),
             'type' => 'holiday',
-            'description' => 'Observed holiday for EDSA Revolution'
+            'description' => 'Commemoration of the 1986 EDSA People Power Revolution'
+        ],
+        // National Reading Month
+        [
+            'title' => 'National Reading Month',
+            'date_start' => sprintf('%04d-03-01', $endYear),
+            'date_end' => sprintf('%04d-03-31', $endYear),
+            'type' => 'event',
+            'description' => 'Month-long celebration promoting reading and literacy'
         ],
         // Holy Week Break
         [
@@ -229,6 +293,14 @@ function generateSchoolYearCalendar(string $schoolYear): array
             'type' => 'exam',
             'description' => 'Final examinations for the second semester'
         ],
+        // Foundation Day placeholder
+        [
+            'title' => 'School Foundation Day (TBD)',
+            'date_start' => sprintf('%04d-04-01', $endYear),
+            'date_end' => sprintf('%04d-04-01', $endYear),
+            'type' => 'event',
+            'description' => 'School Foundation Day — date to be set by the school'
+        ],
         // Araw ng Kagitingan
         [
             'title' => 'Araw ng Kagitingan (Day of Valor)',
@@ -237,13 +309,21 @@ function generateSchoolYearCalendar(string $schoolYear): array
             'type' => 'holiday',
             'description' => 'National holiday commemorating the Battle of Bataan and Corregidor'
         ],
-        // End of School Year
+        // Moving Up / Graduation
         [
-            'title' => 'End of School Year ' . $schoolYear,
-            'date_start' => sprintf('%04d-04-09', $endYear),
-            'date_end' => sprintf('%04d-04-09', $endYear),
+            'title' => 'Moving Up / Graduation Ceremonies (TBD)',
+            'date_start' => sprintf('%04d-04-10', $endYear),
+            'date_end' => sprintf('%04d-04-10', $endYear),
             'type' => 'event',
-            'description' => 'Official end of the academic year'
-        ]
+            'description' => 'Graduation and moving up ceremonies — date to be set by the school'
+        ],
+        // End of School Year / Summer break start
+        [
+            'title' => 'End of School Year / Summer Break Starts',
+            'date_start' => sprintf('%04d-04-11', $endYear),
+            'date_end' => sprintf('%04d-04-11', $endYear),
+            'type' => 'event',
+            'description' => 'Official end of the academic year and start of summer break'
+        ],
     ];
 }

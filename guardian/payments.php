@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Guardian Payments Page
  * Full payment history table with sorting and running total.
@@ -58,7 +58,9 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 
 <div class="row mb-4">
     <div class="col-12 d-flex justify-content-between align-items-center">
-        <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Payment History</h4>
+        <div class="page-header-guardian">
+            <h4><i class="bi bi-credit-card me-2"></i>Payment History</h4>
+        </div>
         <span class="badge bg-success fs-6">Total Paid: &#8369;<?= e(number_format($totalPaid, 2)) ?></span>
     </div>
 </div>

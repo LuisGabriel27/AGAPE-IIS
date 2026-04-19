@@ -1,8 +1,9 @@
-﻿<?php
+<?php
 /**
  * Teacher Grades Page
- * Select class â†’ student list with grade input fields.
+ * Select class → student list with grade input fields.
  * Auto-compute Final Grade. Save as draft or submit final.
+ * Publish grades to make them visible to guardians.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -56,10 +57,11 @@ foreach ($classes as $c) {
 
 // Get students and their grades for the selected class
 $students = [];
+$publishedStatus = 0;
 if ($currentClass) {
     $stmt = $pdo->prepare("
         SELECT s.id, s.full_name, s.lrn,
-               g.id AS grade_id, g.midterm, g.finals, g.final_grade
+               g.id AS grade_id, g.midterm, g.finals, g.final_grade, g.published
         FROM students s
         JOIN sections sec ON s.section_id = sec.id
         LEFT JOIN grades g ON g.student_id = s.id 
@@ -76,15 +78,54 @@ if ($currentClass) {
         ':term'  => $selTerm,
     ]);
     $students = $stmt->fetchAll();
+
+    // Check if grades are published (use first student's record as indicator)
+    foreach ($students as $stu) {
+        if ($stu['grade_id'] !== null) {
+            $publishedStatus = (int)($stu['published'] ?? 0);
+            break;
+        }
+    }
 }
 
-// â”€â”€ Handle grade submission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Handle grade submission ─────────────────────────────
 $errors  = [];
 $success = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
     validateCsrf();
 
+    $postAction = $_POST['form_action'] ?? 'save_grades';
+
+    // ── Publish/Unpublish Toggle ─────────────────────────
+    if ($postAction === 'publish' || $postAction === 'unpublish') {
+        $newPublished = ($postAction === 'publish') ? 1 : 0;
+
+        $stmt = $pdo->prepare("
+            UPDATE grades SET published = :pub
+            WHERE subject_id = :subid AND school_year = :sy AND term = :term
+            AND student_id IN (
+                SELECT s.id FROM students s WHERE s.section_id = :secid
+            )
+        ");
+        $stmt->execute([
+            ':pub'   => $newPublished,
+            ':subid' => $selSubject,
+            ':sy'    => $selYear,
+            ':term'  => $selTerm,
+            ':secid' => $selSection,
+        ]);
+
+        auditLog($postAction === 'publish' ? 'grades_published' : 'grades_unpublished', 'grades', $selSubject, null, [
+            'section_id' => $selSection,
+            'school_year' => $selYear,
+            'term' => $selTerm,
+        ]);
+        setFlash('success', $postAction === 'publish' ? 'Grades published! Guardians can now view them.' : 'Grades unpublished. Guardians can no longer view them.');
+        redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection);
+    }
+
+    // ── Save Grades ──────────────────────────────────────
     $midterms    = $_POST['midterm'] ?? [];
     $finals      = $_POST['finals'] ?? [];
     $studentIds  = $_POST['student_ids'] ?? [];
@@ -124,8 +165,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
                 ]);
             } else {
                 $stmt = $pdo->prepare("
-                    INSERT INTO grades (student_id, subject_id, school_year, term, midterm, finals, final_grade, submitted_by, submitted_at)
-                    VALUES (:sid, :subid, :sy, :term, :mid, :fin, :fg, :tch, NOW())
+                    INSERT INTO grades (student_id, subject_id, school_year, term, midterm, finals, final_grade, submitted_by, submitted_at, published)
+                    VALUES (:sid, :subid, :sy, :term, :mid, :fin, :fg, :tch, NOW(), 0)
                 ");
                 $stmt->execute([
                     ':sid' => $studentId, ':subid' => $selSubject, ':sy' => $selYear, ':term' => $selTerm,
@@ -177,6 +218,11 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="col-md-4">
                 <?php if ($currentClass): ?>
                     <span class="badge bg-info"><?= e($selYear) ?> | <?= e($selTerm) ?></span>
+                    <?php if ($publishedStatus): ?>
+                        <span class="badge bg-success ms-1"><i class="bi bi-lock-fill me-1"></i>Published</span>
+                    <?php else: ?>
+                        <span class="badge bg-secondary ms-1"><i class="bi bi-pencil me-1"></i>Draft</span>
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         </form>
@@ -192,7 +238,28 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="card">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <span><i class="bi bi-list-check me-2"></i>Student List - <?= e($currentClass['subject_name']) ?> | Section <?= e($currentClass['section_name']) ?></span>
-        <span class="badge bg-secondary"><?= e((string)count($students)) ?> students</span>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary"><?= e((string)count($students)) ?> students</span>
+            <!-- Publish/Unpublish Button -->
+            <form method="POST" class="d-inline" id="publish-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                <input type="hidden" name="subject_id" value="<?= (int)$selSubject ?>">
+                <input type="hidden" name="section_id" value="<?= (int)$selSection ?>">
+                <input type="hidden" name="school_year" value="<?= e($selYear) ?>">
+                <input type="hidden" name="term" value="<?= e($selTerm) ?>">
+                <?php if ($publishedStatus): ?>
+                    <input type="hidden" name="form_action" value="unpublish">
+                    <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Unpublish grades? Guardians will no longer see them.')">
+                        <i class="bi bi-unlock me-1"></i>Unpublish
+                    </button>
+                <?php else: ?>
+                    <input type="hidden" name="form_action" value="publish">
+                    <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Publish grades? Guardians will be able to view them.')">
+                        <i class="bi bi-lock-fill me-1"></i>Publish Grades
+                    </button>
+                <?php endif; ?>
+            </form>
+        </div>
     </div>
     <div class="card-body p-0">
         <form method="POST" action="" id="grades-form">
@@ -201,6 +268,7 @@ require_once __DIR__ . '/../includes/header.php';
             <input type="hidden" name="section_id" value="<?= (int)$selSection ?>">
             <input type="hidden" name="school_year" value="<?= e($selYear) ?>">
             <input type="hidden" name="term" value="<?= e($selTerm) ?>">
+            <input type="hidden" name="form_action" value="save_grades">
 
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
@@ -291,4 +359,3 @@ document.querySelectorAll('.grade-input').forEach(input => {
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

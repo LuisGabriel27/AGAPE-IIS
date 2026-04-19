@@ -29,6 +29,9 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
+    <?php if (($userRole) === 'guardian'): ?>
+        <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/guardian.css">
+    <?php endif; ?>
 </head>
 <body>
 
@@ -97,7 +100,7 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
                href="<?= APP_URL ?>/admin/admin-schedule.php">
                 <i class="bi bi-calendar2-week-fill"></i> Schedules
             </a>
-            <a class="sidebar-link <?= e($currentPage === 'admin-calendar.php' ? 'active' : '') ?>"
+            <a class="sidebar-link <?= e(in_array($currentPage, ['admin-calendar.php', 'admin-calendar-import.php']) ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-calendar.php">
                 <i class="bi bi-calendar-event-fill"></i> Calendar
             </a>
@@ -110,6 +113,12 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
             <a class="sidebar-link <?= e($currentPage === 'admin-payments.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-payments.php">
                 <i class="bi bi-cash-stack"></i> Financial Ledger
+            </a>
+
+            <div class="sidebar-section">Settings</div>
+            <a class="sidebar-link <?= e($currentPage === 'admin-schoolyear.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/admin-schoolyear.php">
+                <i class="bi bi-calendar-range"></i> School Year
             </a>
 
         <?php elseif ($userRole === 'teacher'): ?>
@@ -128,6 +137,14 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
             <a class="sidebar-link <?= e($currentPage === 'teacher-schedule.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/teacher/teacher-schedule.php">
                 <i class="bi bi-calendar2-week-fill"></i> Schedule
+            </a>
+            <a class="sidebar-link <?= e($currentPage === 'teacher-attendance.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/teacher/teacher-attendance.php">
+                <i class="bi bi-clipboard-check"></i> Attendance
+            </a>
+            <a class="sidebar-link <?= e($currentPage === 'teacher-calendar.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/teacher/teacher-calendar.php">
+                <i class="bi bi-calendar-event-fill"></i> Calendar
             </a>
 
         <?php elseif ($userRole === 'guardian'): ?>

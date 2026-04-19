@@ -83,42 +83,72 @@ $pageTitle = 'Guardian Dashboard';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="row mb-4">
-    <div class="col-12">
-        <h4 class="fw-bold"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h4>
-        <p class="text-muted">Welcome back, <?= e($guardian['full_name'] ?? 'Guardian') ?>!</p>
+<!-- Guardian Hero Banner -->
+<div class="guardian-hero">
+    <div class="d-flex align-items-center gap-4 flex-wrap">
+        <div class="hero-icon">
+            <i class="bi bi-person-heart"></i>
+        </div>
+        <div class="flex-grow-1">
+            <?php if (!empty($students)): ?>
+                <div class="hero-title"><?= e($students[0]['full_name']) ?></div>
+                <div class="hero-subtitle">
+                    Grade <?= e($students[0]['grade_level'] ?? 'N/A') ?> — Section <?= e($students[0]['section_name'] ?? 'N/A') ?>
+                    <?php if ($students[0]['lrn']): ?> | LRN: <?= e($students[0]['lrn']) ?><?php endif; ?>
+                </div>
+            <?php else: ?>
+                <div class="hero-title">Welcome, <?= e($guardian['full_name'] ?? 'Guardian') ?>!</div>
+                <div class="hero-subtitle">No students linked yet. <a href="<?= APP_URL ?>/guardian/enrollment.php" style="color:white;text-decoration:underline;">Enroll a student</a>.</div>
+            <?php endif; ?>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <?php if ($gwa > 0): ?>
+                <span class="hero-badge"><i class="bi bi-trophy me-1"></i>GWA: <?= e(number_format((float)$gwa, 2)) ?></span>
+            <?php endif; ?>
+            <?php if ($studentCount > 1): ?>
+                <span class="hero-badge"><i class="bi bi-people me-1"></i><?= e((string)$studentCount) ?> Students</span>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 
-<!-- KPI Row -->
+<!-- Quick Action Cards (2×2) -->
 <div class="row g-3 mb-4">
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-primary">
-            <div class="kpi-icon"><i class="bi bi-people"></i></div>
-            <div class="kpi-label">Students</div>
-            <div class="kpi-value"><?= e((string)$studentCount) ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/grades.php" class="quick-action-card">
+            <div class="qa-icon" style="background:#CCFBF1;color:#0D9488;">
+                <i class="bi bi-card-checklist"></i>
+            </div>
+            <div class="qa-label">View Grades</div>
+            <div class="qa-sub">Academic performance</div>
+        </a>
     </div>
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-success">
-            <div class="kpi-icon"><i class="bi bi-trophy"></i></div>
-            <div class="kpi-label">GWA</div>
-            <div class="kpi-value"><?= e($gwa > 0 ? number_format((float)$gwa, 2) : 'N/A') ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/schedule.php" class="quick-action-card">
+            <div class="qa-icon" style="background:#D1FAE5;color:#059669;">
+                <i class="bi bi-calendar2-week-fill"></i>
+            </div>
+            <div class="qa-label">View Schedule</div>
+            <div class="qa-sub">Weekly timetable</div>
+        </a>
     </div>
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-info">
-            <div class="kpi-icon"><i class="bi bi-calendar-check"></i></div>
-            <div class="kpi-label">Days Present</div>
-            <div class="kpi-value"><?= e((string)$attendanceDays) ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/payments.php" class="quick-action-card">
+            <div class="qa-icon" style="background:#FEF3C7;color:#D97706;">
+                <i class="bi bi-credit-card-fill"></i>
+            </div>
+            <div class="qa-label">Payments</div>
+            <div class="qa-sub">Payment history</div>
+        </a>
     </div>
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-warning">
-            <div class="kpi-icon"><i class="bi bi-calendar-x"></i></div>
-            <div class="kpi-label">Days Absent</div>
-            <div class="kpi-value"><?= e((string)$absentDays) ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/report-card.php<?= !empty($students) ? '?student_id=' . (int)$students[0]['id'] : '' ?>" class="quick-action-card">
+            <div class="qa-icon" style="background:#FFE4E6;color:#E11D48;">
+                <i class="bi bi-printer-fill"></i>
+            </div>
+            <div class="qa-label">Report Card</div>
+            <div class="qa-sub">Print records</div>
+        </a>
     </div>
 </div>
 

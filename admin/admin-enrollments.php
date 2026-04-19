@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $newStatus = $_POST['new_status'] ?? '';
     $remarks   = trim($_POST['remarks'] ?? '');
 
-    if ($enrollId && in_array($newStatus, ['approved', 'rejected', 'enrolled'])) {
+    if ($enrollId && in_array($newStatus, ['pending', 'approved', 'rejected', 'enrolled'])) {
         $enrolledAt = $newStatus === 'enrolled' ? date('Y-m-d H:i:s') : null;
         $stmt = $pdo->prepare("UPDATE enrollments SET status = :s, remarks = :r, enrolled_at = :ea WHERE id = :id");
         $stmt->execute([':s' => $newStatus, ':r' => $remarks, ':ea' => $enrolledAt, ':id' => $enrollId]);
@@ -176,56 +176,52 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 <td><span class="badge badge-status-<?= e($en['status']) ?>"><?= e(ucfirst($en['status'])) ?></span></td>
                 <td><small class="text-muted"><?= e($en['remarks'] ?? '') ?></small></td>
                 <td>
-                    <?php if ($en['status'] === 'pending'): ?>
-                        <button class="btn btn-sm btn-success btn-icon" data-bs-toggle="modal" data-bs-target="#actionModal<?= (int)$en['id'] ?>" title="Review">
-                            <i class="bi bi-check-lg"></i>
-                        </button>
-                    <?php elseif ($en['status'] === 'approved'): ?>
-                        <form method="POST" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
-                            <input type="hidden" name="enrollment_id" value="<?= (int)$en['id'] ?>">
-                            <input type="hidden" name="new_status" value="enrolled">
-                            <input type="hidden" name="remarks" value="">
-                            <button class="btn btn-sm btn-primary btn-icon" title="Mark as Enrolled"><i class="bi bi-mortarboard-fill"></i></button>
-                        </form>
-                    <?php endif; ?>
+                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#actionModal<?= (int)$en['id'] ?>" title="Update Status">
+                        <i class="bi bi-pencil-square me-1"></i>Update
+                    </button>
                 </td>
             </tr>
 
-            <?php if ($en['status'] === 'pending'): ?>
             <!-- Action Modal -->
             <div class="modal fade" id="actionModal<?= (int)$en['id'] ?>" tabindex="-1">
                 <div class="modal-dialog">
                     <div class="modal-content">
                         <div class="modal-header">
-                            <h5 class="modal-title">Review Enrollment — <?= e($en['student_name']) ?></h5>
+                            <h5 class="modal-title">Update Enrollment — <?= e($en['student_name']) ?></h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <form method="POST">
                             <div class="modal-body">
                                 <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                                 <input type="hidden" name="enrollment_id" value="<?= (int)$en['id'] ?>">
+
                                 <div class="mb-3">
-                                    <label class="form-label">Decision</label>
+                                    <label class="form-label fw-semibold">Current Status</label>
+                                    <div><span class="badge badge-status-<?= e($en['status']) ?> fs-6"><?= e(ucfirst($en['status'])) ?></span></div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">New Status <span class="text-danger">*</span></label>
                                     <select class="form-select" name="new_status" required>
-                                        <option value="approved">Approve</option>
-                                        <option value="rejected">Reject</option>
+                                        <?php foreach (['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected', 'enrolled' => 'Enrolled'] as $val => $label): ?>
+                                            <option value="<?= e($val) ?>" <?= e($en['status'] === $val ? 'selected' : '') ?>><?= e($label) ?></option>
+                                        <?php endforeach; ?>
                                     </select>
                                 </div>
+
                                 <div class="mb-3">
-                                    <label class="form-label">Remarks</label>
-                                    <textarea class="form-control" name="remarks" rows="2"></textarea>
+                                    <label class="form-label fw-semibold">Remarks</label>
+                                    <textarea class="form-control" name="remarks" rows="2" placeholder="Optional remarks..."><?= e($en['remarks'] ?? '') ?></textarea>
                                 </div>
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Submit</button>
+                                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Update Status</button>
                             </div>
                         </form>
                     </div>
                 </div>
             </div>
-            <?php endif; ?>
 
             <?php endforeach; endif; ?>
         </tbody>
