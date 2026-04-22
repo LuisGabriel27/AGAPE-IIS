@@ -46,7 +46,7 @@ foreach ($assignments as $a) {
 // Get upcoming calendar events (next 3)
 $stmt = $pdo->prepare("
     SELECT * FROM calendar_events 
-    WHERE date_end >= CURDATE() 
+    WHERE date_end >= CURRENT_DATE 
     ORDER BY date_start 
     LIMIT 3
 ");

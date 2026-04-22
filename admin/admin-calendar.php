@@ -63,9 +63,9 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
 
     if (empty($errors)) {
         if ($action === 'create') {
-            $stmt = $pdo->prepare("INSERT INTO calendar_events (title, date_start, date_end, type, description, created_by, source, school_year) VALUES (:t, :ds, :de, :tp, :desc, :cb, 'manual', '')");
+            $stmt = $pdo->prepare("INSERT INTO calendar_events (title, date_start, date_end, type, description, created_by, source, school_year) VALUES (:t, :ds, :de, :tp, :desc, :cb, 'manual', '') RETURNING id");
             $stmt->execute([':t'=>$title,':ds'=>$dateStart,':de'=>$dateEnd,':tp'=>$type,':desc'=>$description,':cb'=>$_SESSION['user_id']]);
-            auditLog('create_event', 'calendar_events', (int)$pdo->lastInsertId());
+            auditLog('create_event', 'calendar_events', (int)$stmt->fetchColumn());
             setFlash('success', 'Event created successfully.');
         } else {
             $stmt = $pdo->prepare("UPDATE calendar_events SET title=:t, date_start=:ds, date_end=:de, type=:tp, description=:desc WHERE id=:id AND source='manual'");

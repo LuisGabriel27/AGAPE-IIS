@@ -45,7 +45,7 @@ if ($sectionId) {
         JOIN subjects sub ON sch.subject_id = sub.id
         JOIN teachers t ON sch.teacher_id = t.id
         WHERE sch.section_id = :secid
-        ORDER BY FIELD(sch.day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday'), sch.time_start
+        ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
     ");
     $stmt->execute([':secid' => $sectionId]);
     $scheduleRows = $stmt->fetchAll();

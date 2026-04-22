@@ -54,7 +54,7 @@ $stmt = $pdo->query("
 $recentActivity = $stmt->fetchAll();
 
 // Upcoming events
-$stmt = $pdo->query("SELECT * FROM calendar_events WHERE date_end >= CURDATE() ORDER BY date_start LIMIT 5");
+$stmt = $pdo->query("SELECT * FROM calendar_events WHERE date_end >= CURRENT_DATE ORDER BY date_start LIMIT 5");
 $upcomingEvents = $stmt->fetchAll();
 
 $pageTitle = 'Admin Dashboard';

@@ -44,13 +44,13 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
                     $pdo->prepare("UPDATE users SET role = 'teacher' WHERE id = :id")->execute([':id' => $uId]);
                 } else {
                     $hash = password_hash('Teacher@1234', PASSWORD_BCRYPT);
-                    $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, 'teacher', 1, NOW())");
+                    $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, 'teacher', 1, NOW()) RETURNING id");
                     $stmt->execute([':e' => $userEmail, ':h' => $hash]);
-                    $uId = $pdo->lastInsertId();
+                    $uId = $stmt->fetchColumn();
                 }
-                $stmt = $pdo->prepare("INSERT INTO teachers (user_id, full_name, contact_number, department) VALUES (:uid, :n, :c, :d)");
+                $stmt = $pdo->prepare("INSERT INTO teachers (user_id, full_name, contact_number, department) VALUES (:uid, :n, :c, :d) RETURNING id");
                 $stmt->execute([':uid' => $uId, ':n' => $fullName, ':c' => $contact, ':d' => $department]);
-                auditLog('create_teacher', 'teachers', (int)$pdo->lastInsertId());
+                auditLog('create_teacher', 'teachers', (int)$stmt->fetchColumn());
                 setFlash('success', 'Teacher created. Default password: Teacher@1234');
                 redirect(APP_URL . '/admin/admin-teachers.php');
             }

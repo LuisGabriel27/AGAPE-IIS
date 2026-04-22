@@ -34,9 +34,9 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
 
     if (empty($errors)) {
         if ($action === 'create') {
-            $stmt = $pdo->prepare("INSERT INTO sections (name, grade_level, adviser_id, capacity) VALUES (:n, :g, :a, :c)");
+            $stmt = $pdo->prepare("INSERT INTO sections (name, grade_level, adviser_id, capacity) VALUES (:n, :g, :a, :c) RETURNING id");
             $stmt->execute([':n' => $name, ':g' => $gradeLevel, ':a' => $adviserId, ':c' => $capacity]);
-            auditLog('create_section', 'sections', (int)$pdo->lastInsertId());
+            auditLog('create_section', 'sections', (int)$stmt->fetchColumn());
             setFlash('success', 'Section created.');
         } else {
             $stmt = $pdo->prepare("UPDATE sections SET name=:n, grade_level=:g, adviser_id=:a, capacity=:c WHERE id=:id");
@@ -93,9 +93,9 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Grade Level <span class="text-danger">*</span></label>
                     <select class="form-select" name="grade_level" required>
                         <option value="">Select...</option>
-                        <?php for ($g = 7; $g <= 12; $g++): ?>
-                            <option value="<?= e((string)$g) ?>" <?= e(($editSection['grade_level'] ?? '') == $g ? 'selected' : '') ?>>Grade <?= e((string)$g) ?></option>
-                        <?php endfor; ?>
+                        <?php foreach (['Kindergarten','1','2','3','4','5','6'] as $g): ?>
+                            <option value="<?= e($g) ?>" <?= e(($editSection['grade_level'] ?? '') == $g ? 'selected' : '') ?>><?= $g === 'Kindergarten' ? 'Kindergarten' : 'Grade ' . e($g) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-4 mb-3">

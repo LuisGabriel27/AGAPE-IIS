@@ -11,11 +11,11 @@ require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
-$pdo->exec("CREATE TABLE IF NOT EXISTS settings (
-    `key` VARCHAR(100) PRIMARY KEY,
-    `value` TEXT NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-$pdo->exec("INSERT IGNORE INTO settings (`key`, `value`) VALUES ('attendance_module_enabled', '1')");
+// Settings table is pre-created in Supabase schema
+try {
+    $pdo->prepare("INSERT INTO settings (\"key\", \"value\") VALUES (:k, :v) ON CONFLICT (\"key\") DO NOTHING")
+        ->execute([':k' => 'attendance_module_enabled', ':v' => '1']);
+} catch (PDOException $e) { /* ignore if already exists */ }
 
 $attendanceEnabled = attendanceModuleEnabled();
 
@@ -34,39 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_action'] ?? '') === '
 
 function ensureAttendanceTables(PDO $pdo): void
 {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS student_face_profiles (
-        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        student_id INT UNSIGNED NOT NULL,
-        face_descriptor LONGTEXT NOT NULL,
-        face_image_path VARCHAR(500) DEFAULT NULL,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_face_profile_student (student_id),
-        CONSTRAINT fk_face_profile_student
-            FOREIGN KEY (student_id) REFERENCES students(id)
-            ON DELETE CASCADE ON UPDATE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS attendance_logs (
-        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        student_id INT UNSIGNED NOT NULL,
-        attendance_date DATE NOT NULL,
-        attendance_status ENUM('present','late','absent') NOT NULL DEFAULT 'present',
-        method ENUM('face','manual') NOT NULL DEFAULT 'face',
-        confidence DECIMAL(6,5) DEFAULT NULL,
-        marked_by INT UNSIGNED DEFAULT NULL,
-        marked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_attendance_student_day (student_id, attendance_date),
-        KEY idx_attendance_date (attendance_date),
-        CONSTRAINT fk_attendance_student
-            FOREIGN KEY (student_id) REFERENCES students(id)
-            ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT fk_attendance_marker
-            FOREIGN KEY (marked_by) REFERENCES users(id)
-            ON DELETE SET NULL ON UPDATE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    // Tables are pre-created in Supabase schema — no DDL needed at runtime
 }
 
 function attendanceJson(array $payload, int $status = 200): void
@@ -198,9 +166,9 @@ if ($ajax !== '') {
         $stmt = $pdo->prepare(
             "INSERT INTO student_face_profiles (student_id, face_descriptor, face_image_path, created_at, updated_at)
              VALUES (:student_id, :face_descriptor, :face_image_path, NOW(), NOW())
-             ON DUPLICATE KEY UPDATE
-                face_descriptor = VALUES(face_descriptor),
-                face_image_path = VALUES(face_image_path),
+             ON CONFLICT (student_id) DO UPDATE SET
+                face_descriptor = EXCLUDED.face_descriptor,
+                face_image_path = EXCLUDED.face_image_path,
                 updated_at = NOW()"
         );
         $stmt->execute([
@@ -255,7 +223,7 @@ if ($ajax !== '') {
 
         $existingStmt = $pdo->prepare(
             "SELECT id FROM attendance_logs
-             WHERE student_id = :student_id AND attendance_date = CURDATE()
+             WHERE student_id = :student_id AND attendance_date = CURRENT_DATE
              LIMIT 1"
         );
         $existingStmt->execute([':student_id' => $studentId]);
@@ -290,20 +258,20 @@ if ($ajax !== '') {
                     marked_at
                  ) VALUES (
                     :student_id,
-                    CURDATE(),
+                    CURRENT_DATE,
                     'present',
                     'face',
                     :confidence,
                     :marked_by,
                     NOW()
-                 )"
+                 ) RETURNING id"
             );
             $insertStmt->execute([
                 ':student_id' => $studentId,
                 ':confidence' => $confidence,
                 ':marked_by' => $_SESSION['user_id'] ?? null,
             ]);
-            $attendanceId = (int)$pdo->lastInsertId();
+            $attendanceId = (int)$insertStmt->fetchColumn();
             $message = 'Attendance marked for today.';
         }
 
@@ -356,7 +324,7 @@ $todayAttendance = $pdo->query(
      FROM attendance_logs a
      INNER JOIN students s ON s.id = a.student_id
      LEFT JOIN sections sec ON sec.id = s.section_id
-     WHERE a.attendance_date = CURDATE()
+     WHERE a.attendance_date = CURRENT_DATE
      ORDER BY a.marked_at DESC"
 )->fetchAll();
 

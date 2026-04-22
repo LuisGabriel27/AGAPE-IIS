@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Admin Payments â€” View all payments, record manual, export CSV
  */
@@ -48,9 +48,9 @@ if ($action === 'record' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $paidAt = $status === 'paid' ? date('Y-m-d H:i:s') : null;
-        $stmt = $pdo->prepare("INSERT INTO payments (enrollment_id, amount, method, reference_no, description, status, paid_at, recorded_by) VALUES (:eid, :amt, :m, :ref, :desc, :st, :pa, :rb)");
+        $stmt = $pdo->prepare("INSERT INTO payments (enrollment_id, amount, method, reference_no, description, status, paid_at, recorded_by) VALUES (:eid, :amt, :m, :ref, :desc, :st, :pa, :rb) RETURNING id");
         $stmt->execute([':eid'=>$enrollmentId,':amt'=>$amount,':m'=>$method,':ref'=>$refNo,':desc'=>$description,':st'=>$status,':pa'=>$paidAt,':rb'=>$_SESSION['user_id']]);
-        auditLog('record_payment', 'payments', (int)$pdo->lastInsertId());
+        auditLog('record_payment', 'payments', (int)$stmt->fetchColumn());
         setFlash('success', 'Payment recorded.');
         redirect(APP_URL . '/admin/admin-payments.php');
     }

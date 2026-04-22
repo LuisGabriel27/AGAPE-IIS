@@ -29,7 +29,6 @@ if ($action === 'delete' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
     $data = [
-        'guardian_id'  => (int)($_POST['guardian_id'] ?? 0),
         'full_name'    => trim($_POST['full_name'] ?? ''),
         'birthdate'    => trim($_POST['birthdate'] ?? ''),
         'gender'       => trim($_POST['gender'] ?? ''),
@@ -39,17 +38,16 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
     ];
 
     if (empty($data['full_name'])) $errors[] = 'Full name is required.';
-    if (empty($data['guardian_id'])) $errors[] = 'Guardian is required.';
 
     if (empty($errors)) {
         if ($action === 'create') {
-            $stmt = $pdo->prepare("INSERT INTO students (guardian_id, full_name, birthdate, gender, grade_level, section_id, lrn) VALUES (:gid, :name, :birth, :gender, :grade, :sec, :lrn)");
-            $stmt->execute([':gid' => $data['guardian_id'], ':name' => $data['full_name'], ':birth' => $data['birthdate'] ?: null, ':gender' => $data['gender'] ?: null, ':grade' => $data['grade_level'], ':sec' => $data['section_id'], ':lrn' => $data['lrn'] ?: null]);
-            auditLog('create_student', 'students', (int)$pdo->lastInsertId());
+            $stmt = $pdo->prepare("INSERT INTO students (full_name, birthdate, gender, grade_level, section_id, lrn) VALUES (:name, :birth, :gender, :grade, :sec, :lrn) RETURNING id");
+            $stmt->execute([':name' => $data['full_name'], ':birth' => $data['birthdate'] ?: null, ':gender' => $data['gender'] ?: null, ':grade' => $data['grade_level'], ':sec' => $data['section_id'], ':lrn' => $data['lrn'] ?: null]);
+            auditLog('create_student', 'students', (int)$stmt->fetchColumn());
             setFlash('success', 'Student created.');
         } else {
-            $stmt = $pdo->prepare("UPDATE students SET guardian_id=:gid, full_name=:name, birthdate=:birth, gender=:gender, grade_level=:grade, section_id=:sec, lrn=:lrn WHERE id=:id");
-            $stmt->execute([':gid' => $data['guardian_id'], ':name' => $data['full_name'], ':birth' => $data['birthdate'] ?: null, ':gender' => $data['gender'] ?: null, ':grade' => $data['grade_level'], ':sec' => $data['section_id'], ':lrn' => $data['lrn'] ?: null, ':id' => $id]);
+            $stmt = $pdo->prepare("UPDATE students SET full_name=:name, birthdate=:birth, gender=:gender, grade_level=:grade, section_id=:sec, lrn=:lrn WHERE id=:id");
+            $stmt->execute([':name' => $data['full_name'], ':birth' => $data['birthdate'] ?: null, ':gender' => $data['gender'] ?: null, ':grade' => $data['grade_level'], ':sec' => $data['section_id'], ':lrn' => $data['lrn'] ?: null, ':id' => $id]);
             auditLog('update_student', 'students', $id);
             setFlash('success', 'Student updated.');
         }
@@ -92,7 +90,6 @@ $stmt->execute($params);
 $students = $stmt->fetchAll();
 
 // Dropdowns
-$guardians = $pdo->query("SELECT id, full_name FROM guardians ORDER BY full_name")->fetchAll();
 $sections  = $pdo->query("SELECT id, name, grade_level FROM sections ORDER BY grade_level, name")->fetchAll();
 
 $pageTitle = 'Manage Students';
@@ -124,15 +121,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Full Name <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" name="full_name" value="<?= e($editStudent['full_name'] ?? '') ?>" required>
                 </div>
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Guardian <span class="text-danger">*</span></label>
-                    <select class="form-select" name="guardian_id" required>
-                        <option value="">Select...</option>
-                        <?php foreach ($guardians as $g): ?>
-                            <option value="<?= (int)$g['id'] ?>" <?= e(($editStudent['guardian_id'] ?? 0) == $g['id'] ? 'selected' : '') ?>><?= e($g['full_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
+
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Birthdate</label>
                     <input type="date" class="form-control" name="birthdate" value="<?= e($editStudent['birthdate'] ?? '') ?>">
@@ -150,9 +139,9 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Grade Level</label>
                     <select class="form-select" name="grade_level">
                         <option value="">Select...</option>
-                        <?php for ($gl = 7; $gl <= 12; $gl++): ?>
-                            <option value="<?= e((string)$gl) ?>" <?= e(($editStudent['grade_level'] ?? '') == $gl ? 'selected' : '') ?>>Grade <?= e((string)$gl) ?></option>
-                        <?php endfor; ?>
+                        <?php foreach (['Kindergarten','1','2','3','4','5','6'] as $gl): ?>
+                            <option value="<?= e($gl) ?>" <?= e(($editStudent['grade_level'] ?? '') == $gl ? 'selected' : '') ?>><?= $gl === 'Kindergarten' ? 'Kindergarten' : 'Grade ' . e($gl) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-6 mb-3">

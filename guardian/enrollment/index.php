@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $stmt = $pdo->prepare("
                     INSERT INTO students (guardian_id, full_name, birthdate, gender, grade_level, section_id, lrn)
-                    VALUES (:gid, :name, :birth, :gender, :grade, :sec, :lrn)
+                    VALUES (:gid, :name, :birth, :gender, :grade, :sec, :lrn) RETURNING id
                 ");
                 $stmt->execute([
                     ':gid' => $guardian['id'],
@@ -71,18 +71,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':sec' => $enrollData['section_id'] ?: null,
                     ':lrn' => $enrollData['lrn'] ?: null,
                 ]);
-                $studentId = (int)$pdo->lastInsertId();
+                $studentId = (int)$stmt->fetchColumn();
 
                 $stmt = $pdo->prepare("
                     INSERT INTO enrollments (student_id, school_year, term, status, payment_submitted_at)
-                    VALUES (:sid, :sy, :term, 'pending', NULL)
+                    VALUES (:sid, :sy, :term, 'pending', NULL) RETURNING id
                 ");
                 $stmt->execute([
                     ':sid' => $studentId,
                     ':sy' => $enrollData['school_year'] ?? currentSchoolYear(),
                     ':term' => $enrollData['term'] ?? '1st Semester',
                 ]);
-                $enrollmentId = (int)$pdo->lastInsertId();
+                $enrollmentId = (int)$stmt->fetchColumn();
 
                 $stmt = $pdo->prepare("
                     INSERT INTO payments (enrollment_id, amount, method, description, status)
@@ -203,9 +203,9 @@ require_once __DIR__ . '/../../includes/header.php';
                             <label for="grade_level" class="form-label">Grade Level <span class="text-danger">*</span></label>
                             <select class="form-select" id="grade_level" name="grade_level" required>
                                 <option value="">Select...</option>
-                                <?php for ($g = 7; $g <= 12; $g++): ?>
-                                    <option value="<?= e((string)$g) ?>" <?= ($enrollData['grade_level'] ?? '') == $g ? 'selected' : '' ?>>Grade <?= e((string)$g) ?></option>
-                                <?php endfor; ?>
+                                <?php foreach (['Kindergarten','1','2','3','4','5','6'] as $g): ?>
+                                    <option value="<?= e($g) ?>" <?= ($enrollData['grade_level'] ?? '') == $g ? 'selected' : '' ?>><?= $g === 'Kindergarten' ? 'Kindergarten' : 'Grade ' . e($g) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
 

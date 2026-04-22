@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
             $pdo->beginTransaction();
 
             // a. Update settings to next SY
-            $stmt = $pdo->prepare("UPDATE `settings` SET `value` = :new WHERE `key` = 'active_school_year'");
+            $stmt = $pdo->prepare("UPDATE settings SET \"value\" = :new WHERE \"key\" = 'active_school_year'");
             $stmt->execute([':new' => $nextSY]);
 
             // b. Archive enrollments for old SY

@@ -108,7 +108,7 @@ function getSettingValue(string $key, ?string $default = null): ?string
 {
     try {
         $pdo = getDB();
-        $stmt = $pdo->prepare("SELECT `value` FROM `settings` WHERE `key` = :key LIMIT 1");
+        $stmt = $pdo->prepare("SELECT \"value\" FROM settings WHERE \"key\" = :key LIMIT 1");
         $stmt->execute([':key' => $key]);
         $value = $stmt->fetchColumn();
         return $value === false ? $default : (string)$value;
@@ -123,7 +123,7 @@ function getSettingValue(string $key, ?string $default = null): ?string
 function setSettingValue(string $key, string $value): void
 {
     $pdo = getDB();
-    $stmt = $pdo->prepare("INSERT INTO `settings` (`key`, `value`) VALUES (:key, :value) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
+    $stmt = $pdo->prepare("INSERT INTO settings (\"key\", \"value\") VALUES (:key, :value) ON CONFLICT (\"key\") DO UPDATE SET \"value\" = EXCLUDED.\"value\"");
     $stmt->execute([
         ':key' => $key,
         ':value' => $value,

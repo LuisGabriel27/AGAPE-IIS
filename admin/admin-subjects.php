@@ -34,9 +34,9 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
 
     if (empty($errors)) {
         if ($action === 'create') {
-            $stmt = $pdo->prepare("INSERT INTO subjects (code, name, units, department) VALUES (:c, :n, :u, :d)");
+            $stmt = $pdo->prepare("INSERT INTO subjects (code, name, units, department) VALUES (:c, :n, :u, :d) RETURNING id");
             $stmt->execute([':c' => $code, ':n' => $name, ':u' => $units, ':d' => $dept]);
-            auditLog('create_subject', 'subjects', (int)$pdo->lastInsertId());
+            auditLog('create_subject', 'subjects', (int)$stmt->fetchColumn());
             setFlash('success', 'Subject created.');
         } else {
             $stmt = $pdo->prepare("UPDATE subjects SET code=:c, name=:n, units=:u, department=:d WHERE id=:id");

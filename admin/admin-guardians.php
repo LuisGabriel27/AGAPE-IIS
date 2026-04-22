@@ -51,15 +51,15 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
                     $uId = $existing['id'];
                 } else {
                     $hash = password_hash('Guardian@1234', PASSWORD_BCRYPT);
-                    $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, 'guardian', 1, NOW())");
+                    $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, 'guardian', 1, NOW()) RETURNING id");
                     $stmt->execute([':e' => $userEmail, ':h' => $hash]);
-                    $uId = $pdo->lastInsertId();
+                    $uId = $stmt->fetchColumn();
                 }
             }
             if ($uId) {
-                $stmt = $pdo->prepare("INSERT INTO guardians (user_id, full_name, contact_number, address, relationship_to_student) VALUES (:uid, :n, :c, :a, :r)");
+                $stmt = $pdo->prepare("INSERT INTO guardians (user_id, full_name, contact_number, address, relationship_to_student) VALUES (:uid, :n, :c, :a, :r) RETURNING id");
                 $stmt->execute([':uid' => $uId, ':n' => $fullName, ':c' => $contact, ':a' => $address, ':r' => $relationship]);
-                $guardianId = (int)$pdo->lastInsertId();
+                $guardianId = (int)$stmt->fetchColumn();
                 auditLog('create_guardian', 'guardians', $guardianId);
                 setFlash('success', 'Guardian created. Default password: Guardian@1234');
             } else {
@@ -118,12 +118,12 @@ $total->execute($params);
 
 $stmt = $pdo->prepare("
     SELECT g.*, u.email, u.password_hash,
-           GROUP_CONCAT(s.full_name SEPARATOR ', ') AS linked_students
+           STRING_AGG(s.full_name, ', ') AS linked_students
     FROM guardians g 
     JOIN users u ON g.user_id = u.id
     LEFT JOIN students s ON s.guardian_id = g.id
     {$where} 
-    GROUP BY g.id
+    GROUP BY g.id, u.email, u.password_hash
     ORDER BY g.full_name LIMIT {$limit} OFFSET {$offset}
 ");
 $stmt->execute($params);

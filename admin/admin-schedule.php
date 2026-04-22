@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Admin Schedules â€” CRUD: assign subject + section + teacher + room + day/time
  */
@@ -44,9 +44,9 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
 
     if (empty($errors)) {
         if ($action === 'create') {
-            $stmt = $pdo->prepare("INSERT INTO schedules (subject_id, section_id, teacher_id, room, day_of_week, time_start, time_end, school_year, term) VALUES (:sub,:sec,:tch,:rm,:day,:ts,:te,:sy,:trm)");
+            $stmt = $pdo->prepare("INSERT INTO schedules (subject_id, section_id, teacher_id, room, day_of_week, time_start, time_end, school_year, term) VALUES (:sub,:sec,:tch,:rm,:day,:ts,:te,:sy,:trm) RETURNING id");
             $stmt->execute([':sub'=>$data['subject_id'],':sec'=>$data['section_id'],':tch'=>$data['teacher_id'],':rm'=>$data['room'],':day'=>$data['day_of_week'],':ts'=>$data['time_start'],':te'=>$data['time_end'],':sy'=>$data['school_year'],':trm'=>$data['term']]);
-            auditLog('create_schedule', 'schedules', (int)$pdo->lastInsertId());
+            auditLog('create_schedule', 'schedules', (int)$stmt->fetchColumn());
             setFlash('success', 'Schedule created.');
         } else {
             $stmt = $pdo->prepare("UPDATE schedules SET subject_id=:sub, section_id=:sec, teacher_id=:tch, room=:rm, day_of_week=:day, time_start=:ts, time_end=:te, school_year=:sy, term=:trm WHERE id=:id");
@@ -79,7 +79,7 @@ $stmt = $pdo->query("
     JOIN subjects sub ON sch.subject_id = sub.id
     JOIN sections sec ON sch.section_id = sec.id
     JOIN teachers t ON sch.teacher_id = t.id
-    ORDER BY FIELD(sch.day_of_week,'Monday','Tuesday','Wednesday','Thursday','Friday'), sch.time_start
+    ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
     LIMIT {$limit} OFFSET {$offset}
 ");
 $schedules = $stmt->fetchAll();

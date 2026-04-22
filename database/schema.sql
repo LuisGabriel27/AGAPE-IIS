@@ -97,7 +97,7 @@ CREATE TABLE `sections` (
 -- ============================================================
 CREATE TABLE `students` (
   `id`            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
-  `guardian_id`   INT UNSIGNED    NOT NULL,
+  `guardian_id`   INT UNSIGNED    DEFAULT NULL,
   `full_name`     VARCHAR(255)    NOT NULL,
   `birthdate`     DATE            DEFAULT NULL,
   `gender`        ENUM('male','female','other') DEFAULT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE `students` (
   KEY `idx_student_section` (`section_id`),
   CONSTRAINT `fk_student_guardian`
     FOREIGN KEY (`guardian_id`) REFERENCES `guardians` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+    ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_student_section`
     FOREIGN KEY (`section_id`) REFERENCES `sections` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE

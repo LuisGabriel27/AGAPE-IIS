@@ -64,9 +64,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Email already exists.';
             } else {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
-                $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, :r, 1, NOW())");
+                $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, :r, 1, NOW()) RETURNING id");
                 $stmt->execute([':e' => $email, ':h' => $hash, ':r' => $role]);
-                auditLog('create_user', 'users', (int)$pdo->lastInsertId());
+                auditLog('create_user', 'users', (int)$stmt->fetchColumn());
                 setFlash('success', 'User created.');
                 redirect(APP_URL . '/admin/admin-users.php');
             }
