@@ -98,7 +98,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
             <?php else: ?>
                 <div class="hero-title">Welcome, <?= e($guardian['full_name'] ?? 'Guardian') ?>!</div>
-                <div class="hero-subtitle">No students linked yet. <a href="<?= APP_URL ?>/guardian/enrollment.php" style="color:white;text-decoration:underline;">Enroll a student</a>.</div>
+                <div class="hero-subtitle">No students linked yet. <a href="<?= APP_URL ?>/guardian/enrollment/" style="color:white;text-decoration:underline;">Enroll a student</a>.</div>
             <?php endif; ?>
         </div>
         <div class="d-flex gap-2 flex-wrap">
@@ -159,7 +159,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card-header bg-white"><i class="bi bi-person-badge me-2"></i>Student Information</div>
             <div class="card-body">
                 <?php if (empty($students)): ?>
-                    <p class="text-muted">No students linked to your account yet. <a href="<?= APP_URL ?>/guardian/enrollment.php">Enroll a student</a>.</p>
+                    <p class="text-muted">No students linked to your account yet. <a href="<?= APP_URL ?>/guardian/enrollment/">Enroll a student</a>.</p>
                 <?php else: ?>
                     <?php foreach ($students as $stu): ?>
                     <div class="d-flex align-items-center mb-3 p-2 rounded bg-light">

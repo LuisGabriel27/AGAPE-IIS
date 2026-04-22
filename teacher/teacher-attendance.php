@@ -15,6 +15,11 @@ $pdo    = getDB();
 $userId = $_SESSION['user_id'];
 $errors = [];
 
+if (!attendanceModuleEnabled()) {
+    setFlash('warning', 'Attendance module is currently disabled by admin. Please contact the administrator.');
+    redirect(APP_URL . '/teacher/teacher-dashboard.php');
+}
+
 // Get teacher record
 $stmt = $pdo->prepare("SELECT * FROM teachers WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);

@@ -13,10 +13,15 @@ require_once __DIR__ . '/helpers.php';
 $displayTitle = isset($pageTitle) ? e($pageTitle) : APP_NAME;
 $fullTitle    = isset($pageTitle) ? e($pageTitle) . ' — ' . APP_NAME : APP_NAME;
 $currentPage  = basename($_SERVER['PHP_SELF']);
+$currentPath  = str_replace('\\', '/', $_SERVER['PHP_SELF'] ?? '');
 $userRole     = $_SESSION['role'] ?? '';
 $userEmail    = $_SESSION['user_email'] ?? 'Account';
 $userAvatar   = $_SESSION['google_avatar'] ?? '';
 $userInitial  = strtoupper(substr($userEmail, 0, 1));
+$isGuardianEnrollmentPage = str_contains($currentPath, '/guardian/enrollment/')
+    && !str_contains($currentPath, '/guardian/enrollment/certificate.php');
+$isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/certificate.php')
+    || $currentPage === 'certificate-enrollment.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -156,8 +161,8 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
             </a>
 
             <div class="sidebar-section">Academic</div>
-            <a class="sidebar-link <?= e($currentPage === 'enrollment.php' ? 'active' : '') ?>"
-               href="<?= APP_URL ?>/guardian/enrollment.php">
+            <a class="sidebar-link <?= e($isGuardianEnrollmentPage || $currentPage === 'enrollment.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/guardian/enrollment/">
                 <i class="bi bi-pencil-square"></i> Enrollment
             </a>
             <a class="sidebar-link <?= e($currentPage === 'grades.php' ? 'active' : '') ?>"
@@ -168,8 +173,8 @@ $userInitial  = strtoupper(substr($userEmail, 0, 1));
                href="<?= APP_URL ?>/guardian/report-card.php">
                 <i class="bi bi-printer-fill"></i> Report Card
             </a>
-            <a class="sidebar-link <?= e($currentPage === 'certificate-enrollment.php' ? 'active' : '') ?>"
-               href="<?= APP_URL ?>/guardian/certificate-enrollment.php">
+            <a class="sidebar-link <?= e($isGuardianCertificatePage ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/guardian/enrollment/certificate.php">
                 <i class="bi bi-patch-check-fill"></i> Certificate
             </a>
             <a class="sidebar-link <?= e($currentPage === 'schedule.php' ? 'active' : '') ?>"

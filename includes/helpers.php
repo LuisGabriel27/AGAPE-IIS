@@ -102,6 +102,44 @@ function displayFlash(): string
 }
 
 /**
+ * Read a value from the settings table.
+ */
+function getSettingValue(string $key, ?string $default = null): ?string
+{
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("SELECT `value` FROM `settings` WHERE `key` = :key LIMIT 1");
+        $stmt->execute([':key' => $key]);
+        $value = $stmt->fetchColumn();
+        return $value === false ? $default : (string)$value;
+    } catch (Exception $e) {
+        return $default;
+    }
+}
+
+/**
+ * Upsert a value in the settings table.
+ */
+function setSettingValue(string $key, string $value): void
+{
+    $pdo = getDB();
+    $stmt = $pdo->prepare("INSERT INTO `settings` (`key`, `value`) VALUES (:key, :value) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
+    $stmt->execute([
+        ':key' => $key,
+        ':value' => $value,
+    ]);
+}
+
+/**
+ * Global attendance module switch.
+ */
+function attendanceModuleEnabled(): bool
+{
+    $value = strtolower(trim((string)getSettingValue('attendance_module_enabled', '1')));
+    return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+/**
  * Get current school year string from the settings table.
  * Result is cached in $_SESSION for the request lifetime.
  * Falls back to date-based calculation if settings table is unavailable.
@@ -113,17 +151,10 @@ function currentSchoolYear(): string
         return $_SESSION['_cached_school_year'];
     }
 
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("SELECT `value` FROM `settings` WHERE `key` = 'active_school_year' LIMIT 1");
-        $stmt->execute();
-        $result = $stmt->fetchColumn();
-        if ($result) {
-            $_SESSION['_cached_school_year'] = $result;
-            return $result;
-        }
-    } catch (Exception $e) {
-        // Fall through to date-based calculation
+    $result = getSettingValue('active_school_year');
+    if (!empty($result)) {
+        $_SESSION['_cached_school_year'] = $result;
+        return $result;
     }
 
     // Fallback: date-based calculation

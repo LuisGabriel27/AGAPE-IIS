@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Admin Dashboard
  * KPI cards, recent transactions, quick links, upcoming events.
@@ -11,15 +11,26 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
 
-// KPI data
 $totalStudents     = $pdo->query("SELECT COUNT(*) FROM students")->fetchColumn();
 $totalRevenue      = $pdo->query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'paid'")->fetchColumn();
 $enrolledThisTerm  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'enrolled' AND school_year = '" . currentSchoolYear() . "'")->fetchColumn();
 $totalStudentsForRate = max(1, $totalStudents);
 $enrollmentRate    = round(($enrolledThisTerm / $totalStudentsForRate) * 100, 1);
-$pendingEnroll     = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending'")->fetchColumn();
+
+// These queries reference the payment_submitted_at column which may not exist yet
+// (added in upgrade_migrations.sql). Graceful fallback if the column is missing.
+try {
+    $pendingEnroll     = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending' AND payment_submitted_at IS NOT NULL")->fetchColumn();
+    $pendingPayment    = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending' AND payment_submitted_at IS NULL")->fetchColumn();
+} catch (PDOException $e) {
+    // Fallback: count all pending enrollments without distinguishing by payment_submitted_at
+    $pendingEnroll  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending'")->fetchColumn();
+    $pendingPayment = 0;
+}
+
 $totalUsers        = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
 $totalTeachers     = $pdo->query("SELECT COUNT(*) FROM teachers")->fetchColumn();
+$attendanceEnabled = attendanceModuleEnabled();
 
 // Recent transactions (payments)
 $stmt = $pdo->query("
@@ -85,7 +96,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         <div class="kpi-card kpi-warning">
             <div class="kpi-icon-wrap"><i class="bi bi-hourglass-split"></i></div>
             <div>
-                <div class="kpi-label">Pending</div>
+                <div class="kpi-label">Pending Review</div>
                 <div class="kpi-value"><?= e(number_format($pendingEnroll)) ?></div>
             </div>
         </div>
@@ -143,7 +154,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     </div>
                     <div>
                         <div class="qa-text">Pending Enrollments</div>
-                        <div class="qa-sub"><?= e((string)$pendingEnroll) ?> awaiting review</div>
+                        <div class="qa-sub"><?= e((string)$pendingEnroll) ?> ready, <?= e((string)$pendingPayment) ?> awaiting payment</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-students.php" class="quick-action">
@@ -174,12 +185,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-attendance.php" class="quick-action">
-                    <div class="qa-icon" style="background:var(--orange-light);color:var(--orange);">
+                    <div class="qa-icon" style="background:<?= $attendanceEnabled ? 'var(--orange-light)' : 'var(--secondary-light)' ?>;color:<?= $attendanceEnabled ? 'var(--orange)' : 'var(--secondary)' ?>;">
                         <i class="bi bi-camera-video-fill"></i>
                     </div>
                     <div>
                         <div class="qa-text">Face Attendance</div>
-                        <div class="qa-sub">Take attendance by camera</div>
+                        <div class="qa-sub"><?= $attendanceEnabled ? 'Take attendance by camera' : 'Module currently disabled' ?></div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-users.php" class="quick-action">

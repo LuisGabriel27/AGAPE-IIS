@@ -740,6 +740,12 @@ body {
     border: 1px solid #C7D2FE;
 }
 
+.badge-status-archived {
+    background: var(--secondary-light);
+    color: var(--secondary);
+    border: 1px solid var(--border-color);
+}
+
 .badge-status-paid {
     background: var(--success-light);
     color: var(--success-dark);

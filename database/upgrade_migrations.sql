@@ -30,6 +30,13 @@ INSERT IGNORE INTO `settings` (`key`, `value`) VALUES ('active_school_year', '20
 ALTER TABLE `enrollments`
     MODIFY COLUMN `status` ENUM('pending','approved','rejected','enrolled','archived') NOT NULL DEFAULT 'pending';
 
+-- Add payment submission timestamp to enrollment workflow
+ALTER TABLE `enrollments`
+    ADD COLUMN IF NOT EXISTS `payment_submitted_at` DATETIME DEFAULT NULL AFTER `enrolled_at`;
+
+-- Seed attendance module toggle
+INSERT IGNORE INTO `settings` (`key`, `value`) VALUES ('attendance_module_enabled', '1');
+
 -- ────────────────────────────────────────────────────────────
 -- UPGRADE 4: Teacher Module Enhancements — Grade Publishing
 -- ────────────────────────────────────────────────────────────
@@ -48,4 +55,5 @@ ALTER TABLE `grades`
 --   DESCRIBE settings;
 --   DESCRIBE enrollments;
 --   DESCRIBE grades;
+--   SELECT `key`, `value` FROM settings WHERE `key` IN ('active_school_year', 'attendance_module_enabled');
 -- ============================================================

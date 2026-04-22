@@ -9,6 +9,7 @@
  */
 
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/helpers.php';
 
 // Start session with secure cookie params
 if (session_status() === PHP_SESSION_NONE) {

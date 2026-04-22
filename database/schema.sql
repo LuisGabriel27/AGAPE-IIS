@@ -124,9 +124,10 @@ CREATE TABLE `enrollments` (
   `student_id`  INT UNSIGNED    NOT NULL,
   `school_year` VARCHAR(20)     NOT NULL,
   `term`        VARCHAR(20)     NOT NULL,
-  `status`      ENUM('pending','approved','rejected','enrolled') NOT NULL DEFAULT 'pending',
+  `status`      ENUM('pending','approved','rejected','enrolled','archived') NOT NULL DEFAULT 'pending',
   `remarks`     TEXT            DEFAULT NULL,
   `enrolled_at` DATETIME        DEFAULT NULL,
+  `payment_submitted_at` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_enrollment_student` (`student_id`),
   KEY `idx_enrollment_status`  (`status`),
@@ -297,6 +298,19 @@ CREATE TABLE `attendance_logs` (
     FOREIGN KEY (`marked_by`) REFERENCES `users` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 15. settings
+-- ============================================================
+CREATE TABLE `settings` (
+  `key`   VARCHAR(100) NOT NULL,
+  `value` TEXT         NOT NULL,
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `settings` (`key`, `value`) VALUES
+('active_school_year', '2024-2025'),
+('attendance_module_enabled', '1');
 
 -- ============================================================
 -- Seed: Default admin account

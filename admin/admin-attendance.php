@@ -11,6 +11,26 @@ require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
+$pdo->exec("CREATE TABLE IF NOT EXISTS settings (
+    `key` VARCHAR(100) PRIMARY KEY,
+    `value` TEXT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$pdo->exec("INSERT IGNORE INTO settings (`key`, `value`) VALUES ('attendance_module_enabled', '1')");
+
+$attendanceEnabled = attendanceModuleEnabled();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_action'] ?? '') === 'toggle_attendance_module') {
+    validateCsrf();
+    $newValue = ($_POST['attendance_module_enabled'] ?? '0') === '1' ? '1' : '0';
+
+    setSettingValue('attendance_module_enabled', $newValue);
+    auditLog('attendance_module_toggled', 'settings', null, ['enabled' => $attendanceEnabled], ['enabled' => $newValue === '1']);
+
+    setFlash('success', $newValue === '1'
+        ? 'Attendance module has been enabled.'
+        : 'Attendance module has been disabled. Attendance capture and marking are now blocked.');
+    redirect(APP_URL . '/admin/admin-attendance.php');
+}
 
 function ensureAttendanceTables(PDO $pdo): void
 {
@@ -98,6 +118,13 @@ ensureAttendanceTables($pdo);
 
 $ajax = $_GET['ajax'] ?? '';
 if ($ajax !== '') {
+    if (!$attendanceEnabled) {
+        attendanceJson([
+            'status' => 'error',
+            'message' => 'Attendance module is currently disabled by admin.',
+        ], 423);
+    }
+
     if ($ajax === 'profiles' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt = $pdo->query(
             "SELECT p.student_id, p.face_descriptor, p.face_image_path, p.updated_at,
@@ -414,10 +441,49 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <div class="card mb-4">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <div class="fw-semibold mb-1"><i class="bi bi-toggles2 me-2"></i>Attendance Module Status</div>
+            <div class="text-muted small">
+                Current state:
+                <?php if ($attendanceEnabled): ?>
+                    <span class="badge badge-status-active ms-1">Enabled</span>
+                <?php else: ?>
+                    <span class="badge badge-status-inactive ms-1">Disabled</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <form method="POST" class="d-flex gap-2">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="form_action" value="toggle_attendance_module">
+            <?php if ($attendanceEnabled): ?>
+                <button type="submit" name="attendance_module_enabled" value="0" class="btn btn-outline-danger">
+                    <i class="bi bi-pause-circle me-1"></i>Disable Module
+                </button>
+            <?php else: ?>
+                <button type="submit" name="attendance_module_enabled" value="1" class="btn btn-success">
+                    <i class="bi bi-play-circle me-1"></i>Enable Module
+                </button>
+            <?php endif; ?>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-4">
     <div class="card-header">
         <span><i class="bi bi-camera"></i>Attendance Controls</span>
     </div>
     <div class="card-body">
+        <?php if (!$attendanceEnabled): ?>
+            <div class="alert alert-warning d-flex align-items-start gap-2 mb-3">
+                <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+                <div>
+                    Attendance module is disabled. Face registration and scanner actions are currently turned off.
+                    Enable the module above to resume attendance operations.
+                </div>
+            </div>
+        <?php endif; ?>
+
         <ul class="nav nav-tabs mb-3" id="attendanceTabs" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="register-tab" data-bs-toggle="tab" data-bs-target="#register-tab-pane" type="button" role="tab" aria-controls="register-tab-pane" aria-selected="true">Face Registration</button>
@@ -457,10 +523,10 @@ require_once __DIR__ . '/../includes/header.php';
                         </select>
 
                         <div class="d-grid gap-2 mt-3">
-                            <button type="button" class="btn btn-outline-primary" id="startRegisterCameraBtn">
+                            <button type="button" class="btn btn-outline-primary" id="startRegisterCameraBtn" <?= !$attendanceEnabled ? 'disabled' : '' ?>>
                                 <i class="bi bi-camera-video"></i> Start Camera
                             </button>
-                            <button type="button" class="btn btn-primary" id="captureRegisterBtn">
+                            <button type="button" class="btn btn-primary" id="captureRegisterBtn" <?= !$attendanceEnabled ? 'disabled' : '' ?>>
                                 <i class="bi bi-camera-fill"></i> Capture and Save Face
                             </button>
                         </div>
@@ -499,10 +565,10 @@ require_once __DIR__ . '/../includes/header.php';
                             <select class="form-select form-select-sm" id="scanCameraDevice" style="max-width:260px;">
                                 <option value="">Auto select webcam (PC)</option>
                             </select>
-                            <button type="button" class="btn btn-primary btn-sm" id="startScanBtn">
+                            <button type="button" class="btn btn-primary btn-sm" id="startScanBtn" <?= !$attendanceEnabled ? 'disabled' : '' ?>>
                                 <i class="bi bi-play-fill"></i> Start Scanner
                             </button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" id="stopScanBtn">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="stopScanBtn" <?= !$attendanceEnabled ? 'disabled' : '' ?>>
                                 <i class="bi bi-stop-fill"></i> Stop
                             </button>
                             <span id="scanStatus" class="status-pill ready"><i class="bi bi-shield-check"></i>Scanner idle</span>
@@ -601,6 +667,7 @@ require_once __DIR__ . '/../includes/header.php';
     const apiUrl = <?= json_encode(APP_URL . '/admin/admin-attendance.php') ?>;
     const csrfToken = <?= json_encode(csrfToken()) ?>;
     const modelsUrl = <?= json_encode(APP_URL . '/models') ?>;
+    const attendanceEnabled = <?= $attendanceEnabled ? 'true' : 'false' ?>;
 
     const registerVideo = document.getElementById('registerVideo');
     const registerCanvas = document.getElementById('registerCanvas');
@@ -771,6 +838,10 @@ require_once __DIR__ . '/../includes/header.php';
     }
 
     async function postAction(action, payload) {
+        if (!attendanceEnabled) {
+            throw new Error('Attendance module is disabled by admin.');
+        }
+
         const body = new URLSearchParams({ csrf_token: csrfToken, ...payload });
         const response = await fetch(`${apiUrl}?ajax=${encodeURIComponent(action)}`, {
             method: 'POST',
@@ -1027,6 +1098,13 @@ require_once __DIR__ . '/../includes/header.php';
     }
 
     applyPreviewOrientationFix();
+
+    if (!attendanceEnabled) {
+        setPill(registerStatus, 'Attendance module disabled by admin', 'warning', 'bi-pause-circle');
+        setPill(scanStatus, 'Attendance module disabled by admin', 'warning', 'bi-pause-circle');
+        addRecognitionLog('Attendance module disabled. Enable the module to register and scan attendance.', 'secondary');
+        return;
+    }
 
     refreshCameraDevices().catch(error => {
         console.warn('Unable to list cameras yet:', error);
