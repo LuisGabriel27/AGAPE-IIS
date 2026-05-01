@@ -21,6 +21,13 @@ $allowedRoles = [
         'description' => 'Use your administrator credentials to manage records, users, and schedules.',
         'note'        => 'Sign in using your assigned administrator email and password.',
     ],
+    'clerk' => [
+        'label'       => 'Enrollment Clerk',
+        'icon'        => 'bi-clipboard2-check-fill',
+        'eyebrow'     => 'Enrollment Clerk Portal',
+        'description' => 'Process and manage student enrollment applications.',
+        'note'        => 'Clerk accounts are created by the system administrator.',
+    ],
     'teacher' => [
         'label'       => 'Teacher',
         'icon'        => 'bi-easel2-fill',
@@ -84,7 +91,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($user['password_hash'] === null) {
                 $errors[] = 'This account does not have a password yet. Please contact an administrator for a password reset.';
             } elseif (password_verify($password, $user['password_hash'])) {
-                if ($role !== $user['role']) {
+                // Check selected role is one this account holds (primary OR secondary)
+                $rolesStmt = $pdo->prepare('SELECT role FROM user_roles WHERE user_id = :id');
+                $rolesStmt->execute([':id' => $user['id']]);
+                $userRoles = $rolesStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                // Fallback: if user_roles is empty, use the primary role from users table
+                if (empty($userRoles)) {
+                    $userRoles = [$user['role']];
+                }
+
+                if (!in_array($role, $userRoles, true)) {
                     $errors[] = 'Selected role does not match the account role.';
                 } elseif (!$user['is_active']) {
                     $errors[] = 'Your account has been deactivated. Contact an administrator.';
@@ -93,9 +110,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->execute([':id' => $user['id']]);
 
                     session_regenerate_id(true);
-                    $_SESSION['user_id'] = $user['id'];
-                    $_SESSION['user_email'] = $user['email'];
-                    $_SESSION['role'] = $user['role'];
+                    $_SESSION['user_id']     = $user['id'];
+                    $_SESSION['user_email']  = $user['email'];
+                    $_SESSION['role']        = $role;         // active role = what they selected
+                    $_SESSION['all_roles']   = $userRoles;    // all roles they hold
                     $_SESSION['google_avatar'] = $user['google_avatar'];
 
                     auditLog('login', 'users', $user['id']);
@@ -136,8 +154,9 @@ if (isset($errorMessages[$urlError])) {
 $gradientClass = 'gradient-' . $role;
 $leftDescriptions = [
     'admin'    => 'Central oversight for students, teachers, attendance, enrollment, and academic records across the institution.',
+    'clerk'    => 'Review and process student enrollment applications, manage student records, and coordinate with guardians.',
     'teacher'  => 'Access your class schedule, manage grades, track attendance, and communicate with guardians - all in one place.',
-    'guardian'  => 'Stay updated on your student\'s enrollment, grades, payments, and academic progress with a single account.',
+    'guardian' => 'Stay updated on your student\'s enrollment, grades, payments, and academic progress with a single account.',
 ];
 $leftDesc = $leftDescriptions[$role] ?? $roleMeta['description'];
 ?>

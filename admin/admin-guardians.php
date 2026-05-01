@@ -4,10 +4,12 @@
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
-requireRole('admin');
+requireRole(['admin', 'clerk']);
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
+
+$isClerk = ($_SESSION['role'] ?? '') === 'clerk';
 
 $pdo    = getDB();
 $search = trim($_GET['search'] ?? '');

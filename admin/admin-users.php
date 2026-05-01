@@ -4,7 +4,7 @@
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
-requireRole('admin');
+requireRole(['admin']);
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
@@ -40,11 +40,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($postAction === 'change_role' && $id) {
         $newRole = $_POST['new_role'] ?? '';
-        if (in_array($newRole, ['admin', 'teacher', 'guardian'])) {
+        if (in_array($newRole, ['admin', 'teacher', 'guardian', 'clerk'])) {
             $stmt = $pdo->prepare("UPDATE users SET role = :r WHERE id = :id");
             $stmt->execute([':r' => $newRole, ':id' => $id]);
+            // Keep user_roles in sync: ensure primary role exists
+            $stmt = $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, :r) ON CONFLICT DO NOTHING");
+            $stmt->execute([':uid' => $id, ':r' => $newRole]);
             auditLog('change_role', 'users', $id, null, ['role' => $newRole]);
-            setFlash('success', 'Role updated to ' . ucfirst($newRole) . '.');
+            setFlash('success', 'Role updated to ' . ucfirst($newRole === 'clerk' ? 'Enrollment Clerk' : $newRole) . '.');
+        }
+        redirect(APP_URL . '/admin/admin-users.php');
+    }
+
+    if ($postAction === 'toggle_secondary_role' && $id) {
+        $secRole = $_POST['secondary_role'] ?? '';
+        if (in_array($secRole, ['admin', 'teacher', 'guardian', 'clerk'])) {
+            // Check if it already exists
+            $stmt = $pdo->prepare("SELECT 1 FROM user_roles WHERE user_id = :uid AND role = :r LIMIT 1");
+            $stmt->execute([':uid' => $id, ':r' => $secRole]);
+            if ($stmt->fetch()) {
+                // Remove secondary role (can't remove primary)
+                $stmt2 = $pdo->prepare("SELECT role FROM users WHERE id = :id LIMIT 1");
+                $stmt2->execute([':id' => $id]);
+                $primary = $stmt2->fetchColumn();
+                if ($secRole !== $primary) {
+                    $pdo->prepare("DELETE FROM user_roles WHERE user_id = :uid AND role = :r")
+                        ->execute([':uid' => $id, ':r' => $secRole]);
+                    setFlash('success', 'Secondary role removed.');
+                } else {
+                    setFlash('warning', 'Cannot remove primary role. Change primary role first.');
+                }
+            } else {
+                $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, :r) ON CONFLICT DO NOTHING")
+                    ->execute([':uid' => $id, ':r' => $secRole]);
+                setFlash('success', 'Secondary role added.');
+            }
         }
         redirect(APP_URL . '/admin/admin-users.php');
     }
@@ -66,7 +96,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
                 $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, :r, 1, NOW()) RETURNING id");
                 $stmt->execute([':e' => $email, ':h' => $hash, ':r' => $role]);
-                auditLog('create_user', 'users', (int)$stmt->fetchColumn());
+                $newId = (int)$stmt->fetchColumn();
+                // Seed user_roles with the primary role
+                $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, :r) ON CONFLICT DO NOTHING")
+                    ->execute([':uid' => $newId, ':r' => $role]);
+                auditLog('create_user', 'users', $newId);
                 setFlash('success', 'User created.');
                 redirect(APP_URL . '/admin/admin-users.php');
             }
@@ -76,13 +110,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── List with search & pagination ───────────────────────
 $where = ''; $params = [];
-if ($search) { $where = "WHERE email LIKE :s OR role LIKE :s2"; $params[':s'] = $params[':s2'] = "%{$search}%"; }
+if ($search) { $where = "WHERE email ILIKE :s OR role::text ILIKE :s2"; $params[':s'] = $params[':s2'] = "%{$search}%"; }
 $total = $pdo->prepare("SELECT COUNT(*) FROM users {$where}"); $total->execute($params);
 [$offset, $limit, $page, $totalPages] = paginate($total->fetchColumn());
 
 $stmt = $pdo->prepare("SELECT * FROM users {$where} ORDER BY id DESC LIMIT {$limit} OFFSET {$offset}");
 $stmt->execute($params);
 $users = $stmt->fetchAll();
+
+// Fetch all secondary roles indexed by user_id
+$allSecRoles = [];
+if (!empty($users)) {
+    $uids = array_column($users, 'id');
+    $placeholders = implode(',', array_fill(0, count($uids), '?'));
+    $secStmt = $pdo->prepare("SELECT user_id, role FROM user_roles WHERE user_id IN ({$placeholders}) ORDER BY user_id, role");
+    $secStmt->execute($uids);
+    foreach ($secStmt->fetchAll() as $r) {
+        $allSecRoles[$r['user_id']][] = $r['role'];
+    }
+}
 
 $pageTitle = 'Manage Users';
 require_once __DIR__ . '/../includes/header.php';
@@ -117,6 +163,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Role</label>
                     <select class="form-select" name="role">
                         <option value="guardian">Guardian</option>
+                        <option value="clerk">Enrollment Clerk</option>
                         <option value="teacher">Teacher</option>
                         <option value="admin">Admin</option>
                     </select>
@@ -163,11 +210,41 @@ require_once __DIR__ . '/../includes/header.php';
                         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <input type="hidden" name="action" value="change_role">
                         <select class="form-select form-select-sm d-inline-block" style="width:auto;" name="new_role" onchange="this.form.submit()">
-                            <?php foreach (['admin','teacher','guardian'] as $r): ?>
-                                <option value="<?= e($r) ?>" <?= e($u['role'] === $r ? 'selected' : '') ?>><?= e(ucfirst($r)) ?></option>
+                            <?php foreach (['admin','clerk','teacher','guardian'] as $r): ?>
+                                <option value="<?= e($r) ?>" <?= e($u['role'] === $r ? 'selected' : '') ?>><?= e($r === 'clerk' ? 'Enrollment Clerk' : ucfirst($r)) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </form>
+                    <?php
+                    $secRoles = $allSecRoles[$u['id']] ?? [$u['role']];
+                    $extras = array_filter($secRoles, fn($r) => $r !== $u['role']);
+                    foreach ($extras as $er):
+                    ?>
+                        <span class="badge bg-secondary ms-1"><?= e($er === 'clerk' ? 'Clerk' : ucfirst($er)) ?></span>
+                    <?php endforeach; ?>
+                    <!-- Secondary role toggle -->
+                    <div class="dropdown d-inline-block ms-1">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Manage secondary roles">+</button>
+                        <ul class="dropdown-menu dropdown-menu-end" style="min-width:180px;">
+                            <li><span class="dropdown-item-text small text-muted">Add/Remove Secondary Role</span></li>
+                            <?php foreach (['admin','clerk','teacher','guardian'] as $r):
+                                if ($r === $u['role']) continue;
+                                $hasIt = in_array($r, $secRoles, true);
+                            ?>
+                            <li>
+                                <form method="POST" action="?id=<?= (int)$u['id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                                    <input type="hidden" name="action" value="toggle_secondary_role">
+                                    <input type="hidden" name="secondary_role" value="<?= e($r) ?>">
+                                    <button type="submit" class="dropdown-item <?= $hasIt ? 'text-danger' : '' ?>">
+                                        <i class="bi bi-<?= $hasIt ? 'dash-circle' : 'plus-circle' ?> me-1"></i>
+                                        <?= e($r === 'clerk' ? 'Enrollment Clerk' : ucfirst($r)) ?>
+                                    </button>
+                                </form>
+                            </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
                 </td>
                 <td><span class="badge <?= e($methodClass) ?>"><?= e($methodLabel) ?></span></td>
                 <td>

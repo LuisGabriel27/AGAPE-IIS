@@ -5,14 +5,15 @@
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
-requireRole('admin');
+requireRole(['admin', 'clerk']);
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
 $filterStatus = $_GET['status'] ?? '';
-$filterYear = $_GET['year'] ?? '';
+$filterYear   = $_GET['year'] ?? '';
+$search       = trim($_GET['search'] ?? '');
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -83,14 +84,19 @@ if ($filterYear !== '') {
     $where[] = 'e.school_year = :year';
     $params[':year'] = $filterYear;
 }
+if ($search !== '') {
+    $where[] = '(s.full_name ILIKE :search OR s.lrn ILIKE :search2)';
+    $params[':search']  = "%{$search}%";
+    $params[':search2'] = "%{$search}%";
+}
 $whereSQL = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-$totalStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments e {$whereSQL}");
+$totalStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments e INNER JOIN students s ON e.student_id = s.id {$whereSQL}");
 $totalStmt->execute($params);
 [$offset, $limit, $page, $totalPages] = paginate((int)$totalStmt->fetchColumn(), 15);
 
 $stmt = $pdo->prepare("
-    SELECT e.*, s.full_name AS student_name, s.grade_level,
+    SELECT e.*, s.full_name AS student_name, s.lrn AS student_lrn, s.grade_level,
            p.id AS payment_id, p.amount AS payment_amount, p.method AS payment_method,
            p.reference_no AS payment_reference_no, p.status AS payment_status, p.paid_at AS payment_paid_at
     FROM enrollments e
@@ -103,7 +109,7 @@ $stmt = $pdo->prepare("
         LIMIT 1
     )
     {$whereSQL}
-    ORDER BY e.id DESC
+    ORDER BY split_part(s.full_name, ' ', -1), s.full_name, e.id DESC
     LIMIT {$limit} OFFSET {$offset}
 ");
 $stmt->execute($params);
@@ -111,12 +117,26 @@ $enrollments = $stmt->fetchAll();
 
 $years = $pdo->query("SELECT DISTINCT school_year FROM enrollments ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 
-$totalEnrollments = (int)$pdo->query("SELECT COUNT(*) FROM enrollments")->fetchColumn();
-$approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'approved'")->fetchColumn();
-$pendingCount = (int)$pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending'")->fetchColumn();
-$forReviewCount = (int)$pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending' AND payment_submitted_at IS NOT NULL")->fetchColumn();
-$awaitingPaymentCount = (int)$pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending' AND payment_submitted_at IS NULL")->fetchColumn();
-$rejectedCount = (int)$pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'rejected'")->fetchColumn();
+// Single aggregation query instead of 6 separate round trips
+$stats = $pdo->query("
+    SELECT
+        COUNT(*)                                                          AS total,
+        COUNT(*) FILTER (WHERE status = 'approved')                     AS approved,
+        COUNT(*) FILTER (WHERE status = 'pending')                      AS pending,
+        COUNT(*) FILTER (WHERE status = 'pending'
+                           AND payment_submitted_at IS NOT NULL)         AS for_review,
+        COUNT(*) FILTER (WHERE status = 'pending'
+                           AND payment_submitted_at IS NULL)             AS awaiting_payment,
+        COUNT(*) FILTER (WHERE status = 'rejected')                     AS rejected
+    FROM enrollments
+")->fetch();
+
+$totalEnrollments     = (int)$stats['total'];
+$approvedCount        = (int)$stats['approved'];
+$pendingCount         = (int)$stats['pending'];
+$forReviewCount       = (int)$stats['for_review'];
+$awaitingPaymentCount = (int)$stats['awaiting_payment'];
+$rejectedCount        = (int)$stats['rejected'];
 
 $pageTitle = 'Student Enrollment';
 require_once __DIR__ . '/../includes/header.php';
@@ -190,7 +210,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" class="row g-2 align-items-center" id="enrollment-filter">
-            <div class="col-md-3">
+            <div class="col-md-4">
+                <input type="text" class="form-control form-control-sm" name="search"
+                       placeholder="Search by student name or LRN..."
+                       value="<?= e($search) ?>">
+            </div>
+            <div class="col-md-2">
                 <select class="form-select form-select-sm" name="status">
                     <option value="">All Statuses</option>
                     <?php foreach (['pending','approved','rejected','enrolled','archived'] as $st): ?>
@@ -198,7 +223,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <select class="form-select form-select-sm" name="year">
                     <option value="">All Years</option>
                     <?php foreach ($years as $y): ?>
@@ -207,9 +232,9 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 </select>
             </div>
             <div class="col-md-2">
-                <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-filter me-1"></i>Filter</button>
+                <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-search me-1"></i>Search</button>
             </div>
-            <?php if ($filterStatus || $filterYear): ?>
+            <?php if ($filterStatus || $filterYear || $search): ?>
                 <div class="col-md-2">
                     <a href="<?= APP_URL ?>/admin/admin-enrollments.php" class="btn btn-sm btn-outline-secondary w-100">Clear</a>
                 </div>
@@ -248,7 +273,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 <td>
                     <div class="user-row">
                         <div class="user-avatar <?= e($color) ?>"><?= e($initial) ?></div>
-                        <div><div class="user-name"><?= e($en['student_name']) ?></div></div>
+                        <div>
+                            <div class="user-name"><?= e($en['student_name']) ?></div>
+                            <?php if (!empty($en['student_lrn'])): ?>
+                                <small class="text-muted">LRN: <?= e($en['student_lrn']) ?></small>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </td>
                 <td>Grade <?= e($en['grade_level'] ?? 'N/A') ?></td>
@@ -340,6 +370,6 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
     </table>
 </div></div>
 
-<?= paginationLinks($page, $totalPages, '?status=' . urlencode($filterStatus) . '&year=' . urlencode($filterYear)) ?>
+<?= paginationLinks($page, $totalPages, '?status=' . urlencode($filterStatus) . '&year=' . urlencode($filterYear) . '&search=' . urlencode($search)) ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

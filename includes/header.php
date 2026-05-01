@@ -58,7 +58,9 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
     </a>
 
     <nav class="sidebar-nav">
-        <?php if ($userRole === 'admin'): ?>
+        <?php if ($userRole === 'admin' || $userRole === 'clerk'): ?>
+
+            <?php if ($userRole === 'admin'): ?>
 
             <div class="sidebar-section">Main</div>
             <a class="sidebar-link <?= e($currentPage === 'admin-dashboard.php' ? 'active' : '') ?>"
@@ -126,7 +128,28 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                 <i class="bi bi-calendar-range"></i> School Year
             </a>
 
+            <?php else: /* Clerk — enrollment module only */ ?>
+
+            <div class="sidebar-section">Main</div>
+            <a class="sidebar-link <?= e($currentPage === 'admin-enrollments.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/admin-enrollments.php">
+                <i class="bi bi-grid-1x2-fill"></i> Enrollment Queue
+            </a>
+
+            <div class="sidebar-section">Records</div>
+            <a class="sidebar-link <?= e($currentPage === 'admin-students.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/admin-students.php">
+                <i class="bi bi-people-fill"></i> Students
+            </a>
+            <a class="sidebar-link <?= e($currentPage === 'admin-guardians.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/admin-guardians.php">
+                <i class="bi bi-person-hearts"></i> Guardians
+            </a>
+
+            <?php endif; ?>
+
         <?php elseif ($userRole === 'teacher'): ?>
+
 
             <div class="sidebar-section">Main</div>
             <a class="sidebar-link <?= e($currentPage === 'teacher-dashboard.php' ? 'active' : '') ?>"
@@ -146,6 +169,10 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
             <a class="sidebar-link <?= e($currentPage === 'teacher-attendance.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/teacher/teacher-attendance.php">
                 <i class="bi bi-clipboard-check"></i> Attendance
+            </a>
+            <a class="sidebar-link <?= e($currentPage === 'teacher-attendance-report.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/teacher/teacher-attendance-report.php">
+                <i class="bi bi-file-earmark-bar-graph"></i> Attendance Report
             </a>
             <a class="sidebar-link <?= e($currentPage === 'teacher-calendar.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/teacher/teacher-calendar.php">
@@ -228,7 +255,25 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                 </div>
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
-                <li><span class="dropdown-item-text text-muted small"><i class="bi bi-shield-check me-2"></i>Role: <?= e(ucfirst($userRole)) ?></span></li>
+                <li><span class="dropdown-item-text text-muted small"><i class="bi bi-shield-check me-2"></i>Active: <?= e(ucfirst($userRole === 'clerk' ? 'Enrollment Clerk' : $userRole)) ?></span></li>
+
+                <?php
+                $allRoles = $_SESSION['all_roles'] ?? [$userRole];
+                $roleLabels = ['admin' => 'Administrator', 'clerk' => 'Enrollment Clerk', 'teacher' => 'Teacher', 'guardian' => 'Guardian'];
+                $otherRoles = array_filter($allRoles, fn($r) => $r !== $userRole);
+                if (!empty($otherRoles)):
+                ?>
+                <li><hr class="dropdown-divider"></li>
+                <li><span class="dropdown-item-text text-muted small fw-semibold">Switch Role</span></li>
+                <?php foreach ($otherRoles as $r): ?>
+                    <li>
+                        <a class="dropdown-item" href="<?= APP_URL ?>/auth/switch-role.php?role=<?= urlencode($r) ?>">
+                            <i class="bi bi-arrow-left-right me-2"></i><?= e($roleLabels[$r] ?? ucfirst($r)) ?>
+                        </a>
+                    </li>
+                <?php endforeach; ?>
+                <?php endif; ?>
+
                 <li><hr class="dropdown-divider"></li>
                 <?php if ($userRole === 'guardian'): ?>
                     <li><a class="dropdown-item" href="<?= APP_URL ?>/guardian/profile-view.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
