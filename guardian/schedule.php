@@ -20,11 +20,11 @@ $guardian = $stmt->fetch();
 $students = [];
 if ($guardian) {
     $stmt = $pdo->prepare('
-        SELECT s.id, s.full_name, s.section_id, sec.name AS section_name
+        SELECT s.id, s.first_name, s.last_name, s.section_id, sec.name AS section_name
         FROM students s
         LEFT JOIN sections sec ON sec.id = s.section_id
         WHERE s.guardian_id = :gid
-        ORDER BY s.full_name
+        ORDER BY s.last_name, s.first_name
     ');
     $stmt->execute([':gid' => $guardian['id']]);
     $students = $stmt->fetchAll();
@@ -224,7 +224,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <?php else: ?>
                         <?php foreach ($students as $stu): ?>
                             <option value="<?= (int)$stu['id'] ?>" <?= $selectedStudent === (int)$stu['id'] ? 'selected' : '' ?>>
-                                <?= e($stu['full_name']) ?>
+                                <?= e(format_name($stu['first_name'], $stu['last_name'])) ?>
                             </option>
                         <?php endforeach; ?>
                     <?php endif; ?>
