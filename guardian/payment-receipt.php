@@ -18,7 +18,7 @@ if ($paymentId < 1) {
     redirect(APP_URL . '/guardian/payments.php');
 }
 
-$stmt = $pdo->prepare('SELECT id, full_name FROM guardians WHERE user_id = :uid LIMIT 1');
+$stmt = $pdo->prepare('SELECT id, first_name, last_name FROM guardians WHERE user_id = :uid LIMIT 1');
 $stmt->execute([':uid' => $userId]);
 $guardian = $stmt->fetch();
 
@@ -30,7 +30,8 @@ if (!$guardian) {
 $stmt = $pdo->prepare("
     SELECT p.id, p.amount, p.method, p.reference_no, p.description, p.status, p.paid_at,
            e.school_year, e.term,
-           s.full_name AS student_name, s.lrn
+           CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
+           s.lrn
     FROM payments p
     INNER JOIN enrollments e ON e.id = p.enrollment_id
     INNER JOIN students s ON s.id = e.student_id
@@ -142,7 +143,7 @@ $receiptNo = 'RCPT-' . date('Ymd', strtotime($issuedAt)) . '-' . str_pad((string
         <div class="row g-3 mb-3">
             <div class="col-md-6">
                 <div class="receipt-label">Received From</div>
-                <div class="fw-semibold"><?= e($guardian['full_name']) ?></div>
+                <div class="fw-semibold"><?= e(format_name($guardian['first_name'], $guardian['last_name'])) ?></div>
             </div>
             <div class="col-md-6">
                 <div class="receipt-label">Student</div>

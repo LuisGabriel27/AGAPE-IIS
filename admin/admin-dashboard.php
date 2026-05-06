@@ -34,7 +34,13 @@ $attendanceEnabled = attendanceModuleEnabled();
 
 // Recent transactions (payments)
 $stmt = $pdo->query("
-    SELECT p.*, s.full_name AS student_name, e.school_year, e.term
+    SELECT p.*,
+           CASE
+               WHEN COALESCE(s.first_name, '') = '' THEN COALESCE(s.last_name, '')
+               WHEN COALESCE(s.last_name, '') = '' THEN COALESCE(s.first_name, '')
+               ELSE s.last_name || ', ' || s.first_name
+           END AS student_name,
+           e.school_year, e.term
     FROM payments p
     JOIN enrollments e ON p.enrollment_id = e.id
     JOIN students s ON e.student_id = s.id
@@ -96,7 +102,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         <div class="kpi-card kpi-warning">
             <div class="kpi-icon-wrap"><i class="bi bi-hourglass-split"></i></div>
             <div>
-                <div class="kpi-label">Pending Review</div>
+                <div class="kpi-label">For Registrar</div>
                 <div class="kpi-value"><?= e(number_format($pendingEnroll)) ?></div>
             </div>
         </div>
@@ -153,8 +159,8 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         <i class="bi bi-hourglass-split"></i>
                     </div>
                     <div>
-                        <div class="qa-text">Pending Enrollments</div>
-                        <div class="qa-sub"><?= e((string)$pendingEnroll) ?> ready, <?= e((string)$pendingPayment) ?> awaiting payment</div>
+                        <div class="qa-text">Registrar Queue</div>
+                        <div class="qa-sub"><?= e((string)$pendingEnroll) ?> paid, <?= e((string)$pendingPayment) ?> for cashier</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-students.php" class="quick-action">
@@ -171,8 +177,8 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         <i class="bi bi-cash-stack"></i>
                     </div>
                     <div>
-                        <div class="qa-text">Financial Ledger</div>
-                        <div class="qa-sub">View all payments</div>
+                        <div class="qa-text">Cashier Payments</div>
+                        <div class="qa-sub">Record and review payments</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-calendar.php" class="quick-action">

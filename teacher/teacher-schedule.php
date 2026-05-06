@@ -46,7 +46,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-12">
         <h4 class="fw-bold"><i class="bi bi-calendar-week me-2"></i>My Weekly Schedule</h4>
-        <p class="text-muted"><?= e($teacher['full_name'] ?? 'Teacher') ?> — <?= e($teacher['department'] ?? '') ?></p>
+        <p class="text-muted"><?= e(format_name($teacher['first_name'] ?? '', $teacher['last_name'] ?? 'Teacher')) ?> — <?= e($teacher['department'] ?? '') ?></p>
     </div>
 </div>
 

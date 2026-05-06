@@ -36,12 +36,14 @@ CREATE TABLE `users` (
 CREATE TABLE `guardians` (
   `id`                    INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   `user_id`               INT UNSIGNED    NOT NULL,
-  `full_name`             VARCHAR(255)    NOT NULL,
+  `first_name`            VARCHAR(100)    NOT NULL DEFAULT '',
+  `last_name`             VARCHAR(155)    NOT NULL,
   `contact_number`        VARCHAR(50)     DEFAULT NULL,
   `address`               TEXT            DEFAULT NULL,
   `relationship_to_student` VARCHAR(100)  DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_guardian_user` (`user_id`),
+  KEY `idx_guardian_last_name` (`last_name`),
   CONSTRAINT `fk_guardian_user`
     FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
@@ -53,11 +55,13 @@ CREATE TABLE `guardians` (
 CREATE TABLE `teachers` (
   `id`              INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   `user_id`         INT UNSIGNED    NOT NULL,
-  `full_name`       VARCHAR(255)    NOT NULL,
+  `first_name`      VARCHAR(100)    NOT NULL DEFAULT '',
+  `last_name`       VARCHAR(155)    NOT NULL,
   `contact_number`  VARCHAR(50)     DEFAULT NULL,
   `department`      VARCHAR(100)    DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_teacher_user` (`user_id`),
+  KEY `idx_teacher_last_name` (`last_name`),
   CONSTRAINT `fk_teacher_user`
     FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
@@ -98,7 +102,8 @@ CREATE TABLE `sections` (
 CREATE TABLE `students` (
   `id`            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   `guardian_id`   INT UNSIGNED    DEFAULT NULL,
-  `full_name`     VARCHAR(255)    NOT NULL,
+  `first_name`    VARCHAR(100)    NOT NULL DEFAULT '',
+  `last_name`     VARCHAR(155)    NOT NULL,
   `birthdate`     DATE            DEFAULT NULL,
   `gender`        ENUM('male','female','other') DEFAULT NULL,
   `grade_level`   VARCHAR(20)     DEFAULT NULL,
@@ -108,6 +113,7 @@ CREATE TABLE `students` (
   PRIMARY KEY (`id`),
   KEY `idx_student_guardian` (`guardian_id`),
   KEY `idx_student_section` (`section_id`),
+  KEY `idx_student_last_name` (`last_name`),
   CONSTRAINT `fk_student_guardian`
     FOREIGN KEY (`guardian_id`) REFERENCES `guardians` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,
@@ -135,6 +141,33 @@ CREATE TABLE `enrollments` (
   CONSTRAINT `fk_enrollment_student`
     FOREIGN KEY (`student_id`) REFERENCES `students` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 7A. enrollment_documents
+-- ============================================================
+CREATE TABLE `enrollment_documents` (
+  `id`            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+  `enrollment_id` INT UNSIGNED    NOT NULL,
+  `document_type` VARCHAR(50)     NOT NULL,
+  `original_name` VARCHAR(255)    NOT NULL,
+  `file_path`     VARCHAR(500)    NOT NULL,
+  `mime_type`     VARCHAR(100)    DEFAULT NULL,
+  `file_size`     BIGINT UNSIGNED DEFAULT NULL,
+  `uploaded_by`   INT UNSIGNED    DEFAULT NULL,
+  `uploaded_at`   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_enrollment_document_type` (`enrollment_id`, `document_type`),
+  KEY `idx_enrollment_documents_enrollment` (`enrollment_id`),
+  KEY `idx_enrollment_documents_uploaded_by` (`uploaded_by`),
+  CONSTRAINT `chk_enrollment_document_type`
+    CHECK (`document_type` IN ('psa', 'medical', 'previous_school', 'parent_data')),
+  CONSTRAINT `fk_enrollment_document_enrollment`
+    FOREIGN KEY (`enrollment_id`) REFERENCES `enrollments` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_enrollment_document_uploader`
+    FOREIGN KEY (`uploaded_by`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================

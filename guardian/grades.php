@@ -19,7 +19,7 @@ $guardian = $stmt->fetch();
 
 $students = [];
 if ($guardian) {
-    $stmt = $pdo->prepare("SELECT id, full_name FROM students WHERE guardian_id = :gid");
+    $stmt = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE guardian_id = :gid ORDER BY last_name, first_name");
     $stmt->execute([':gid' => $guardian['id']]);
     $students = $stmt->fetchAll();
 }
@@ -88,7 +88,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <label for="student_id" class="form-label">Student</label>
                 <select class="form-select" name="student_id" id="student_id">
                     <?php foreach ($students as $stu): ?>
-                        <option value="<?= (int)$stu['id'] ?>" <?= $selectedStudent == $stu['id'] ? 'selected' : '' ?>><?= e($stu['full_name']) ?></option>
+                        <option value="<?= (int)$stu['id'] ?>" <?= $selectedStudent == $stu['id'] ? 'selected' : '' ?>><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

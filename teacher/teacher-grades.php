@@ -60,7 +60,7 @@ $students = [];
 $publishedStatus = 0;
 if ($currentClass) {
     $stmt = $pdo->prepare("
-        SELECT s.id, s.full_name, s.lrn,
+        SELECT s.id, s.first_name, s.last_name, s.lrn,
                g.id AS grade_id, g.midterm, g.finals, g.final_grade, g.published
         FROM students s
         JOIN sections sec ON s.section_id = sec.id
@@ -69,7 +69,7 @@ if ($currentClass) {
             AND g.school_year = :sy 
             AND g.term = :term
         WHERE s.section_id = :secid
-        ORDER BY s.full_name
+        ORDER BY s.last_name, s.first_name
     ");
     $stmt->execute([
         ':subid' => $selSubject,
@@ -287,7 +287,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <?php foreach ($students as $idx => $stu): ?>
                         <tr>
                             <td><?= e((string)($idx + 1)) ?></td>
-                            <td><?= e($stu['full_name']) ?></td>
+                            <td><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
                             <td><small class="text-muted"><?= e($stu['lrn'] ?? 'N/A') ?></small></td>
                             <td>
                                 <input type="hidden" name="student_ids[]" value="<?= (int)$stu['id'] ?>">

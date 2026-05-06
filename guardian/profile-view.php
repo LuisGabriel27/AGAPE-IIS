@@ -57,7 +57,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <img src="<?= e($user['google_avatar']) ?>" class="rounded-circle mb-2" width="80" height="80" alt="Avatar">
                     <?php else: ?>
                         <div class="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-2" style="width:80px;height:80px;font-size:2rem;">
-                            <?= strtoupper(substr($guardian['full_name'] ?? 'G', 0, 1)) ?>
+                            <?= strtoupper(substr($guardian['last_name'] ?? 'G', 0, 1)) ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -88,7 +88,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card-header bg-white"><i class="bi bi-person-vcard me-2"></i>Personal Information</div>
             <div class="card-body">
                 <table class="table table-sm">
-                    <tr><th width="40%">Full Name</th><td><?= e($guardian['full_name'] ?? 'N/A') ?></td></tr>
+                    <tr><th width="40%">Full Name</th><td><?= e(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? '')) ?></td></tr>
                     <tr><th>Contact Number</th><td><?= e($guardian['contact_number'] ?? 'N/A') ?></td></tr>
                     <tr><th>Address</th><td><?= e($guardian['address'] ?? 'N/A') ?></td></tr>
                     <tr><th>Relationship</th><td><?= e($guardian['relationship_to_student'] ?? 'N/A') ?></td></tr>
@@ -115,7 +115,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <tbody>
                             <?php foreach ($students as $stu): ?>
                             <tr>
-                                <td><?= e($stu['full_name']) ?></td>
+                                <td><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
                                 <td>Grade <?= e($stu['grade_level'] ?? 'N/A') ?></td>
                                 <td><?= e($stu['section_name'] ?? 'N/A') ?></td>
                                 <td><?= e($stu['lrn'] ?? 'N/A') ?></td>

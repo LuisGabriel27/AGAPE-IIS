@@ -110,7 +110,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-12">
         <h4 class="fw-bold"><i class="bi bi-speedometer2 me-2"></i>Teacher Dashboard</h4>
-        <p class="text-muted">Welcome, <?= e($teacher['full_name'] ?? 'Teacher') ?>!</p>
+        <p class="text-muted">Welcome, <?= e(format_name($teacher['first_name'] ?? '', $teacher['last_name'] ?? 'Teacher')) ?>!</p>
     </div>
 </div>
 

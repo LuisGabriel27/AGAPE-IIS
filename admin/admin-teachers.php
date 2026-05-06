@@ -25,12 +25,13 @@ if ($action === 'delete' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
-    $fullName   = trim($_POST['full_name'] ?? '');
+    $firstName  = trim($_POST['first_name'] ?? '');
+    $lastName   = trim($_POST['last_name'] ?? '');
     $contact    = trim($_POST['contact'] ?? '');
     $department = trim($_POST['department'] ?? '');
     $userEmail  = trim($_POST['user_email'] ?? '');
 
-    if (empty($fullName)) $errors[] = 'Full name is required.';
+    if (empty($lastName)) $errors[] = 'Last name is required.';
 
     if (empty($errors)) {
         if ($action === 'create') {
@@ -48,15 +49,15 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
                     $stmt->execute([':e' => $userEmail, ':h' => $hash]);
                     $uId = $stmt->fetchColumn();
                 }
-                $stmt = $pdo->prepare("INSERT INTO teachers (user_id, full_name, contact_number, department) VALUES (:uid, :n, :c, :d) RETURNING id");
-                $stmt->execute([':uid' => $uId, ':n' => $fullName, ':c' => $contact, ':d' => $department]);
+                $stmt = $pdo->prepare("INSERT INTO teachers (user_id, first_name, last_name, contact_number, department) VALUES (:uid, :fn, :ln, :c, :d) RETURNING id");
+                $stmt->execute([':uid' => $uId, ':fn' => $firstName, ':ln' => $lastName, ':c' => $contact, ':d' => $department]);
                 auditLog('create_teacher', 'teachers', (int)$stmt->fetchColumn());
                 setFlash('success', 'Teacher created. Default password: Teacher@1234');
                 redirect(APP_URL . '/admin/admin-teachers.php');
             }
         } else {
-            $pdo->prepare("UPDATE teachers SET full_name=:n, contact_number=:c, department=:d WHERE id=:id")
-                ->execute([':n' => $fullName, ':c' => $contact, ':d' => $department, ':id' => $id]);
+            $pdo->prepare("UPDATE teachers SET first_name=:fn, last_name=:ln, contact_number=:c, department=:d WHERE id=:id")
+                ->execute([':fn' => $firstName, ':ln' => $lastName, ':c' => $contact, ':d' => $department, ':id' => $id]);
             auditLog('update_teacher', 'teachers', $id);
             setFlash('success', 'Teacher updated.');
             redirect(APP_URL . '/admin/admin-teachers.php');
@@ -72,11 +73,11 @@ if ($action === 'edit' && $id) {
 }
 
 $where = ''; $params = [];
-if ($search) { $where = "WHERE t.full_name LIKE :s OR t.department LIKE :s2"; $params[':s'] = $params[':s2'] = "%{$search}%"; }
+if ($search) { $where = "WHERE t.last_name ILIKE :s OR t.first_name ILIKE :s2 OR t.department ILIKE :s3"; $params[':s'] = "{$search}%"; $params[':s2'] = "%{$search}%"; $params[':s3'] = "%{$search}%"; }
 $total = $pdo->prepare("SELECT COUNT(*) FROM teachers t {$where}"); $total->execute($params);
 [$offset, $limit, $page, $totalPages] = paginate($total->fetchColumn());
 
-$stmt = $pdo->prepare("SELECT t.*, u.email FROM teachers t JOIN users u ON t.user_id = u.id {$where} ORDER BY t.full_name LIMIT {$limit} OFFSET {$offset}");
+$stmt = $pdo->prepare("SELECT t.*, u.email FROM teachers t JOIN users u ON t.user_id = u.id {$where} ORDER BY t.last_name, t.first_name LIMIT {$limit} OFFSET {$offset}");
 $stmt->execute($params);
 $teachers = $stmt->fetchAll();
 
@@ -100,9 +101,13 @@ require_once __DIR__ . '/../includes/header.php';
         <form method="POST" id="teacher-form">
             <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" name="full_name" value="<?= e($editTeacher['full_name'] ?? '') ?>" required>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="last_name" value="<?= e($editTeacher['last_name'] ?? '') ?>" required>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">First Name</label>
+                    <input type="text" class="form-control" name="first_name" value="<?= e($editTeacher['first_name'] ?? '') ?>">
                 </div>
                 <?php if ($action === 'create'): ?>
                 <div class="col-md-6 mb-3">
@@ -148,7 +153,7 @@ require_once __DIR__ . '/../includes/header.php';
             <?php else: foreach ($teachers as $i => $t): ?>
             <tr>
                 <td><?= e((string)($offset + $i + 1)) ?></td>
-                <td class="fw-bold"><?= e($t['full_name']) ?></td>
+                <td class="fw-bold"><?= e(format_name($t['first_name'], $t['last_name'])) ?></td>
                 <td><?= e($t['email']) ?></td>
                 <td><?= e($t['contact_number'] ?? 'N/A') ?></td>
                 <td><?= e($t['department'] ?? 'N/A') ?></td>

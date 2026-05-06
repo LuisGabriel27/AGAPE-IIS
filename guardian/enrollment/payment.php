@@ -1,7 +1,7 @@
 <?php
 /**
- * Guardian Enrollment Payment Form
- * Completes payment details and submits enrollment for admin review.
+ * Guardian Enrollment Payment Reference
+ * Legacy page for recording payment details before registrar submission.
  */
 
 require_once __DIR__ . '/../../includes/session-check.php';
@@ -33,7 +33,9 @@ function loadEnrollmentPayment(PDO $pdo, int $guardianId, int $enrollmentId): ?a
 {
     $stmt = $pdo->prepare("
         SELECT e.id AS enrollment_id, e.status AS enrollment_status, e.school_year, e.term, e.payment_submitted_at,
-               s.id AS student_id, s.full_name AS student_name, s.grade_level, s.lrn,
+               s.id AS student_id,
+               CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
+               s.grade_level, s.lrn,
                p.id AS payment_id, p.amount, p.method, p.reference_no, p.description, p.status AS payment_status
         FROM enrollments e
         INNER JOIN students s ON s.id = e.student_id
@@ -63,7 +65,7 @@ if (!$record) {
 }
 
 if (in_array($record['enrollment_status'], ['approved', 'enrolled'], true)) {
-    setFlash('info', 'This enrollment has already been accepted by admin.');
+    setFlash('info', 'This enrollment has already been submitted by the Registrar.');
     redirect(APP_URL . '/guardian/enrollment/certificate.php?student_id=' . (int)$record['student_id']);
 }
 
@@ -141,12 +143,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'reference_no' => $referenceNo !== '' ? $referenceNo : null,
             ]);
 
-            setFlash('success', 'Payment form submitted. Your enrollment request has been sent to admin for acceptance or decline.');
+            setFlash('success', 'Payment reference submitted. Registrar can now review this enrollment for submission to teachers.');
             redirect(APP_URL . '/guardian/dashboard.php');
         } catch (Exception $e) {
             $pdo->rollBack();
             error_log('Enrollment payment submission error: ' . $e->getMessage());
-            $errors[] = 'Unable to submit payment form right now. Please try again.';
+            $errors[] = 'Unable to submit payment reference right now. Please try again.';
         }
     }
 
@@ -159,8 +161,8 @@ require_once __DIR__ . '/../../includes/header.php';
 
 <div class="row mb-4">
     <div class="col-md-8">
-        <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Enrollment Payment Form</h4>
-        <p class="text-muted mb-0">Complete payment details so your enrollment request can be reviewed by admin.</p>
+        <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Cashier Payment Reference</h4>
+        <p class="text-muted mb-0">Record payment details after Registrar assessment and Cashier payment.</p>
     </div>
     <div class="col-md-4 text-md-end mt-3 mt-md-0">
         <a class="btn btn-outline-secondary" href="<?= APP_URL ?>/guardian/enrollment/"><i class="bi bi-arrow-left me-1"></i>Back to Enrollment</a>
@@ -176,7 +178,7 @@ require_once __DIR__ . '/../../includes/header.php';
 <?php if (!empty($record['payment_submitted_at'])): ?>
     <div class="alert alert-info">
         <i class="bi bi-info-circle me-1"></i>
-        Payment form was already submitted on <?= e(date('M d, Y h:i A', strtotime($record['payment_submitted_at']))) ?>.
+        Payment reference was already submitted on <?= e(date('M d, Y h:i A', strtotime($record['payment_submitted_at']))) ?>.
         You may update it below before admin finalizes the request.
     </div>
 <?php endif; ?>
@@ -247,11 +249,11 @@ require_once __DIR__ . '/../../includes/header.php';
 
                     <div class="alert alert-info mb-3">
                         <i class="bi bi-shield-check me-1"></i>
-                        Submitting this form sends your enrollment request to admin for acceptance or decline.
+                        Submitting this reference marks the enrollment as ready for Registrar submission to teachers.
                     </div>
 
                     <button type="submit" class="btn btn-success">
-                        <i class="bi bi-send-check me-1"></i>Submit Payment and Send to Admin
+                        <i class="bi bi-send-check me-1"></i>Submit Payment Reference
                     </button>
                 </form>
             </div>

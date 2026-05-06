@@ -16,7 +16,7 @@ $errors = [];
 // â”€â”€ Export CSV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ($action === 'export') {
     $stmt = $pdo->query("
-        SELECT p.id, s.full_name AS student, e.school_year, e.term, p.amount, p.method, p.reference_no, p.description, p.status, p.paid_at
+        SELECT p.id, CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student, e.school_year, e.term, p.amount, p.method, p.reference_no, p.description, p.status, p.paid_at
         FROM payments p
         JOIN enrollments e ON p.enrollment_id = e.id
         JOIN students s ON e.student_id = s.id
@@ -47,19 +47,68 @@ if ($action === 'record' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($amount <= 0) $errors[] = 'Amount must be greater than zero.';
 
     if (empty($errors)) {
+        $pdo->beginTransaction();
+
         $paidAt = $status === 'paid' ? date('Y-m-d H:i:s') : null;
-        $stmt = $pdo->prepare("INSERT INTO payments (enrollment_id, amount, method, reference_no, description, status, paid_at, recorded_by) VALUES (:eid, :amt, :m, :ref, :desc, :st, :pa, :rb) RETURNING id");
-        $stmt->execute([':eid'=>$enrollmentId,':amt'=>$amount,':m'=>$method,':ref'=>$refNo,':desc'=>$description,':st'=>$status,':pa'=>$paidAt,':rb'=>$_SESSION['user_id']]);
-        auditLog('record_payment', 'payments', (int)$stmt->fetchColumn());
-        setFlash('success', 'Payment recorded.');
+        $existingStmt = $pdo->prepare("SELECT id FROM payments WHERE enrollment_id = :eid ORDER BY id DESC LIMIT 1");
+        $existingStmt->execute([':eid' => $enrollmentId]);
+        $paymentId = (int)($existingStmt->fetchColumn() ?: 0);
+
+        if ($paymentId > 0) {
+            $stmt = $pdo->prepare("
+                UPDATE payments
+                SET amount = :amt,
+                    method = :m,
+                    reference_no = :ref,
+                    description = :desc,
+                    status = :st,
+                    paid_at = :pa,
+                    recorded_by = :rb
+                WHERE id = :id
+            ");
+            $stmt->execute([
+                ':amt' => $amount,
+                ':m' => $method,
+                ':ref' => $refNo ?: null,
+                ':desc' => $description,
+                ':st' => $status,
+                ':pa' => $paidAt,
+                ':rb' => $_SESSION['user_id'],
+                ':id' => $paymentId,
+            ]);
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO payments (enrollment_id, amount, method, reference_no, description, status, paid_at, recorded_by) VALUES (:eid, :amt, :m, :ref, :desc, :st, :pa, :rb) RETURNING id");
+            $stmt->execute([':eid'=>$enrollmentId,':amt'=>$amount,':m'=>$method,':ref'=>$refNo ?: null,':desc'=>$description,':st'=>$status,':pa'=>$paidAt,':rb'=>$_SESSION['user_id']]);
+            $paymentId = (int)$stmt->fetchColumn();
+        }
+
+        if ($status === 'paid') {
+            $stmt = $pdo->prepare("
+                UPDATE enrollments
+                SET payment_submitted_at = COALESCE(payment_submitted_at, NOW()),
+                    status = CASE WHEN status = 'rejected' THEN 'pending' ELSE status END,
+                    remarks = 'Cashier payment recorded; ready for registrar submission.'
+                WHERE id = :id
+            ");
+            $stmt->execute([':id' => $enrollmentId]);
+        }
+
+        auditLog('record_cashier_payment', 'payments', $paymentId);
+        $pdo->commit();
+
+        setFlash('success', $status === 'paid'
+            ? 'Payment recorded. Enrollment is ready for registrar submission to teachers.'
+            : 'Pending payment record saved.');
         redirect(APP_URL . '/admin/admin-payments.php');
     }
 }
 
 // Enrollments dropdown
 $enrollmentsList = $pdo->query("
-    SELECT e.id, s.full_name, e.school_year, e.term 
-    FROM enrollments e JOIN students s ON e.student_id = s.id 
+    SELECT e.id,
+           CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
+           e.school_year, e.term
+    FROM enrollments e JOIN students s ON e.student_id = s.id
     ORDER BY e.id DESC
 ")->fetchAll();
 
@@ -68,7 +117,9 @@ $total = $pdo->query("SELECT COUNT(*) FROM payments")->fetchColumn();
 [$offset, $limit, $page, $totalPages] = paginate($total, 15);
 
 $stmt = $pdo->query("
-    SELECT p.*, s.full_name AS student_name, e.school_year, e.term
+    SELECT p.*,
+           CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
+           e.school_year, e.term
     FROM payments p
     JOIN enrollments e ON p.enrollment_id = e.id
     JOIN students s ON e.student_id = s.id
@@ -79,15 +130,15 @@ $payments = $stmt->fetchAll();
 
 $totalPaid = $pdo->query("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='paid'")->fetchColumn();
 
-$pageTitle = 'Manage Payments';
+$pageTitle = 'Cashier Payments';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="row mb-4">
-    <div class="col-md-4"><h4 class="fw-bold"><i class="bi bi-cash-stack me-2"></i>Payments</h4></div>
+    <div class="col-md-4"><h4 class="fw-bold"><i class="bi bi-cash-stack me-2"></i>Cashier Payments</h4></div>
     <div class="col-md-8 text-md-end d-flex justify-content-md-end gap-2">
         <span class="badge bg-success fs-6 align-self-center">Total Collected: &#8369;<?= e(number_format($totalPaid, 2)) ?></span>
-        <a href="?action=record" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i>Record Payment</a>
+        <a href="?action=record" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i>Record Cashier Payment</a>
         <a href="?action=export" class="btn btn-outline-success btn-sm"><i class="bi bi-download me-1"></i>Export CSV</a>
     </div>
 </div>
@@ -98,7 +149,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if ($action === 'record'): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold">Record Manual Payment</div>
+    <div class="card-header bg-white fw-bold">Record Cashier / Treasurer Payment</div>
     <div class="card-body">
         <form method="POST" id="payment-form">
             <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
@@ -108,7 +159,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="enrollment_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($enrollmentsList as $en): ?>
-                            <option value="<?= (int)$en['id'] ?>"><?= e($en['full_name']) ?> - <?= e($en['school_year']) ?> (<?= e($en['term']) ?>)</option>
+                            <option value="<?= (int)$en['id'] ?>"><?= e($en['student_name']) ?> - <?= e($en['school_year']) ?> (<?= e($en['term']) ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -130,7 +181,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Description</label>
-                    <input type="text" class="form-control" name="description" value="Manual Payment">
+                    <input type="text" class="form-control" name="description" value="Enrollment Assessment Payment">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Status</label>
@@ -140,7 +191,7 @@ require_once __DIR__ . '/../includes/header.php';
                     </select>
                 </div>
             </div>
-            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Record</button>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Record Payment</button>
             <a href="<?= APP_URL ?>/admin/admin-payments.php" class="btn btn-outline-secondary">Cancel</a>
         </form>
     </div>

@@ -20,7 +20,7 @@ $guardian = $stmt->fetch();
 $students = [];
 $sectionId = 0;
 if ($guardian) {
-    $stmt = $pdo->prepare("SELECT id, full_name, section_id FROM students WHERE guardian_id = :gid");
+    $stmt = $pdo->prepare("SELECT id, first_name, last_name, section_id FROM students WHERE guardian_id = :gid");
     $stmt->execute([':gid' => $guardian['id']]);
     $students = $stmt->fetchAll();
     $sectionId = $students[0]['section_id'] ?? 0;
@@ -40,7 +40,8 @@ $slots = [];
 
 if ($sectionId) {
     $stmt = $pdo->prepare("
-        SELECT sch.*, sub.name AS subject_name, t.full_name AS teacher_name
+        SELECT sch.*, sub.name AS subject_name,
+               CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS teacher_name
         FROM schedules sch
         JOIN subjects sub ON sch.subject_id = sub.id
         JOIN teachers t ON sch.teacher_id = t.id

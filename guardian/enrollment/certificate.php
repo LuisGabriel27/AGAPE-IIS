@@ -12,7 +12,7 @@ require_once __DIR__ . '/../../includes/helpers.php';
 $pdo = getDB();
 $userId = $_SESSION['user_id'];
 
-$stmt = $pdo->prepare('SELECT id, full_name FROM guardians WHERE user_id = :uid LIMIT 1');
+$stmt = $pdo->prepare('SELECT id, first_name, last_name FROM guardians WHERE user_id = :uid LIMIT 1');
 $stmt->execute([':uid' => $userId]);
 $guardian = $stmt->fetch();
 
@@ -21,7 +21,7 @@ if (!$guardian) {
     redirect(APP_URL . '/guardian/dashboard.php');
 }
 
-$stmt = $pdo->prepare('SELECT id, full_name FROM students WHERE guardian_id = :gid ORDER BY full_name');
+$stmt = $pdo->prepare('SELECT id, first_name, last_name FROM students WHERE guardian_id = :gid ORDER BY last_name, first_name');
 $stmt->execute([':gid' => $guardian['id']]);
 $students = $stmt->fetchAll();
 
@@ -63,8 +63,8 @@ if (!in_array($selectedTerm, ['1st Semester', '2nd Semester'], true)) {
 
 $stmt = $pdo->prepare("
     SELECT e.id, e.school_year, e.term, e.status, e.enrolled_at,
-           s.full_name AS student_name, s.grade_level, s.lrn,
-           sec.name AS section_name
+           CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
+           s.grade_level, s.lrn, sec.name AS section_name
     FROM enrollments e
     INNER JOIN students s ON s.id = e.student_id
     LEFT JOIN sections sec ON sec.id = s.section_id
@@ -87,8 +87,8 @@ $certificateRecord = $stmt->fetch();
 if (!$certificateRecord) {
     $stmt = $pdo->prepare("
         SELECT e.id, e.school_year, e.term, e.status, e.enrolled_at,
-               s.full_name AS student_name, s.grade_level, s.lrn,
-               sec.name AS section_name
+               CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
+               s.grade_level, s.lrn, sec.name AS section_name
         FROM enrollments e
         INNER JOIN students s ON s.id = e.student_id
         LEFT JOIN sections sec ON sec.id = s.section_id
@@ -199,7 +199,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     <select class="form-select" name="student_id">
                         <?php foreach ($students as $stu): ?>
                             <option value="<?= (int)$stu['id'] ?>" <?= $selectedStudent === (int)$stu['id'] ? 'selected' : '' ?>>
-                                <?= e($stu['full_name']) ?>
+                                <?= e(format_name($stu['first_name'], $stu['last_name'])) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -270,7 +270,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="row mt-5">
                     <div class="col-md-6">
                         <div class="small text-muted">Parent/Guardian</div>
-                        <div class="fw-semibold"><?= e($guardian['full_name']) ?></div>
+                        <div class="fw-semibold"><?= e(format_name($guardian['first_name'], $guardian['last_name'])) ?></div>
                     </div>
                     <div class="col-md-6 text-md-end">
                         <div class="small text-muted">Enrollment Status</div>

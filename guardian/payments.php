@@ -24,7 +24,8 @@ if ($guardian) {
     $dir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 
     $stmt = $pdo->prepare("
-        SELECT p.*, e.school_year, e.term, s.full_name AS student_name
+        SELECT p.*, e.school_year, e.term,
+               CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name
         FROM payments p
         JOIN enrollments e ON p.enrollment_id = e.id
         JOIN students s ON e.student_id = s.id

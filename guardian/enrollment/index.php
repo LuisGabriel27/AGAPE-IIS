@@ -25,20 +25,30 @@ if (!$guardian) {
 }
 
 // Determine if guardian profile is considered complete
-$profileComplete = !empty($guardian['full_name'])
+$profileComplete = !empty($guardian['last_name'])
     && !empty($guardian['contact_number'])
     && !empty($guardian['relationship_to_student']);
 
 $step    = (int)($_POST['step'] ?? $_GET['step'] ?? ($profileComplete ? 2 : 1));
 $errors  = [];
 $sections = $pdo->query("SELECT id, name, grade_level, capacity FROM sections ORDER BY grade_level, name")->fetchAll();
+$requiredDocuments = [
+    'psa' => 'PSA Birth Certificate',
+    'medical' => 'Medical Records',
+    'previous_school' => 'Previous School Records',
+    'parent_data' => 'Parent / Guardian Data',
+];
+$allowedRequirementExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
+$allowedRequirementMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+$maxRequirementFileSize = 5 * 1024 * 1024;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
     // ── STEP 1 → 2: Save guardian profile ─────────────────
     if ($step === 2) {
-        $gFullName    = trim($_POST['g_full_name'] ?? '');
+        $gFirstName   = trim($_POST['g_first_name'] ?? '');
+        $gLastName    = trim($_POST['g_last_name'] ?? '');
         $gContact     = trim($_POST['g_contact'] ?? '');
         $gAddress     = trim($_POST['g_address'] ?? '');
         $gRel         = trim($_POST['g_relationship'] ?? '');
@@ -49,20 +59,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gEmergName   = trim($_POST['g_emergency_name'] ?? '');
         $gEmergNum    = trim($_POST['g_emergency_number'] ?? '');
 
-        if (empty($gFullName))  $errors[] = 'Your full name is required.';
+        if (empty($gLastName))  $errors[] = 'Your last name is required.';
         if (empty($gContact))   $errors[] = 'Contact number is required.';
         if (empty($gRel))       $errors[] = 'Relationship to student is required.';
 
         if (empty($errors)) {
             $pdo->prepare("
                 UPDATE guardians
-                SET full_name = :name, contact_number = :contact, address = :addr,
+                SET first_name = :fn, last_name = :ln, contact_number = :contact, address = :addr,
                     relationship_to_student = :rel, occupation = :occ,
                     civil_status = :cs, nationality = :nat, religion = :rel2,
                     emergency_contact_name = :en, emergency_contact_number = :ec
                 WHERE user_id = :uid
             ")->execute([
-                ':name'    => $gFullName,
+                ':fn'      => $gFirstName,
+                ':ln'      => $gLastName,
                 ':contact' => $gContact,
                 ':addr'    => $gAddress ?: null,
                 ':rel'     => $gRel,
@@ -86,14 +97,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ── STEP 2 → 3: Save student info in session ──────────
     if ($step === 3 && empty($errors)) {
         $_SESSION['enroll'] = [
-            'full_name' => trim($_POST['full_name'] ?? ''),
-            'birthdate' => trim($_POST['birthdate'] ?? ''),
-            'gender'    => trim($_POST['gender'] ?? ''),
-            'lrn'       => trim($_POST['lrn'] ?? ''),
+            'first_name' => trim($_POST['first_name'] ?? ''),
+            'last_name'  => trim($_POST['last_name'] ?? ''),
+            'birthdate'  => trim($_POST['birthdate'] ?? ''),
+            'gender'     => trim($_POST['gender'] ?? ''),
+            'lrn'        => trim($_POST['lrn'] ?? ''),
         ];
 
-        if (empty($_SESSION['enroll']['full_name'])) {
-            $errors[] = 'Student name is required.';
+        if (empty($_SESSION['enroll']['last_name'])) {
+            $errors[] = 'Student last name is required.';
             $step = 2;
         }
     }
@@ -104,24 +116,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['enroll']['section_id']  = (int)($_POST['section_id'] ?? 0);
         $_SESSION['enroll']['school_year'] = trim($_POST['school_year'] ?? currentSchoolYear());
         $_SESSION['enroll']['term']        = trim($_POST['term'] ?? '1st Semester');
+        $uploadedRequirements = [];
 
         $enrollData = $_SESSION['enroll'] ?? [];
-        if (empty($enrollData['full_name']) || empty($enrollData['grade_level'])) {
+        if (empty($enrollData['last_name']) || empty($enrollData['grade_level'])) {
             $errors[] = 'Enrollment data is incomplete.';
             $step = 2;
         }
 
         if (empty($errors)) {
+            $fileInfo = function_exists('finfo_open') ? finfo_open(FILEINFO_MIME_TYPE) : false;
+            foreach ($requiredDocuments as $docKey => $docLabel) {
+                $uploadError = $_FILES['requirements']['error'][$docKey] ?? UPLOAD_ERR_NO_FILE;
+                $originalName = (string)($_FILES['requirements']['name'][$docKey] ?? '');
+                $tmpName = (string)($_FILES['requirements']['tmp_name'][$docKey] ?? '');
+                $size = (int)($_FILES['requirements']['size'][$docKey] ?? 0);
+
+                if ($uploadError === UPLOAD_ERR_NO_FILE) {
+                    $errors[] = $docLabel . ' is required.';
+                    continue;
+                }
+
+                if ($uploadError !== UPLOAD_ERR_OK || !is_uploaded_file($tmpName)) {
+                    $errors[] = 'Unable to upload ' . $docLabel . '. Please try again.';
+                    continue;
+                }
+
+                if ($size > $maxRequirementFileSize) {
+                    $errors[] = $docLabel . ' must be 5MB or smaller.';
+                    continue;
+                }
+
+                $safeOriginal = substr(basename(str_replace('\\', '/', $originalName)), 0, 255);
+                $extension = strtolower(pathinfo($safeOriginal, PATHINFO_EXTENSION));
+                if (!in_array($extension, $allowedRequirementExtensions, true)) {
+                    $errors[] = $docLabel . ' must be a PDF, JPG, JPEG, or PNG file.';
+                    continue;
+                }
+
+                $mimeType = $fileInfo ? (string)finfo_file($fileInfo, $tmpName) : (string)($_FILES['requirements']['type'][$docKey] ?? '');
+                if (!in_array($mimeType, $allowedRequirementMimeTypes, true)) {
+                    $errors[] = $docLabel . ' has an unsupported file type.';
+                    continue;
+                }
+
+                $uploadedRequirements[$docKey] = [
+                    'label' => $docLabel,
+                    'original_name' => $safeOriginal,
+                    'tmp_name' => $tmpName,
+                    'extension' => $extension,
+                    'mime_type' => $mimeType,
+                    'size' => $size,
+                ];
+            }
+            if ($fileInfo) {
+                finfo_close($fileInfo);
+            }
+
+            if (!empty($errors)) {
+                $step = 3;
+            }
+        }
+
+        if (empty($errors)) {
+            $movedRequirementFiles = [];
+            $committed = false;
             try {
                 $pdo->beginTransaction();
 
                 $stmt = $pdo->prepare("
-                    INSERT INTO students (guardian_id, full_name, birthdate, gender, grade_level, section_id, lrn)
-                    VALUES (:gid, :name, :birth, :gender, :grade, :sec, :lrn) RETURNING id
+                    INSERT INTO students (guardian_id, first_name, last_name, birthdate, gender, grade_level, section_id, lrn)
+                    VALUES (:gid, :fname, :lname, :birth, :gender, :grade, :sec, :lrn) RETURNING id
                 ");
                 $stmt->execute([
                     ':gid'    => $guardian['id'],
-                    ':name'   => $enrollData['full_name'],
+                    ':fname'  => $enrollData['first_name'],
+                    ':lname'  => $enrollData['last_name'],
                     ':birth'  => $enrollData['birthdate'] ?: null,
                     ':gender' => $enrollData['gender'] ?: null,
                     ':grade'  => $enrollData['grade_level'],
@@ -146,19 +216,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     VALUES (:eid, 15000.00, 'cash', 'Enrollment Fee', 'pending')
                 ")->execute([':eid' => $enrollmentId]);
 
+                $uploadDir = __DIR__ . '/../../uploads/enrollment-documents/' . $enrollmentId;
+                $relativeDir = 'uploads/enrollment-documents/' . $enrollmentId;
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+                    throw new RuntimeException('Unable to create enrollment document upload directory.');
+                }
+
+                $docStmt = $pdo->prepare("
+                    INSERT INTO enrollment_documents
+                        (enrollment_id, document_type, original_name, file_path, mime_type, file_size, uploaded_by)
+                    VALUES
+                        (:enrollment_id, :document_type, :original_name, :file_path, :mime_type, :file_size, :uploaded_by)
+                    ON CONFLICT (enrollment_id, document_type)
+                    DO UPDATE SET
+                        original_name = EXCLUDED.original_name,
+                        file_path = EXCLUDED.file_path,
+                        mime_type = EXCLUDED.mime_type,
+                        file_size = EXCLUDED.file_size,
+                        uploaded_by = EXCLUDED.uploaded_by,
+                        uploaded_at = NOW()
+                ");
+
+                foreach ($uploadedRequirements as $docKey => $file) {
+                    $storedName = $docKey . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $file['extension'];
+                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $storedName;
+                    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+                        throw new RuntimeException('Unable to save uploaded file: ' . $file['label']);
+                    }
+                    $movedRequirementFiles[] = $targetPath;
+
+                    $docStmt->execute([
+                        ':enrollment_id' => $enrollmentId,
+                        ':document_type' => $docKey,
+                        ':original_name' => $file['original_name'],
+                        ':file_path' => $relativeDir . '/' . $storedName,
+                        ':mime_type' => $file['mime_type'],
+                        ':file_size' => $file['size'],
+                        ':uploaded_by' => $userId,
+                    ]);
+                }
+
                 $pdo->commit();
+                $committed = true;
                 unset($_SESSION['enroll']);
 
-                auditLog('enrollment_submitted', 'enrollments', $enrollmentId, null, [
-                    'student_id'  => $studentId,
-                    'school_year' => $enrollData['school_year'],
-                    'term'        => $enrollData['term'],
-                ]);
+                try {
+                    auditLog('enrollment_submitted', 'enrollments', $enrollmentId, null, [
+                        'student_id'  => $studentId,
+                        'school_year' => $enrollData['school_year'],
+                        'term'        => $enrollData['term'],
+                        'documents'   => array_keys($uploadedRequirements),
+                    ]);
+                } catch (Exception $auditError) {
+                    error_log('Enrollment audit error: ' . $auditError->getMessage());
+                }
 
-                setFlash('success', 'Enrollment submitted. Complete the payment form to finalize your application.');
-                redirect(APP_URL . '/guardian/enrollment/payment.php?enrollment_id=' . $enrollmentId);
+                setFlash('success', 'Enrollment requirements uploaded. The Enrollment Clerk can now review the files, assess the enrollment, and validate its status.');
+                redirect(APP_URL . '/guardian/dashboard.php');
             } catch (Exception $e) {
-                $pdo->rollBack();
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                if (!$committed) {
+                    foreach ($movedRequirementFiles as $path) {
+                        if (is_file($path)) {
+                            @unlink($path);
+                        }
+                    }
+                }
                 error_log('Enrollment creation error: ' . $e->getMessage());
                 $errors[] = 'An error occurred while saving enrollment. Please try again.';
                 $step = 3;
@@ -187,10 +312,10 @@ require_once __DIR__ . '/../../includes/header.php';
 <?php
 // Build step labels based on whether profile step is needed
 if (!$profileComplete) {
-    $stepLabels = ['1' => 'Your Details', '2' => 'Student Info', '3' => 'Enrollment Details', '4' => 'Payment'];
+    $stepLabels = ['1' => 'Parent Data', '2' => 'Student Info', '3' => 'Upload Requirements', '4' => 'Clerk Review'];
     $displayStep = $step;
 } else {
-    $stepLabels = ['2' => 'Student Info', '3' => 'Enrollment Details', '4' => 'Payment'];
+    $stepLabels = ['2' => 'Student Info', '3' => 'Upload Requirements', '4' => 'Clerk Review'];
     $displayStep = $step - 1;
 }
 $totalDisplaySteps = count($stepLabels);
@@ -227,17 +352,22 @@ $stepKeys = array_keys($stepLabels);
     <!-- ────────────────────────────────────────────────── -->
     <!-- STEP 1: Guardian / Parent Details                  -->
     <!-- ────────────────────────────────────────────────── -->
-    <h5 class="fw-bold mb-3"><i class="bi bi-person-lines-fill me-2"></i>Step 1: Your Details</h5>
-    <p class="text-muted small mb-4">Please complete your guardian profile before enrolling a student. This information is required for school records.</p>
+    <h5 class="fw-bold mb-3"><i class="bi bi-person-lines-fill me-2"></i>Step 1: Parent / Guardian Data</h5>
+    <p class="text-muted small mb-4">Please complete the parent data needed by the Registrar before enrollment assessment.</p>
     <form method="POST" action="" id="guardian-profile-form">
         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
         <input type="hidden" name="step" value="2">
 
         <div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="g_full_name"
-                       value="<?= e($guardian['full_name'] ?? '') ?>" required>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="g_last_name"
+                       value="<?= e($guardian['last_name'] ?? '') ?>" required>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">First Name</label>
+                <input type="text" class="form-control" name="g_first_name"
+                       value="<?= e($guardian['first_name'] ?? '') ?>">
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Contact Number <span class="text-danger">*</span></label>
@@ -311,10 +441,17 @@ $stepKeys = array_keys($stepLabels);
         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
         <input type="hidden" name="step" value="3">
 
-        <div class="mb-3">
-            <label class="form-label">Student Full Name <span class="text-danger">*</span></label>
-            <input type="text" class="form-control" name="full_name"
-                   value="<?= e($enrollData['full_name'] ?? '') ?>" required>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Student Last Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="last_name"
+                       value="<?= e($enrollData['last_name'] ?? '') ?>" required>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Student First Name</label>
+                <input type="text" class="form-control" name="first_name"
+                       value="<?= e($enrollData['first_name'] ?? '') ?>">
+            </div>
         </div>
         <div class="row">
             <div class="col-md-6 mb-3">
@@ -344,7 +481,7 @@ $stepKeys = array_keys($stepLabels);
                 <a href="?step=1" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
             <?php endif; ?>
             <button type="submit" class="btn btn-primary">
-                Next: Enrollment Details <i class="bi bi-arrow-right ms-1"></i>
+                Next: Upload Requirements <i class="bi bi-arrow-right ms-1"></i>
             </button>
         </div>
     </form>
@@ -353,8 +490,8 @@ $stepKeys = array_keys($stepLabels);
     <!-- ────────────────────────────────────────────────── -->
     <!-- STEP 3: Enrollment Details                         -->
     <!-- ────────────────────────────────────────────────── -->
-    <h5 class="fw-bold mb-3"><i class="bi bi-journal-check me-2"></i>Step <?= $profileComplete ? '2' : '3' ?>: Enrollment Details</h5>
-    <form method="POST" action="" id="enrollment-step-details">
+    <h5 class="fw-bold mb-3"><i class="bi bi-journal-check me-2"></i>Step <?= $profileComplete ? '2' : '3' ?>: Upload Enrollment Requirements</h5>
+    <form method="POST" action="" id="enrollment-step-details" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
         <input type="hidden" name="step" value="4">
 
@@ -399,13 +536,23 @@ $stepKeys = array_keys($stepLabels);
 
         <div class="alert alert-info mb-4">
             <i class="bi bi-info-circle me-1"></i>
-            After saving, you will be redirected to the payment form. Enrollment review begins after payment submission.
+            Upload clear copies of the required enrollment documents. The Enrollment Clerk will review these files before payment assessment and final status validation.
+        </div>
+
+        <div class="row">
+            <?php foreach ($requiredDocuments as $docKey => $docLabel): ?>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label"><?= e($docLabel) ?> <span class="text-danger">*</span></label>
+                    <input type="file" class="form-control" name="requirements[<?= e($docKey) ?>]" accept=".pdf,.jpg,.jpeg,.png" required>
+                    <div class="form-text">PDF, JPG, JPEG, or PNG. Max 5MB.</div>
+                </div>
+            <?php endforeach; ?>
         </div>
 
         <div class="d-flex justify-content-between">
             <a href="?step=2" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
             <button type="submit" class="btn btn-success">
-                Proceed to Payment Form <i class="bi bi-arrow-right ms-1"></i>
+                Submit Requirements for Clerk Review <i class="bi bi-arrow-right ms-1"></i>
             </button>
         </div>
     </form>

@@ -60,10 +60,10 @@ $students = [];
 $existingRecords = [];
 if ($hasAccess && $selSection) {
     $stmt = $pdo->prepare("
-        SELECT s.id, s.full_name, s.lrn
+        SELECT s.id, s.first_name, s.last_name, s.lrn
         FROM students s
         WHERE s.section_id = :secid
-        ORDER BY s.full_name
+        ORDER BY s.last_name, s.first_name
     ");
     $stmt->execute([':secid' => $selSection]);
     $students = $stmt->fetchAll();
@@ -254,7 +254,7 @@ require_once __DIR__ . '/../includes/header.php';
                         ?>
                         <tr>
                             <td><?= e((string)($idx + 1)) ?></td>
-                            <td class="fw-semibold"><?= e($stu['full_name']) ?></td>
+                            <td class="fw-semibold"><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
                             <td><small class="text-muted"><?= e($stu['lrn'] ?? 'N/A') ?></small></td>
                             <td>
                                 <input type="hidden" name="student_ids[]" value="<?= (int)$stu['id'] ?>">

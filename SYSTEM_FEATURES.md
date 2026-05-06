@@ -26,7 +26,7 @@ This document summarizes the current functionality of the system based on the pr
 - Subject management (create, edit, delete)
 - Section management (create, edit, delete, adviser assignment, capacity)
 - Schedule management (create, edit, delete class schedules)
-- Enrollment management (filter by status or year, approve or reject with remarks, mark approved records as enrolled)
+- Registrar enrollment chain (guardian requirement uploads, Enrollment Clerk review, payment assessment, cashier payment, and final submission to teachers)
 - Grades management (view student grades, admin override of grade components and final grade)
 - Calendar management (create, edit, delete events, visual monthly calendar, event list table)
 - Attendance management with face recognition (register face profiles, save descriptors and images, scan and mark attendance, recognition logs, today's attendance)
@@ -41,7 +41,7 @@ This document summarizes the current functionality of the system based on the pr
 
 ### 1.4 Guardian Features
 - Guardian dashboard with linked students and payment snapshot
-- Multi-step enrollment submission workflow
+- Multi-step enrollment intake with PSA, medical records, previous school records, and parent/guardian data uploads
 - Student grades viewing with filters (student, school year, term)
 - GWA computation based on available grades
 - Schedule page with weekly class schedule and school calendar tabs

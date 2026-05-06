@@ -64,10 +64,10 @@ if ($currentSection) {
 
     // Students in section, sorted by last name
     $stmt = $pdo->prepare("
-        SELECT id, full_name, lrn
+        SELECT id, first_name, last_name, lrn
         FROM students
         WHERE section_id = :secid
-        ORDER BY split_part(full_name, ' ', -1), full_name
+        ORDER BY last_name, first_name
     ");
     $stmt->execute([':secid' => $selSection]);
     $students = $stmt->fetchAll();
@@ -205,7 +205,7 @@ if (!$isPrint) {
 <p>
     <strong>Section:</strong> <?= e($currentSection['name']) ?> — Grade <?= e($currentSection['grade_level']) ?> &nbsp;|&nbsp;
     <strong>Month:</strong> <?= e($monthLabel) ?> &nbsp;|&nbsp;
-    <strong>Teacher:</strong> <?= e($teacher['full_name']) ?>
+    <strong>Teacher:</strong> <?= e(format_name($teacher['first_name'], $teacher['last_name'])) ?>
 </p>
 <?php else: ?>
 <div class="card">
@@ -252,7 +252,7 @@ if (!$isPrint) {
             $cntA = countStatus($stuDays, 'absent');
         ?>
         <tr>
-            <td <?= $isPrint ? 'class="name"' : 'class="fw-semibold"' ?>><?= e($stu['full_name']) ?></td>
+            <td <?= $isPrint ? 'class="name"' : 'class="fw-semibold"' ?>><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
             <td><small><?= e($stu['lrn'] ?? '') ?></small></td>
             <?php for ($d = 1; $d <= $daysInMonth; $d++):
                 $dow  = date('N', mktime(0,0,0,$selMonth,$d,$selYear));
@@ -292,7 +292,7 @@ if (!$isPrint) {
 <?php if ($isPrint): ?>
 <p class="footer-note">
     Generated: <?= date('F d, Y h:i A') ?> &nbsp;|&nbsp; <?= e(APP_NAME) ?> &nbsp;|&nbsp;
-    Teacher: <?= e($teacher['full_name']) ?>
+    Teacher: <?= e(format_name($teacher['first_name'], $teacher['last_name'])) ?>
 </p>
 </body>
 </html>

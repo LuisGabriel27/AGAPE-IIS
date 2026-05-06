@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Students dropdown
-$allStudents = $pdo->query("SELECT id, full_name FROM students ORDER BY full_name")->fetchAll();
+$allStudents = $pdo->query("SELECT id, first_name, last_name FROM students ORDER BY last_name, first_name")->fetchAll();
 $years = $pdo->query("SELECT DISTINCT school_year FROM grades ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 if (empty($years)) $years = [currentSchoolYear()];
 
@@ -76,7 +76,7 @@ if ($filterStudent) {
 
     $stmt = $pdo->prepare("
         SELECT g.*, sub.name AS subject_name, sub.code AS subject_code,
-               t.full_name AS teacher_name
+               CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS teacher_name
         FROM grades g
         JOIN subjects sub ON g.subject_id = sub.id
         LEFT JOIN teachers t ON g.submitted_by = t.id
@@ -103,7 +103,7 @@ require_once __DIR__ . '/../includes/header.php';
             <select class="form-select" name="student_id" required>
                 <option value="">Select student...</option>
                 <?php foreach ($allStudents as $s): ?>
-                    <option value="<?= (int)$s['id'] ?>" <?= e($filterStudent == $s['id'] ? 'selected' : '') ?>><?= e($s['full_name']) ?></option>
+                    <option value="<?= (int)$s['id'] ?>" <?= e($filterStudent == $s['id'] ? 'selected' : '') ?>><?= e(format_name($s['first_name'], $s['last_name'])) ?></option>
                 <?php endforeach; ?>
             </select>
         </div>

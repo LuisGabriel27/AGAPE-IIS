@@ -170,6 +170,37 @@ function currentSchoolYear(): string
 }
 
 /**
+ * Returns "Last, First" display format. Falls back to last_name alone for single-word names.
+ */
+function format_name(?string $first, ?string $last): string
+{
+    $first = trim((string)$first);
+    $last  = trim((string)$last);
+
+    if ($last === '') {
+        return $first;
+    }
+
+    return $first !== '' ? $last . ', ' . $first : $last;
+}
+
+/**
+ * Splits a "Full Name" string into [first_name, last_name].
+ * Single-word: ['', 'Word'].  Multi-word: ['First', 'rest of name'].
+ *
+ * @return array{0: string, 1: string}
+ */
+function splitName(string $full): array
+{
+    $full = trim($full);
+    $pos  = strpos($full, ' ');
+    if ($pos === false) {
+        return ['', $full];
+    }
+    return [substr($full, 0, $pos), trim(substr($full, $pos + 1))];
+}
+
+/**
  * Generate standard DepEd calendar events for a given school year.
  * School year format: "2025-2026"
  */

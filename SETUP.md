@@ -34,7 +34,7 @@ This installs `google/apiclient` and creates the `vendor/` directory with the au
 3. Select the file: `database/schema.sql`
 4. Click **Go** to execute
 
-This creates the `academy_db` database with all 12 tables and a default admin account:
+This creates the `academy_db` database with all 16 tables and a default admin account:
 - **Email**: `admin@academy.edu`
 - **Password**: `Admin@1234`
 
@@ -115,7 +115,7 @@ mkdir C:\xampp\htdocs\softeng\logs
 3. **Verify admin dashboard** loads with KPI cards
 4. **Create a test teacher** via Admin â†’ Teachers
 5. **Logout and register** a guardian account via Sign Up
-6. **Test enrollment** workflow as guardian
+6. **Test enrollment** workflow through guardian requirement uploads, Enrollment Clerk review, Cashier payment, and Registrar submission
 7. **Test Google Login** (if credentials configured):
    - Click "Sign in with Google" on login page
    - Complete Google consent screen
@@ -131,7 +131,6 @@ AGAPE-IIS/
 |   |-- login.php
 |   |-- admin-dashboard.php
 |   |-- admin-students.php
-|   |-- admin-guardians.php
 |   |-- admin-teachers.php
 |   |-- admin-users.php
 |   |-- admin-enrollments.php
@@ -151,7 +150,11 @@ AGAPE-IIS/
 |   |-- login.php
 |   |-- complete-profile.php
 |   |-- dashboard.php
-|   |-- enrollment.php
+|   |-- enrollment/
+|   |   |-- index.php
+|   |   |-- requirements.php
+|   |   |-- payment.php
+|   |   `-- certificate.php
 |   |-- grades.php
 |   |-- payments.php
 |   |-- profile-view.php

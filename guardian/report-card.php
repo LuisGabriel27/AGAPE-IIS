@@ -12,7 +12,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 $pdo = getDB();
 $userId = $_SESSION['user_id'];
 
-$stmt = $pdo->prepare('SELECT id, full_name FROM guardians WHERE user_id = :uid LIMIT 1');
+$stmt = $pdo->prepare('SELECT id, first_name, last_name FROM guardians WHERE user_id = :uid LIMIT 1');
 $stmt->execute([':uid' => $userId]);
 $guardian = $stmt->fetch();
 
@@ -21,7 +21,7 @@ if (!$guardian) {
     redirect(APP_URL . '/guardian/dashboard.php');
 }
 
-$stmt = $pdo->prepare('SELECT id, full_name FROM students WHERE guardian_id = :gid ORDER BY full_name');
+$stmt = $pdo->prepare('SELECT id, first_name, last_name FROM students WHERE guardian_id = :gid ORDER BY last_name, first_name');
 $stmt->execute([':gid' => $guardian['id']]);
 $students = $stmt->fetchAll();
 
@@ -43,9 +43,9 @@ if (!in_array($selectedTerm, ['1st Semester', '2nd Semester'], true)) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT s.id, s.full_name, s.grade_level, s.lrn,
+    SELECT s.id, s.first_name, s.last_name, s.grade_level, s.lrn,
            sec.name AS section_name,
-           t.full_name AS adviser_name
+           CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS adviser_name
     FROM students s
     LEFT JOIN sections sec ON sec.id = s.section_id
     LEFT JOIN teachers t ON t.id = sec.adviser_id
@@ -192,7 +192,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="student_id">
                         <?php foreach ($students as $stu): ?>
                             <option value="<?= (int)$stu['id'] ?>" <?= $selectedStudent === (int)$stu['id'] ? 'selected' : '' ?>>
-                                <?= e($stu['full_name']) ?>
+                                <?= e(format_name($stu['first_name'], $stu['last_name'])) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -240,7 +240,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <tbody>
                     <tr>
                         <th>Student Name</th>
-                        <td><?= e($student['full_name']) ?></td>
+                        <td><?= e(format_name($student['first_name'], $student['last_name'])) ?></td>
                         <th>LRN</th>
                         <td><?= e($student['lrn'] ?: 'N/A') ?></td>
                     </tr>
@@ -254,7 +254,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <th>Class Adviser</th>
                         <td><?= e($student['adviser_name'] ?: 'N/A') ?></td>
                         <th>Guardian</th>
-                        <td><?= e($guardian['full_name']) ?></td>
+                        <td><?= e(format_name($guardian['first_name'], $guardian['last_name'])) ?></td>
                     </tr>
                 </tbody>
             </table>

@@ -26,7 +26,8 @@ $errors      = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
-    $fullName        = trim($_POST['full_name'] ?? '');
+    $firstName       = trim($_POST['first_name'] ?? '');
+    $lastName        = trim($_POST['last_name'] ?? '');
     $contact         = trim($_POST['contact'] ?? '');
     $address         = trim($_POST['address'] ?? '');
     $relationship    = trim($_POST['relationship'] ?? '');
@@ -39,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $currentPass     = $_POST['current_password'] ?? '';
     $newPassword     = $_POST['new_password'] ?? '';
 
-    if (empty($fullName)) $errors[] = 'Full name is required.';
+    if (empty($lastName)) $errors[] = 'Last name is required.';
     if (empty($contact))  $errors[] = 'Contact number is required.';
 
     if ($hasPassword && empty($currentPass)) {
@@ -50,14 +51,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $oldData = [
-            'full_name' => $guardian['full_name'],
-            'contact'   => $guardian['contact_number'],
-            'address'   => $guardian['address'],
+            'first_name' => $guardian['first_name'],
+            'last_name'  => $guardian['last_name'],
+            'contact'    => $guardian['contact_number'],
+            'address'    => $guardian['address'],
         ];
 
         $pdo->prepare("
             UPDATE guardians
-            SET full_name = :name,
+            SET first_name = :fn,
+                last_name = :ln,
                 contact_number = :contact,
                 address = :addr,
                 relationship_to_student = :rel,
@@ -69,7 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 emergency_contact_number = :ec
             WHERE user_id = :uid
         ")->execute([
-            ':name'     => $fullName,
+            ':fn'       => $firstName,
+            ':ln'       => $lastName,
             ':contact'  => $contact,
             ':addr'     => $address ?: null,
             ':rel'      => $relationship ?: null,
@@ -93,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (empty($errors)) {
-            $newData = ['full_name' => $fullName, 'contact' => $contact, 'address' => $address];
+            $newData = ['first_name' => $firstName, 'last_name' => $lastName, 'contact' => $contact, 'address' => $address];
             auditLog('profile_update', 'guardians', $guardian['id'], $oldData, $newData);
             setFlash('success', 'Profile updated successfully.');
             redirect(APP_URL . '/guardian/profile-view.php');
@@ -128,10 +132,15 @@ require_once __DIR__ . '/../includes/header.php';
 
         <h6 class="fw-semibold text-primary mb-3">Personal Information</h6>
         <div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="full_name"
-                       value="<?= e($g['full_name'] ?? '') ?>" required>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="last_name"
+                       value="<?= e($g['last_name'] ?? '') ?>" required>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">First Name</label>
+                <input type="text" class="form-control" name="first_name"
+                       value="<?= e($g['first_name'] ?? '') ?>">
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Email Address</label>

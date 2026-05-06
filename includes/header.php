@@ -73,10 +73,6 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                href="<?= APP_URL ?>/admin/admin-students.php">
                 <i class="bi bi-people-fill"></i> Students
             </a>
-            <a class="sidebar-link <?= e($currentPage === 'admin-guardians.php' ? 'active' : '') ?>"
-               href="<?= APP_URL ?>/admin/admin-guardians.php">
-                <i class="bi bi-person-hearts"></i> Guardians
-            </a>
             <a class="sidebar-link <?= e($currentPage === 'admin-teachers.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-teachers.php">
                 <i class="bi bi-person-workspace"></i> Teachers
@@ -119,7 +115,7 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
             <div class="sidebar-section">Finance</div>
             <a class="sidebar-link <?= e($currentPage === 'admin-payments.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-payments.php">
-                <i class="bi bi-cash-stack"></i> Financial Ledger
+                <i class="bi bi-cash-stack"></i> Cashier Payments
             </a>
 
             <div class="sidebar-section">Settings</div>
@@ -140,10 +136,6 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
             <a class="sidebar-link <?= e($currentPage === 'admin-students.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-students.php">
                 <i class="bi bi-people-fill"></i> Students
-            </a>
-            <a class="sidebar-link <?= e($currentPage === 'admin-guardians.php' ? 'active' : '') ?>"
-               href="<?= APP_URL ?>/admin/admin-guardians.php">
-                <i class="bi bi-person-hearts"></i> Guardians
             </a>
 
             <?php endif; ?>

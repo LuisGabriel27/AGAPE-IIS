@@ -33,7 +33,8 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
 
     // Student fields
     $data = [
-        'full_name'   => trim($_POST['full_name'] ?? ''),
+        'first_name'  => trim($_POST['first_name'] ?? ''),
+        'last_name'   => trim($_POST['last_name'] ?? ''),
         'birthdate'   => trim($_POST['birthdate'] ?? ''),
         'gender'      => trim($_POST['gender'] ?? ''),
         'grade_level' => trim($_POST['grade_level'] ?? ''),
@@ -44,15 +45,16 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
     // Guardian mode: 'existing' | 'new' | 'none'
     $guardianMode    = trim($_POST['guardian_mode'] ?? 'none');
     $existingGid     = (int)($_POST['existing_guardian_id'] ?? 0) ?: null;
-    $newGName        = trim($_POST['new_g_full_name'] ?? '');
+    $newGFirstName   = trim($_POST['new_g_first_name'] ?? '');
+    $newGLastName    = trim($_POST['new_g_last_name'] ?? '');
     $newGEmail       = trim($_POST['new_g_email'] ?? '');
     $newGContact     = trim($_POST['new_g_contact'] ?? '');
     $newGRel         = trim($_POST['new_g_relationship'] ?? '');
 
-    if (empty($data['full_name'])) $errors[] = 'Student full name is required.';
+    if (empty($data['last_name'])) $errors[] = 'Student last name is required.';
 
     if ($guardianMode === 'new') {
-        if (empty($newGName))  $errors[] = 'Guardian full name is required.';
+        if (empty($newGLastName))  $errors[] = 'Guardian last name is required.';
         if (empty($newGEmail) || !filter_var($newGEmail, FILTER_VALIDATE_EMAIL))
             $errors[] = 'A valid guardian email is required.';
     }
@@ -80,8 +82,8 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
                     if ($existingG) {
                         $resolvedGid = (int)$existingG['id'];
                     } else {
-                        $gIns = $pdo->prepare("INSERT INTO guardians (user_id, full_name, contact_number, relationship_to_student) VALUES (:uid, :n, :c, :r) RETURNING id");
-                        $gIns->execute([':uid' => $uid, ':n' => $newGName, ':c' => $newGContact ?: null, ':r' => $newGRel ?: null]);
+                        $gIns = $pdo->prepare("INSERT INTO guardians (user_id, first_name, last_name, contact_number, relationship_to_student) VALUES (:uid, :fn, :ln, :c, :r) RETURNING id");
+                        $gIns->execute([':uid' => $uid, ':fn' => $newGFirstName, ':ln' => $newGLastName, ':c' => $newGContact ?: null, ':r' => $newGRel ?: null]);
                         $resolvedGid = (int)$gIns->fetchColumn();
                     }
                 } else {
@@ -95,8 +97,8 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
                     $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, 'guardian') ON CONFLICT DO NOTHING")
                         ->execute([':uid' => $uid]);
 
-                    $gIns = $pdo->prepare("INSERT INTO guardians (user_id, full_name, contact_number, relationship_to_student) VALUES (:uid, :n, :c, :r) RETURNING id");
-                    $gIns->execute([':uid' => $uid, ':n' => $newGName, ':c' => $newGContact ?: null, ':r' => $newGRel ?: null]);
+                    $gIns = $pdo->prepare("INSERT INTO guardians (user_id, first_name, last_name, contact_number, relationship_to_student) VALUES (:uid, :fn, :ln, :c, :r) RETURNING id");
+                    $gIns->execute([':uid' => $uid, ':fn' => $newGFirstName, ':ln' => $newGLastName, ':c' => $newGContact ?: null, ':r' => $newGRel ?: null]);
                     $resolvedGid = (int)$gIns->fetchColumn();
 
                     auditLog('create_guardian', 'guardians', $resolvedGid);
@@ -105,12 +107,13 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
 
             if ($action === 'create') {
                 $stmt = $pdo->prepare("
-                    INSERT INTO students (guardian_id, full_name, birthdate, gender, grade_level, section_id, lrn)
-                    VALUES (:gid, :name, :birth, :gender, :grade, :sec, :lrn) RETURNING id
+                    INSERT INTO students (guardian_id, first_name, last_name, birthdate, gender, grade_level, section_id, lrn)
+                    VALUES (:gid, :fname, :lname, :birth, :gender, :grade, :sec, :lrn) RETURNING id
                 ");
                 $stmt->execute([
                     ':gid'    => $resolvedGid,
-                    ':name'   => $data['full_name'],
+                    ':fname'  => $data['first_name'],
+                    ':lname'  => $data['last_name'],
                     ':birth'  => $data['birthdate'] ?: null,
                     ':gender' => $data['gender'] ?: null,
                     ':grade'  => $data['grade_level'],
@@ -130,13 +133,14 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
                 // edit: update student, optionally re-link guardian
                 $stmt = $pdo->prepare("
                     UPDATE students
-                    SET full_name=:name, birthdate=:birth, gender=:gender,
+                    SET first_name=:fname, last_name=:lname, birthdate=:birth, gender=:gender,
                         grade_level=:grade, section_id=:sec, lrn=:lrn,
                         guardian_id=COALESCE(:gid, guardian_id)
                     WHERE id=:id
                 ");
                 $stmt->execute([
-                    ':name'   => $data['full_name'],
+                    ':fname'  => $data['first_name'],
+                    ':lname'  => $data['last_name'],
                     ':birth'  => $data['birthdate'] ?: null,
                     ':gender' => $data['gender'] ?: null,
                     ':grade'  => $data['grade_level'],
@@ -163,7 +167,7 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
 $editStudent  = null;
 $editGuardian = null;
 if ($action === 'edit' && $id) {
-    $stmt = $pdo->prepare("SELECT s.*, g.id AS g_id, g.full_name AS g_full_name, g.contact_number AS g_contact, g.relationship_to_student AS g_relationship, u.email AS g_email FROM students s LEFT JOIN guardians g ON s.guardian_id = g.id LEFT JOIN users u ON g.user_id = u.id WHERE s.id = :id LIMIT 1");
+    $stmt = $pdo->prepare("SELECT s.*, g.id AS g_id, g.first_name AS g_first_name, g.last_name AS g_last_name, g.contact_number AS g_contact, g.relationship_to_student AS g_relationship, u.email AS g_email FROM students s LEFT JOIN guardians g ON s.guardian_id = g.id LEFT JOIN users u ON g.user_id = u.id WHERE s.id = :id LIMIT 1");
     $stmt->execute([':id' => $id]);
     $editStudent = $stmt->fetch();
 }
@@ -172,9 +176,10 @@ if ($action === 'edit' && $id) {
 $where  = '';
 $params = [];
 if ($search !== '') {
-    $where = "WHERE s.full_name ILIKE :search OR s.lrn ILIKE :search2";
-    $params[':search']  = "%{$search}%";
+    $where = "WHERE s.last_name ILIKE :search OR s.first_name ILIKE :search2 OR s.lrn ILIKE :search3";
+    $params[':search']  = "{$search}%";
     $params[':search2'] = "%{$search}%";
+    $params[':search3'] = "%{$search}%";
 }
 
 $countStmt = $pdo->prepare("SELECT COUNT(*) FROM students s {$where}");
@@ -182,13 +187,15 @@ $countStmt->execute($params);
 [$offset, $limit, $page, $totalPages] = paginate((int)$countStmt->fetchColumn());
 
 $stmt = $pdo->prepare("
-    SELECT s.*, g.full_name AS guardian_name, g.contact_number AS guardian_contact,
+    SELECT s.*,
+           CASE WHEN g.first_name = '' THEN g.last_name ELSE g.last_name || ', ' || g.first_name END AS guardian_name,
+           g.contact_number AS guardian_contact,
            sec.name AS section_name
     FROM students s
     LEFT JOIN guardians g   ON s.guardian_id = g.id
     LEFT JOIN sections  sec ON s.section_id  = sec.id
     {$where}
-    ORDER BY split_part(s.full_name, ' ', -1), s.full_name
+    ORDER BY s.last_name ASC, s.first_name ASC
     LIMIT {$limit} OFFSET {$offset}
 ");
 $stmt->execute($params);
@@ -196,7 +203,7 @@ $students = $stmt->fetchAll();
 
 // Dropdowns
 $sections  = $pdo->query("SELECT id, name, grade_level FROM sections ORDER BY grade_level, name")->fetchAll();
-$guardians = $pdo->query("SELECT g.id, g.full_name, g.contact_number, g.relationship_to_student, u.email FROM guardians g JOIN users u ON g.user_id = u.id ORDER BY split_part(g.full_name,' ',-1), g.full_name")->fetchAll();
+$guardians = $pdo->query("SELECT g.id, g.first_name, g.last_name, g.contact_number, g.relationship_to_student, u.email FROM guardians g JOIN users u ON g.user_id = u.id ORDER BY g.last_name, g.first_name")->fetchAll();
 
 $pageTitle = 'Manage Students';
 require_once __DIR__ . '/../includes/header.php';
@@ -229,10 +236,15 @@ require_once __DIR__ . '/../includes/header.php';
             <!-- ── Student Information ─────────────────── -->
             <h6 class="fw-semibold text-primary mb-3">Student Information</h6>
             <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" name="full_name"
-                           value="<?= e($editStudent['full_name'] ?? '') ?>" required>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="last_name"
+                           value="<?= e($editStudent['last_name'] ?? '') ?>" required>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">First Name</label>
+                    <input type="text" class="form-control" name="first_name"
+                           value="<?= e($editStudent['first_name'] ?? '') ?>">
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Birthdate</label>
@@ -312,7 +324,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <?php foreach ($guardians as $g): ?>
                         <label class="guardian-option d-flex align-items-center gap-3 px-3 py-2 border-bottom"
                                for="gopt_<?= (int)$g['id'] ?>"
-                               data-name="<?= e(strtolower($g['full_name'])) ?>"
+                               data-name="<?= e(strtolower($g['last_name'] . ' ' . $g['first_name'])) ?>"
                                data-email="<?= e(strtolower($g['email'])) ?>"
                                style="cursor:pointer;">
                             <input class="form-check-input mt-0" type="radio" name="existing_guardian_id"
@@ -320,7 +332,7 @@ require_once __DIR__ . '/../includes/header.php';
                                    <?= ($editStudent['g_id'] ?? 0) == $g['id'] ? 'checked' : '' ?>
                                    style="width:18px;height:18px;">
                             <div>
-                                <div class="fw-semibold"><?= e($g['full_name']) ?></div>
+                                <div class="fw-semibold"><?= e(format_name($g['first_name'], $g['last_name'])) ?></div>
                                 <small class="text-muted"><?= e($g['email']) ?><?= $g['contact_number'] ? ' · ' . e($g['contact_number']) : '' ?></small>
                             </div>
                         </label>
@@ -335,10 +347,15 @@ require_once __DIR__ . '/../includes/header.php';
             <!-- Panel: Create New -->
             <div id="panel-new" class="guardian-panel <?= $defaultMode !== 'new' ? 'd-none' : '' ?>">
                 <div class="row">
-                    <div class="col-md-5 mb-3">
-                        <label class="form-label">Guardian Full Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="new_g_full_name"
-                               value="<?= e($editStudent['g_full_name'] ?? '') ?>">
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Guardian Last Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="new_g_last_name"
+                               value="<?= e($editStudent['g_last_name'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Guardian First Name</label>
+                        <input type="text" class="form-control" name="new_g_first_name"
+                               value="<?= e($editStudent['g_first_name'] ?? '') ?>">
                     </div>
                     <div class="col-md-5 mb-3">
                         <label class="form-label">Email <span class="text-danger">*</span></label>
@@ -446,7 +463,7 @@ document.getElementById('existing-guardian-search')?.addEventListener('input', f
                     <?php foreach ($students as $i => $s): ?>
                     <tr>
                         <td><?= e((string)($offset + $i + 1)) ?></td>
-                        <td class="fw-bold"><?= e($s['full_name']) ?></td>
+                        <td class="fw-bold"><?= e(format_name($s['first_name'], $s['last_name'])) ?></td>
                         <td>
                             <?php if ($s['guardian_name']): ?>
                                 <span><?= e($s['guardian_name']) ?></span>

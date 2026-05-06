@@ -75,6 +75,32 @@ if (!empty($students)) {
     $latestPayment = $stmt->fetch();
 }
 
+$requiredEnrollmentDocumentCount = 4;
+$enrollmentRequirementStatus = [];
+if (!empty($students)) {
+    $studentIds = array_map(static fn(array $student): int => (int)$student['id'], $students);
+    $placeholders = implode(',', array_fill(0, count($studentIds), '?'));
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT ON (e.student_id)
+               e.student_id,
+               e.id AS enrollment_id,
+               e.status,
+               (
+                   SELECT COUNT(DISTINCT d.document_type)
+                   FROM enrollment_documents d
+                   WHERE d.enrollment_id = e.id
+                     AND d.document_type IN ('psa', 'medical', 'previous_school', 'parent_data')
+               ) AS document_count
+        FROM enrollments e
+        WHERE e.student_id IN ({$placeholders})
+        ORDER BY e.student_id, e.id DESC
+    ");
+    $stmt->execute($studentIds);
+    foreach ($stmt->fetchAll() as $row) {
+        $enrollmentRequirementStatus[(int)$row['student_id']] = $row;
+    }
+}
+
 // Attendance summary (simple count from audit log as placeholder)
 $attendanceDays = 0;
 $absentDays = 0;
@@ -91,13 +117,13 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
         <div class="flex-grow-1">
             <?php if (!empty($students)): ?>
-                <div class="hero-title"><?= e($students[0]['full_name']) ?></div>
+                <div class="hero-title"><?= e(format_name($students[0]['first_name'], $students[0]['last_name'])) ?></div>
                 <div class="hero-subtitle">
                     Grade <?= e($students[0]['grade_level'] ?? 'N/A') ?> — Section <?= e($students[0]['section_name'] ?? 'N/A') ?>
                     <?php if ($students[0]['lrn']): ?> | LRN: <?= e($students[0]['lrn']) ?><?php endif; ?>
                 </div>
             <?php else: ?>
-                <div class="hero-title">Welcome, <?= e($guardian['full_name'] ?? 'Guardian') ?>!</div>
+                <div class="hero-title">Welcome, <?= e(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? 'Guardian')) ?>!</div>
                 <div class="hero-subtitle">No students linked yet. <a href="<?= APP_URL ?>/guardian/enrollment/" style="color:white;text-decoration:underline;">Enroll a student</a>.</div>
             <?php endif; ?>
         </div>
@@ -165,15 +191,33 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="d-flex align-items-center mb-3 p-2 rounded bg-light">
                         <div class="me-3">
                             <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:1.2rem;">
-                                <?= e(strtoupper(substr($stu['full_name'], 0, 1))) ?>
+                                <?= strtoupper(substr($stu['last_name'], 0, 1)) ?>
                             </div>
                         </div>
                         <div>
-                            <h6 class="mb-0 fw-bold"><?= e($stu['full_name']) ?></h6>
+                            <h6 class="mb-0 fw-bold"><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></h6>
                             <small class="text-muted">
                                 Grade <?= e($stu['grade_level'] ?? 'N/A') ?> — Section <?= e($stu['section_name'] ?? 'N/A') ?>
                                 <?php if ($stu['lrn']): ?> | LRN: <?= e($stu['lrn']) ?><?php endif; ?>
                             </small>
+                            <?php
+                                $requirementStatus = $enrollmentRequirementStatus[(int)$stu['id']] ?? null;
+                                $documentCount = $requirementStatus ? (int)$requirementStatus['document_count'] : 0;
+                                $canUploadRequirements = $requirementStatus
+                                    && in_array($requirementStatus['status'], ['pending', 'rejected'], true)
+                                    && $documentCount < $requiredEnrollmentDocumentCount;
+                            ?>
+                            <?php if ($canUploadRequirements): ?>
+                                <div class="mt-2">
+                                    <a class="btn btn-sm btn-outline-primary" href="<?= APP_URL ?>/guardian/enrollment/requirements.php?enrollment_id=<?= (int)$requirementStatus['enrollment_id'] ?>">
+                                        <i class="bi bi-upload me-1"></i>Upload Requirements
+                                    </a>
+                                </div>
+                            <?php elseif ($requirementStatus && $documentCount >= $requiredEnrollmentDocumentCount && in_array($requirementStatus['status'], ['pending', 'rejected'], true)): ?>
+                                <div class="mt-2">
+                                    <span class="badge badge-status-active"><i class="bi bi-check-circle me-1"></i>Requirements Uploaded</span>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <?php endforeach; ?>

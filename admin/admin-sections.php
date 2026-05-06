@@ -55,10 +55,10 @@ if ($action === 'edit' && $id) {
     $editSection = $stmt->fetch();
 }
 
-$teachersList = $pdo->query("SELECT id, full_name FROM teachers ORDER BY full_name")->fetchAll();
+$teachersList = $pdo->query("SELECT id, first_name, last_name FROM teachers ORDER BY last_name, first_name")->fetchAll();
 
 $stmt = $pdo->query("
-    SELECT s.*, t.full_name AS adviser_name,
+    SELECT s.*, CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS adviser_name,
            (SELECT COUNT(*) FROM students st WHERE st.section_id = s.id) AS enrolled
     FROM sections s LEFT JOIN teachers t ON s.adviser_id = t.id
     ORDER BY s.grade_level, s.name
@@ -103,7 +103,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="adviser_id">
                         <option value="0">None</option>
                         <?php foreach ($teachersList as $t): ?>
-                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSection['adviser_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e($t['full_name']) ?></option>
+                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSection['adviser_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e(format_name($t['first_name'], $t['last_name'])) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

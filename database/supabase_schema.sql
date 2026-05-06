@@ -40,7 +40,8 @@ CREATE TABLE users (
 CREATE TABLE guardians (
     id                      SERIAL PRIMARY KEY,
     user_id                 INT NOT NULL,
-    full_name               VARCHAR(255) NOT NULL,
+    first_name              VARCHAR(100) NOT NULL DEFAULT '',
+    last_name               VARCHAR(155) NOT NULL,
     contact_number          VARCHAR(50) DEFAULT NULL,
     address                 TEXT DEFAULT NULL,
     relationship_to_student VARCHAR(100) DEFAULT NULL,
@@ -49,6 +50,7 @@ CREATE TABLE guardians (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 CREATE INDEX idx_guardian_user ON guardians (user_id);
+CREATE INDEX idx_guardian_last_name ON guardians (last_name);
 
 -- ============================================================
 -- 3. teachers
@@ -56,7 +58,8 @@ CREATE INDEX idx_guardian_user ON guardians (user_id);
 CREATE TABLE teachers (
     id              SERIAL PRIMARY KEY,
     user_id         INT NOT NULL,
-    full_name       VARCHAR(255) NOT NULL,
+    first_name      VARCHAR(100) NOT NULL DEFAULT '',
+    last_name       VARCHAR(155) NOT NULL,
     contact_number  VARCHAR(50) DEFAULT NULL,
     department      VARCHAR(100) DEFAULT NULL,
     CONSTRAINT fk_teacher_user
@@ -64,6 +67,7 @@ CREATE TABLE teachers (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 CREATE INDEX idx_teacher_user ON teachers (user_id);
+CREATE INDEX idx_teacher_last_name ON teachers (last_name);
 
 -- ============================================================
 -- 4. subjects
@@ -98,7 +102,8 @@ CREATE INDEX idx_section_adviser ON sections (adviser_id);
 CREATE TABLE students (
     id            SERIAL PRIMARY KEY,
     guardian_id   INT DEFAULT NULL,
-    full_name     VARCHAR(255) NOT NULL,
+    first_name    VARCHAR(100) NOT NULL DEFAULT '',
+    last_name     VARCHAR(155) NOT NULL,
     birthdate     DATE DEFAULT NULL,
     gender        gender_type DEFAULT NULL,
     grade_level   VARCHAR(20) DEFAULT NULL,
@@ -114,6 +119,7 @@ CREATE TABLE students (
 );
 CREATE INDEX idx_student_guardian ON students (guardian_id);
 CREATE INDEX idx_student_section ON students (section_id);
+CREATE INDEX idx_student_last_name ON students (last_name);
 
 -- ============================================================
 -- 7. enrollments
@@ -134,6 +140,32 @@ CREATE TABLE enrollments (
 CREATE INDEX idx_enrollment_student ON enrollments (student_id);
 CREATE INDEX idx_enrollment_status ON enrollments (status);
 CREATE INDEX idx_enrollment_year ON enrollments (school_year);
+
+-- ============================================================
+-- 7A. enrollment_documents
+-- ============================================================
+CREATE TABLE enrollment_documents (
+    id            SERIAL PRIMARY KEY,
+    enrollment_id INT NOT NULL,
+    document_type VARCHAR(50) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    file_path     VARCHAR(500) NOT NULL,
+    mime_type     VARCHAR(100) DEFAULT NULL,
+    file_size     BIGINT DEFAULT NULL,
+    uploaded_by   INT DEFAULT NULL,
+    uploaded_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_enrollment_document_type
+        CHECK (document_type IN ('psa', 'medical', 'previous_school', 'parent_data')),
+    CONSTRAINT fk_enrollment_document_enrollment
+        FOREIGN KEY (enrollment_id) REFERENCES enrollments (id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_enrollment_document_uploader
+        FOREIGN KEY (uploaded_by) REFERENCES users (id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT uq_enrollment_document_type UNIQUE (enrollment_id, document_type)
+);
+CREATE INDEX idx_enrollment_documents_enrollment ON enrollment_documents (enrollment_id);
+CREATE INDEX idx_enrollment_documents_uploaded_by ON enrollment_documents (uploaded_by);
 
 -- ============================================================
 -- 8. grades

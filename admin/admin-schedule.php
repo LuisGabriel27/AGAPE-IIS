@@ -67,14 +67,15 @@ if ($action === 'edit' && $id) {
 
 $subjectsList = $pdo->query("SELECT id, code, name FROM subjects ORDER BY name")->fetchAll();
 $sectionsList = $pdo->query("SELECT id, name, grade_level FROM sections ORDER BY grade_level, name")->fetchAll();
-$teachersList = $pdo->query("SELECT id, full_name FROM teachers ORDER BY full_name")->fetchAll();
+$teachersList = $pdo->query("SELECT id, first_name, last_name FROM teachers ORDER BY last_name, first_name")->fetchAll();
 
 $total = $pdo->query("SELECT COUNT(*) FROM schedules")->fetchColumn();
 [$offset, $limit, $page, $totalPages] = paginate($total, 15);
 
 $stmt = $pdo->query("
     SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
-           sec.name AS section_name, sec.grade_level, t.full_name AS teacher_name
+           sec.name AS section_name, sec.grade_level,
+           CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS teacher_name
     FROM schedules sch
     JOIN subjects sub ON sch.subject_id = sub.id
     JOIN sections sec ON sch.section_id = sec.id
@@ -128,7 +129,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <select class="form-select" name="teacher_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($teachersList as $t): ?>
-                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSched['teacher_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e($t['full_name']) ?></option>
+                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSched['teacher_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e(format_name($t['first_name'], $t['last_name'])) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

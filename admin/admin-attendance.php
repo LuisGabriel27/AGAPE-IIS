@@ -96,12 +96,12 @@ if ($ajax !== '') {
     if ($ajax === 'profiles' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt = $pdo->query(
             "SELECT p.student_id, p.face_descriptor, p.face_image_path, p.updated_at,
-                    s.full_name,
+                    CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS full_name,
                     sec.name AS section_name
              FROM student_face_profiles p
              INNER JOIN students s ON s.id = p.student_id
              LEFT JOIN sections sec ON sec.id = s.section_id
-             ORDER BY s.full_name"
+             ORDER BY s.last_name, s.first_name"
         );
 
         $profiles = [];
@@ -154,7 +154,7 @@ if ($ajax !== '') {
             $normalized[] = (float)$value;
         }
 
-        $stmt = $pdo->prepare("SELECT id, full_name FROM students WHERE id = :id LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, CASE WHEN first_name = '' THEN last_name ELSE last_name || ', ' || first_name END AS full_name FROM students WHERE id = :id LIMIT 1");
         $stmt->execute([':id' => $studentId]);
         $student = $stmt->fetch();
         if (!$student) {
@@ -208,7 +208,9 @@ if ($ajax !== '') {
         }
 
         $stmt = $pdo->prepare(
-            "SELECT s.id, s.full_name, sec.name AS section_name
+            "SELECT s.id,
+                    CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS full_name,
+                    sec.name AS section_name
              FROM students s
              LEFT JOIN sections sec ON sec.id = s.section_id
              WHERE s.id = :id
@@ -301,15 +303,17 @@ if ($ajax !== '') {
 }
 
 $students = $pdo->query(
-    "SELECT s.id, s.full_name, s.grade_level, sec.name AS section_name
+    "SELECT s.id,
+            CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS full_name,
+            s.grade_level, sec.name AS section_name
      FROM students s
      LEFT JOIN sections sec ON sec.id = s.section_id
-     ORDER BY s.full_name"
+     ORDER BY s.last_name, s.first_name"
 )->fetchAll();
 
 $faceProfiles = $pdo->query(
     "SELECT p.student_id, p.face_image_path, p.updated_at,
-            s.full_name,
+            CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS full_name,
             sec.name AS section_name
      FROM student_face_profiles p
      INNER JOIN students s ON s.id = p.student_id
@@ -319,7 +323,7 @@ $faceProfiles = $pdo->query(
 
 $todayAttendance = $pdo->query(
     "SELECT a.id, a.student_id, a.attendance_status, a.method, a.confidence, a.marked_at,
-            s.full_name,
+            CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS full_name,
             sec.name AS section_name
      FROM attendance_logs a
      INNER JOIN students s ON s.id = a.student_id
