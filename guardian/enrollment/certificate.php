@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/session-check.php';
 requireRole('guardian');
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/official-document.php';
 
 $pdo = getDB();
 $userId = $_SESSION['user_id'];
@@ -31,9 +32,31 @@ if (empty($students)) {
 }
 
 $allowedStudentIds = array_map(static fn($s) => (int)$s['id'], $students);
-$selectedStudent = (int)($_GET['student_id'] ?? $students[0]['id']);
+$requestedStudent = (int)($_GET['student_id'] ?? 0);
+
+$stmt = $pdo->prepare("
+    SELECT s.id
+    FROM students s
+    INNER JOIN enrollments e ON e.student_id = s.id
+    WHERE s.guardian_id = :gid
+      AND e.status = 'enrolled'
+    ORDER BY e.school_year DESC,
+             CASE e.term WHEN '2nd Semester' THEN 2 WHEN '1st Semester' THEN 1 ELSE 0 END DESC,
+             e.enrolled_at DESC NULLS LAST,
+             e.id DESC
+    LIMIT 1
+");
+$stmt->execute([':gid' => $guardian['id']]);
+$defaultCertificateStudent = (int)($stmt->fetchColumn() ?: 0);
+
+$selectedStudent = $requestedStudent > 0
+    ? $requestedStudent
+    : ($defaultCertificateStudent > 0 ? $defaultCertificateStudent : (int)$students[0]['id']);
+
 if (!in_array($selectedStudent, $allowedStudentIds, true)) {
-    $selectedStudent = (int)$students[0]['id'];
+    $selectedStudent = $defaultCertificateStudent > 0 && in_array($defaultCertificateStudent, $allowedStudentIds, true)
+        ? $defaultCertificateStudent
+        : (int)$students[0]['id'];
 }
 
 $stmt = $pdo->prepare("
@@ -42,7 +65,7 @@ $stmt = $pdo->prepare("
     INNER JOIN students s ON s.id = e.student_id
     WHERE s.id = :sid
       AND s.guardian_id = :gid
-      AND e.status IN ('approved', 'enrolled')
+      AND e.status = 'enrolled'
     ORDER BY e.school_year DESC
 ");
 $stmt->execute([
@@ -64,13 +87,15 @@ if (!in_array($selectedTerm, ['1st Semester', '2nd Semester'], true)) {
 $stmt = $pdo->prepare("
     SELECT e.id, e.school_year, e.term, e.status, e.enrolled_at,
            CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
-           s.grade_level, s.lrn, sec.name AS section_name
+           s.grade_level, s.lrn, sec.name AS section_name,
+           NULLIF(TRIM(BOTH ' ,' FROM COALESCE(t.last_name, '') || ', ' || COALESCE(t.first_name, '')), '') AS adviser_name
     FROM enrollments e
     INNER JOIN students s ON s.id = e.student_id
     LEFT JOIN sections sec ON sec.id = s.section_id
+    LEFT JOIN teachers t ON t.id = sec.adviser_id
     WHERE s.id = :sid
       AND s.guardian_id = :gid
-      AND e.status IN ('approved', 'enrolled')
+      AND e.status = 'enrolled'
       AND e.school_year = :sy
       AND e.term = :term
     ORDER BY e.enrolled_at DESC, e.id DESC
@@ -88,13 +113,15 @@ if (!$certificateRecord) {
     $stmt = $pdo->prepare("
         SELECT e.id, e.school_year, e.term, e.status, e.enrolled_at,
                CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
-               s.grade_level, s.lrn, sec.name AS section_name
+               s.grade_level, s.lrn, sec.name AS section_name,
+               NULLIF(TRIM(BOTH ' ,' FROM COALESCE(t.last_name, '') || ', ' || COALESCE(t.first_name, '')), '') AS adviser_name
         FROM enrollments e
         INNER JOIN students s ON s.id = e.student_id
         LEFT JOIN sections sec ON sec.id = s.section_id
+        LEFT JOIN teachers t ON t.id = sec.adviser_id
         WHERE s.id = :sid
           AND s.guardian_id = :gid
-          AND e.status IN ('approved', 'enrolled')
+          AND e.status = 'enrolled'
         ORDER BY e.school_year DESC, e.term DESC, e.enrolled_at DESC, e.id DESC
         LIMIT 1
     ");
@@ -110,73 +137,37 @@ if (!$certificateRecord) {
 }
 
 $issuedDate = date('F d, Y');
+$issuedDay = date('j');
+$issuedDaySuffix = date('S');
+$issuedMonthYear = date('F, Y');
+$principalName = 'MRS. TERESA C. ATIENZA MACED, GC';
 $pageTitle = 'Certificate';
 require_once __DIR__ . '/../../includes/header.php';
+renderOfficialDocumentStyles();
 ?>
 <style>
-    .certificate-page .sheet {
-        max-width: 920px;
-        margin: 0 auto;
-        background: #fff;
-        border: 1px solid #dfe6ef;
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-        overflow: hidden;
+    .certificate-page .certificate-date-line {
+        margin: -0.12in 0 0.16in;
+        text-align: right;
+        font-size: 12pt;
     }
-    .certificate-page .sheet-header {
-        background: #1e3a8a;
-        color: #fff;
-        padding: 18px 22px;
-    }
-    .certificate-page .school-logo {
-        width: 56px;
-        height: 56px;
-        object-fit: cover;
-        border-radius: 50%;
-        border: 2px solid rgba(255, 255, 255, 0.65);
-    }
-    .certificate-page .certificate-title {
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-    }
-    .certificate-page .certificate-body {
-        font-size: 1.02rem;
-        line-height: 1.9;
-        text-align: justify;
-        color: #0f172a;
-    }
-    .certificate-page .signature-line {
-        border-top: 1px solid #64748b;
-        width: 240px;
-        margin-top: 52px;
-        padding-top: 6px;
-        font-size: 0.82rem;
-        color: #475569;
+
+    .certificate-page .certificate-date-value {
+        display: inline-block;
+        min-width: 1.9in;
+        border-bottom: 1px solid #111827;
         text-align: center;
+        line-height: 1.2;
     }
-    @media print {
-        body {
-            background: #fff !important;
-        }
-        .no-print,
-        .sidebar,
-        .top-header,
-        .main-footer,
-        .sidebar-overlay {
-            display: none !important;
-        }
-        .main-content {
-            margin: 0 !important;
-            padding: 0 !important;
-            min-height: auto !important;
-        }
-        .certificate-page .sheet {
-            margin: 0;
-            max-width: none;
-            border: none;
-            box-shadow: none;
-            border-radius: 0;
-        }
+
+    .certificate-page .certificate-verified-label {
+        margin-top: 0.55in;
+        margin-bottom: 0.4in;
+        font-weight: 700;
+    }
+
+    .certificate-page .certificate-signatures {
+        margin-top: 0;
     }
 </style>
 
@@ -230,59 +221,59 @@ require_once __DIR__ . '/../../includes/header.php';
         </div>
     </div>
 
-    <div class="sheet">
-        <div class="sheet-header">
-            <div class="d-flex align-items-center gap-3">
-                <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg" alt="School Logo" class="school-logo">
-                <div>
-                    <div class="fw-bold fs-5"><?= e(APP_NAME) ?></div>
-                    <div class="small">Office of the Registrar</div>
-                </div>
-                <div class="ms-auto text-end small">
-                    <div>Date Issued: <?= e($issuedDate) ?></div>
-                </div>
-            </div>
-        </div>
+    <div class="official-document-sheet official-certificate-sheet">
+        <?php renderOfficialDocumentHeader(); ?>
 
-        <div class="p-5">
-            <h4 class="text-center mb-4 certificate-title">Certificate of Enrollment</h4>
+        <div class="official-document-body">
+            <h2 class="official-document-title">Certificate of Enrollment</h2>
 
             <?php if (!$certificateRecord): ?>
                 <div class="alert alert-warning mb-0">
                     No approved or enrolled record was found for the selected student and term.
+                    Certificates are generated only after the Registrar submits the enrollment to teachers.
                 </div>
             <?php else: ?>
-                <div class="certificate-body">
-                    This is to certify that <strong><?= e($certificateRecord['student_name']) ?></strong>
-                    with Learner Reference Number (LRN)
-                    <strong><?= e($certificateRecord['lrn'] ?: 'N/A') ?></strong>
-                    is officially <strong><?= e($certificateRecord['status']) ?></strong>
-                    at <strong><?= e(APP_NAME) ?></strong> for
-                    <strong><?= e($certificateRecord['term']) ?></strong>,
-                    School Year <strong><?= e($certificateRecord['school_year']) ?></strong>,
-                    under <strong>Grade <?= e($certificateRecord['grade_level'] ?: 'N/A') ?></strong>
-                    and <strong>Section <?= e($certificateRecord['section_name'] ?: 'N/A') ?></strong>.
-                    <br><br>
-                    This certification is issued upon the request of the parent or guardian
-                    for whatever legal purpose it may serve.
+                <div class="certificate-date-line">
+                    Date: <span class="certificate-date-value"><?= e($issuedDate) ?></span>
                 </div>
 
-                <div class="row mt-5">
-                    <div class="col-md-6">
-                        <div class="small text-muted">Parent/Guardian</div>
-                        <div class="fw-semibold"><?= e(format_name($guardian['first_name'], $guardian['last_name'])) ?></div>
-                    </div>
-                    <div class="col-md-6 text-md-end">
-                        <div class="small text-muted">Enrollment Status</div>
-                        <span class="badge text-bg-primary"><?= e(ucfirst($certificateRecord['status'])) ?></span>
-                    </div>
-                </div>
+                <p class="official-salutation">To Whom It May Concern:</p>
 
-                <div class="d-flex justify-content-end mt-4">
-                    <div class="signature-line">Registrar / Authorized Signatory</div>
+                <p class="official-paragraph">
+                    This is to certify that <span class="official-fill"><?= e($certificateRecord['student_name']) ?></span>
+                    is officially enrolled as a <span class="official-fill"><?= e(formatGradeLevel((string)($certificateRecord['grade_level'] ?: ''))) ?></span>
+                    pupil with Learner Reference Number
+                    <span class="official-fill"><?= e($certificateRecord['lrn'] ?: 'N/A') ?></span>
+                    in this institution this School Year
+                    <span class="official-fill"><?= e($certificateRecord['school_year']) ?></span>.
+                </p>
+
+                <p class="official-paragraph">
+                    This certification is issued upon the request of the above mentioned for whatever legal purpose it may serve him/her best.
+                </p>
+
+                <p class="official-paragraph">
+                    Given this <span class="official-fill"><?= e($issuedDay) ?><sup><?= e($issuedDaySuffix) ?></sup></span>
+                    day of <span class="official-fill"><?= e($issuedMonthYear) ?></span> at Agape Boracay Academy Inc.,
+                    Sitio Cagban, Barangay Manocmanoc, Boracay Island, Malay, Aklan.
+                </p>
+
+                <div class="certificate-verified-label">Verified by:</div>
+
+                <div class="official-signatures certificate-signatures">
+                    <div class="official-signature">
+                        <div class="official-signature-name"><?= e($certificateRecord['adviser_name'] ?: 'Teacher-Adviser') ?></div>
+                        <div class="official-signature-role">Teacher-Adviser</div>
+                    </div>
+                    <div class="official-signature">
+                        <div class="official-signature-name"><?= e($principalName) ?></div>
+                        <div class="official-signature-role">School Head</div>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
+
+        <?php renderOfficialDocumentFooter(); ?>
     </div>
 </div>
 

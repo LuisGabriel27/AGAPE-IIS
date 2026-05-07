@@ -200,14 +200,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $studentId = (int)$stmt->fetchColumn();
 
+                $initialStatus = enrollmentStatusForDocumentCount(count($uploadedRequirements));
                 $stmt = $pdo->prepare("
                     INSERT INTO enrollments (student_id, school_year, term, status, payment_submitted_at)
-                    VALUES (:sid, :sy, :term, 'pending', NULL) RETURNING id
+                    VALUES (:sid, :sy, :term, :status, NULL) RETURNING id
                 ");
                 $stmt->execute([
-                    ':sid'  => $studentId,
-                    ':sy'   => $enrollData['school_year'],
-                    ':term' => $enrollData['term'],
+                    ':sid'    => $studentId,
+                    ':sy'     => $enrollData['school_year'],
+                    ':term'   => $enrollData['term'],
+                    ':status' => $initialStatus,
                 ]);
                 $enrollmentId = (int)$stmt->fetchColumn();
 
@@ -224,9 +226,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $docStmt = $pdo->prepare("
                     INSERT INTO enrollment_documents
-                        (enrollment_id, document_type, original_name, file_path, mime_type, file_size, uploaded_by)
+                        (enrollment_id, document_type, original_name, file_path, mime_type, file_size, uploaded_by, review_status, reviewer_note, reviewed_by, reviewed_at)
                     VALUES
-                        (:enrollment_id, :document_type, :original_name, :file_path, :mime_type, :file_size, :uploaded_by)
+                        (:enrollment_id, :document_type, :original_name, :file_path, :mime_type, :file_size, :uploaded_by, 'pending', NULL, NULL, NULL)
                     ON CONFLICT (enrollment_id, document_type)
                     DO UPDATE SET
                         original_name = EXCLUDED.original_name,
@@ -234,7 +236,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         mime_type = EXCLUDED.mime_type,
                         file_size = EXCLUDED.file_size,
                         uploaded_by = EXCLUDED.uploaded_by,
-                        uploaded_at = NOW()
+                        uploaded_at = NOW(),
+                        review_status = 'pending',
+                        reviewer_note = NULL,
+                        reviewed_by = NULL,
+                        reviewed_at = NULL
                 ");
 
                 foreach ($uploadedRequirements as $docKey => $file) {
@@ -499,9 +505,9 @@ $stepKeys = array_keys($stepLabels);
             <label class="form-label">Grade Level <span class="text-danger">*</span></label>
             <select class="form-select" name="grade_level" required>
                 <option value="">Select...</option>
-                <?php foreach (['Kindergarten','1','2','3','4','5','6'] as $gl): ?>
+                <?php foreach (basicEducationGradeLevels() as $gl => $label): ?>
                     <option value="<?= e($gl) ?>" <?= ($enrollData['grade_level'] ?? '') == $gl ? 'selected' : '' ?>>
-                        <?= $gl === 'Kindergarten' ? 'Kindergarten' : 'Grade ' . e($gl) ?>
+                        <?= e($label) ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -513,7 +519,7 @@ $stepKeys = array_keys($stepLabels);
                 <option value="0">To be assigned</option>
                 <?php foreach ($sections as $sec): ?>
                     <option value="<?= (int)$sec['id'] ?>" <?= ($enrollData['section_id'] ?? 0) == $sec['id'] ? 'selected' : '' ?>>
-                        <?= e($sec['name']) ?> (Grade <?= e((string)$sec['grade_level']) ?>, Capacity: <?= e((string)$sec['capacity']) ?>)
+                        <?= e($sec['name']) ?> (<?= e(formatGradeLevel((string)$sec['grade_level'])) ?>, Capacity: <?= e((string)$sec['capacity']) ?>)
                     </option>
                 <?php endforeach; ?>
             </select>

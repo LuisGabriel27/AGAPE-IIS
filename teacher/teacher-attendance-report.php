@@ -161,7 +161,7 @@ if (!$isPrint) {
                 <select class="form-select form-select-sm" name="section_id">
                     <?php foreach ($sections as $sec): ?>
                         <option value="<?= (int)$sec['id'] ?>" <?= $selSection == $sec['id'] ? 'selected' : '' ?>>
-                            <?= e($sec['name']) ?> (Grade <?= e($sec['grade_level']) ?>)
+                            <?= e($sec['name']) ?> (<?= e(formatGradeLevel((string)$sec['grade_level'])) ?>)
                         </option>
                     <?php endforeach; ?>
                     <?php if (empty($sections)): ?>
@@ -203,14 +203,14 @@ if (!$isPrint) {
 <h2><?= e(APP_NAME) ?></h2>
 <h3>Monthly Attendance Report</h3>
 <p>
-    <strong>Section:</strong> <?= e($currentSection['name']) ?> — Grade <?= e($currentSection['grade_level']) ?> &nbsp;|&nbsp;
+    <strong>Section:</strong> <?= e($currentSection['name']) ?> — <?= e(formatGradeLevel((string)$currentSection['grade_level'])) ?> &nbsp;|&nbsp;
     <strong>Month:</strong> <?= e($monthLabel) ?> &nbsp;|&nbsp;
     <strong>Teacher:</strong> <?= e(format_name($teacher['first_name'], $teacher['last_name'])) ?>
 </p>
 <?php else: ?>
 <div class="card">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <span><strong><?= e($currentSection['name']) ?></strong> — Grade <?= e($currentSection['grade_level']) ?> | <?= e($monthLabel) ?></span>
+        <span><strong><?= e($currentSection['name']) ?></strong> — <?= e(formatGradeLevel((string)$currentSection['grade_level'])) ?> | <?= e($monthLabel) ?></span>
         <span class="badge bg-secondary"><?= e((string)count($students)) ?> students</span>
     </div>
     <div class="card-body p-0">

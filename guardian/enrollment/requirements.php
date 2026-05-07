@@ -48,7 +48,7 @@ if (!$enrollment) {
     redirect(APP_URL . '/guardian/dashboard.php');
 }
 
-if (in_array($enrollment['status'], ['approved', 'enrolled', 'archived'], true)) {
+if (in_array($enrollment['status'], enrollmentLockedForGuardianStatuses(), true)) {
     setFlash('info', 'This enrollment is already finalized.');
     redirect(APP_URL . '/guardian/dashboard.php');
 }
@@ -154,9 +154,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $docStmt = $pdo->prepare("
                 INSERT INTO enrollment_documents
-                    (enrollment_id, document_type, original_name, file_path, mime_type, file_size, uploaded_by)
+                    (enrollment_id, document_type, original_name, file_path, mime_type, file_size, uploaded_by, review_status, reviewer_note, reviewed_by, reviewed_at)
                 VALUES
-                    (:enrollment_id, :document_type, :original_name, :file_path, :mime_type, :file_size, :uploaded_by)
+                    (:enrollment_id, :document_type, :original_name, :file_path, :mime_type, :file_size, :uploaded_by, 'pending', NULL, NULL, NULL)
                 ON CONFLICT (enrollment_id, document_type)
                 DO UPDATE SET
                     original_name = EXCLUDED.original_name,
@@ -164,7 +164,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mime_type = EXCLUDED.mime_type,
                     file_size = EXCLUDED.file_size,
                     uploaded_by = EXCLUDED.uploaded_by,
-                    uploaded_at = NOW()
+                    uploaded_at = NOW(),
+                    review_status = 'pending',
+                    reviewer_note = NULL,
+                    reviewed_by = NULL,
+                    reviewed_at = NULL
             ");
 
             foreach ($uploadedRequirements as $docKey => $file) {
@@ -189,13 +193,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
 
-            if ($enrollment['status'] === 'rejected') {
+            // Recompute status based on the new total document count.
+            $countStmt = $pdo->prepare("
+                SELECT COUNT(DISTINCT document_type)
+                FROM enrollment_documents
+                WHERE enrollment_id = :id
+                  AND document_type IN ('psa', 'medical', 'previous_school', 'parent_data')
+            ");
+            $countStmt->execute([':id' => $enrollmentId]);
+            $newDocCount = (int)$countStmt->fetchColumn();
+
+            $resubmittableStatuses = ['returned', 'requirements_incomplete', 'submitted'];
+            if (in_array($enrollment['status'], $resubmittableStatuses, true)) {
+                $newStatus = enrollmentStatusForDocumentCount($newDocCount);
+                $resubmitRemark = $enrollment['status'] === 'returned'
+                    ? 'Requirements resubmitted by guardian after return; awaiting clerk review.'
+                    : 'Requirements updated by guardian; awaiting clerk review.';
                 $pdo->prepare("
                     UPDATE enrollments
-                    SET status = 'pending',
-                        remarks = 'Requirements resubmitted by guardian; pending clerk review.'
+                    SET status = :status,
+                        remarks = :remarks
                     WHERE id = :id
-                ")->execute([':id' => $enrollmentId]);
+                ")->execute([
+                    ':status'  => $newStatus,
+                    ':remarks' => $resubmitRemark,
+                    ':id'      => $enrollmentId,
+                ]);
             }
 
             $pdo->commit();
@@ -245,7 +268,7 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
                 <h4 class="fw-bold mb-1"><i class="bi bi-file-earmark-arrow-up me-2"></i>Upload Enrollment Requirements</h4>
-                <div class="text-muted small"><?= e(format_name($enrollment['first_name'], $enrollment['last_name'])) ?> - Grade <?= e($enrollment['grade_level'] ?? 'N/A') ?></div>
+                <div class="text-muted small"><?= e(format_name($enrollment['first_name'], $enrollment['last_name'])) ?> - <?= e(formatGradeLevel((string)($enrollment['grade_level'] ?? ''))) ?></div>
             </div>
             <a href="<?= APP_URL ?>/guardian/dashboard.php" class="btn btn-outline-secondary btn-sm">
                 <i class="bi bi-arrow-left me-1"></i>Dashboard
@@ -255,6 +278,29 @@ require_once __DIR__ . '/../../includes/header.php';
         <?php if (!empty($errors)): ?>
             <div class="alert alert-danger">
                 <?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php
+        $needsReplacementCount = 0;
+        $acceptedCount = 0;
+        $missingCount = 0;
+        foreach ($requiredDocuments as $docKey => $_label) {
+            $existing = $documentsByType[$docKey] ?? null;
+            if (!$existing) {
+                $missingCount++;
+                continue;
+            }
+            $rs = (string)($existing['review_status'] ?? 'pending');
+            if ($rs === 'accepted') $acceptedCount++;
+            elseif ($rs === 'needs_replacement') $needsReplacementCount++;
+        }
+        ?>
+
+        <?php if ($needsReplacementCount > 0): ?>
+            <div class="alert alert-warning small mb-3">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                The Enrollment Clerk has flagged <strong><?= (int)$needsReplacementCount ?></strong> file<?= $needsReplacementCount === 1 ? '' : 's' ?> for replacement. Look for the reviewer notes below and upload corrected copies.
             </div>
         <?php endif; ?>
 
@@ -269,16 +315,30 @@ require_once __DIR__ . '/../../includes/header.php';
                     <input type="hidden" name="enrollment_id" value="<?= (int)$enrollmentId ?>">
 
                     <div class="row">
-                        <?php foreach ($requiredDocuments as $docKey => $docLabel): $existing = $documentsByType[$docKey] ?? null; ?>
+                        <?php foreach ($requiredDocuments as $docKey => $docLabel):
+                            $existing = $documentsByType[$docKey] ?? null;
+                            $reviewStatus = $existing ? (string)($existing['review_status'] ?? 'pending') : 'missing';
+                            $reviewerNote = $existing ? (string)($existing['reviewer_note'] ?? '') : '';
+                        ?>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">
-                                    <?= e($docLabel) ?> <?= $existing ? '' : '<span class="text-danger">*</span>' ?>
-                                </label>
+                                <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
+                                    <label class="form-label mb-0">
+                                        <?= e($docLabel) ?> <?= $existing ? '' : '<span class="text-danger">*</span>' ?>
+                                    </label>
+                                    <span class="badge <?= e(documentReviewStatusBadgeClass($reviewStatus)) ?>">
+                                        <?= e(documentReviewStatusLabel($reviewStatus)) ?>
+                                    </span>
+                                </div>
                                 <?php if ($existing): ?>
                                     <div class="small mb-2">
                                         <a href="<?= e($documentUrl($existing)) ?>" target="_blank" rel="noopener">
                                             <i class="bi bi-file-earmark-text me-1"></i><?= e($existing['original_name']) ?>
                                         </a>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if ($reviewerNote !== ''): ?>
+                                    <div class="alert alert-warning small py-2 mb-2">
+                                        <i class="bi bi-chat-left-text me-1"></i><strong>Clerk note:</strong> <?= e($reviewerNote) ?>
                                     </div>
                                 <?php endif; ?>
                                 <input type="file" class="form-control" name="requirements[<?= e($docKey) ?>]" accept=".pdf,.jpg,.jpeg,.png" <?= $existing ? '' : 'required' ?>>

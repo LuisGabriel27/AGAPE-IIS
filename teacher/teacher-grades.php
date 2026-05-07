@@ -1,7 +1,7 @@
 <?php
 /**
  * Teacher Grades Page
- * Select class → student list with grade input fields.
+ * Select class â†’ student list with grade input fields.
  * Auto-compute Final Grade. Save as draft or submit final.
  * Publish grades to make them visible to guardians.
  */
@@ -43,6 +43,9 @@ $selSubject  = (int)($_GET['subject_id'] ?? $_POST['subject_id'] ?? 0);
 $selSection  = (int)($_GET['section_id'] ?? $_POST['section_id'] ?? 0);
 $selYear     = $_GET['school_year'] ?? $_POST['school_year'] ?? currentSchoolYear();
 $selTerm     = $_GET['term'] ?? $_POST['term'] ?? '1st Semester';
+$periods     = gradingPeriods();
+$selPeriod   = normalizeGradingPeriod($_GET['grading_period'] ?? $_POST['grading_period'] ?? 'quarter1');
+$selPeriodLabel = $periods[$selPeriod];
 
 // Find the matching class info
 $currentClass = null;
@@ -61,7 +64,7 @@ $publishedStatus = 0;
 if ($currentClass) {
     $stmt = $pdo->prepare("
         SELECT s.id, s.first_name, s.last_name, s.lrn,
-               g.id AS grade_id, g.midterm, g.finals, g.final_grade, g.published
+               g.id AS grade_id, g.quarter1, g.quarter2, g.quarter3, g.quarter4, g.final_grade, g.published
         FROM students s
         JOIN sections sec ON s.section_id = sec.id
         LEFT JOIN grades g ON g.student_id = s.id 
@@ -88,7 +91,7 @@ if ($currentClass) {
     }
 }
 
-// ── Handle grade submission ─────────────────────────────
+// â”€â”€ Handle grade submission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 $errors  = [];
 $success = false;
 
@@ -97,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
 
     $postAction = $_POST['form_action'] ?? 'save_grades';
 
-    // ── Publish/Unpublish Toggle ─────────────────────────
+    // â”€â”€ Publish/Unpublish Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if ($postAction === 'publish' || $postAction === 'unpublish') {
         $newPublished = ($postAction === 'publish') ? 1 : 0;
 
@@ -122,12 +125,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
             'term' => $selTerm,
         ]);
         setFlash('success', $postAction === 'publish' ? 'Grades published! Guardians can now view them.' : 'Grades unpublished. Guardians can no longer view them.');
-        redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection);
+        redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection . '&grading_period=' . urlencode($selPeriod));
     }
 
-    // ── Save Grades ──────────────────────────────────────
-    $midterms    = $_POST['midterm'] ?? [];
-    $finals      = $_POST['finals'] ?? [];
+    // â”€â”€ Save Grades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    $periodGrades = $_POST['grade'] ?? [];
     $studentIds  = $_POST['student_ids'] ?? [];
 
     try {
@@ -135,18 +137,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
 
         foreach ($studentIds as $idx => $studentId) {
             $studentId = (int)$studentId;
-            $mid = is_numeric($midterms[$idx] ?? '') ? (float)$midterms[$idx] : null;
-            $fin = is_numeric($finals[$idx] ?? '')   ? (float)$finals[$idx]   : null;
-
-            // Auto-compute final grade (average of midterm and finals)
-            $finalGrade = null;
-            if ($mid !== null && $fin !== null) {
-                $finalGrade = round(($mid + $fin) / 2, 2);
+            $gradeValue = is_numeric($periodGrades[$idx] ?? '') ? (float)$periodGrades[$idx] : null;
+            if ($gradeValue !== null && ($gradeValue < 0 || $gradeValue > 100)) {
+                throw new InvalidArgumentException('Grades must be between 0 and 100.');
             }
 
-            // Check if grade record exists
             $stmt = $pdo->prepare("
-                SELECT id FROM grades 
+                SELECT id, quarter1, quarter2, quarter3, quarter4
+                FROM grades
                 WHERE student_id = :sid AND subject_id = :subid AND school_year = :sy AND term = :term
                 LIMIT 1
             ");
@@ -154,31 +152,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
             $existing = $stmt->fetch();
 
             if ($existing) {
+                $quarterGrades = [
+                    'quarter1' => $existing['quarter1'],
+                    'quarter2' => $existing['quarter2'],
+                    'quarter3' => $existing['quarter3'],
+                    'quarter4' => $existing['quarter4'],
+                ];
+                $quarterGrades[$selPeriod] = $gradeValue;
+                $finalGrade = finalRatingFromQuarterGrades($quarterGrades);
+
                 $stmt = $pdo->prepare("
-                    UPDATE grades SET midterm = :mid, finals = :fin, final_grade = :fg, 
+                    UPDATE grades SET {$selPeriod} = :period_grade, final_grade = :fg,
                            submitted_by = :tch, submitted_at = NOW()
                     WHERE id = :gid
                 ");
                 $stmt->execute([
-                    ':mid' => $mid, ':fin' => $fin, ':fg' => $finalGrade,
-                    ':tch' => $teacher['id'], ':gid' => $existing['id']
+                    ':period_grade' => $gradeValue,
+                    ':fg' => $finalGrade,
+                    ':tch' => $teacher['id'],
+                    ':gid' => $existing['id'],
                 ]);
             } else {
+                $quarterGrades = [
+                    'quarter1' => null,
+                    'quarter2' => null,
+                    'quarter3' => null,
+                    'quarter4' => null,
+                ];
+                $quarterGrades[$selPeriod] = $gradeValue;
+                $finalGrade = finalRatingFromQuarterGrades($quarterGrades);
+
                 $stmt = $pdo->prepare("
-                    INSERT INTO grades (student_id, subject_id, school_year, term, midterm, finals, final_grade, submitted_by, submitted_at, published)
-                    VALUES (:sid, :subid, :sy, :term, :mid, :fin, :fg, :tch, NOW(), 0)
+                    INSERT INTO grades (student_id, subject_id, school_year, term, quarter1, quarter2, quarter3, quarter4, final_grade, submitted_by, submitted_at, published)
+                    VALUES (:sid, :subid, :sy, :term, :q1, :q2, :q3, :q4, :fg, :tch, NOW(), 0)
                 ");
                 $stmt->execute([
-                    ':sid' => $studentId, ':subid' => $selSubject, ':sy' => $selYear, ':term' => $selTerm,
-                    ':mid' => $mid, ':fin' => $fin, ':fg' => $finalGrade, ':tch' => $teacher['id'],
+                    ':sid' => $studentId,
+                    ':subid' => $selSubject,
+                    ':sy' => $selYear,
+                    ':term' => $selTerm,
+                    ':q1' => $quarterGrades['quarter1'],
+                    ':q2' => $quarterGrades['quarter2'],
+                    ':q3' => $quarterGrades['quarter3'],
+                    ':q4' => $quarterGrades['quarter4'],
+                    ':fg' => $finalGrade,
+                    ':tch' => $teacher['id'],
                 ]);
             }
         }
 
         $pdo->commit();
-        auditLog('grades_submitted', 'grades', $selSubject, null, ['section_id' => $selSection, 'count' => count($studentIds)]);
-        setFlash('success', 'Grades saved successfully.');
-        redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection);
+        auditLog('grades_submitted', 'grades', $selSubject, null, ['section_id' => $selSection, 'period' => $selPeriod, 'count' => count($studentIds)]);
+        setFlash('success', $selPeriodLabel . ' grades saved successfully.');
+        redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection . '&grading_period=' . urlencode($selPeriod));
     } catch (Exception $e) {
         $pdo->rollBack();
         error_log('Grade save error: ' . $e->getMessage());
@@ -200,24 +226,42 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="card mb-4">
     <div class="card-body">
         <form method="GET" class="row g-3 align-items-end" id="class-selector">
-            <div class="col-md-8">
+            <div class="col-md-6">
                 <label class="form-label">Select Class</label>
                 <select class="form-select" name="class" id="class-select" onchange="
                     var parts = this.value.split('-');
-                    window.location.href='?subject_id='+parts[0]+'&section_id='+parts[1];
+                    var period = document.getElementById('grading-period-select').value;
+                    window.location.href='?subject_id='+parts[0]+'&section_id='+parts[1]+'&grading_period='+encodeURIComponent(period);
                 ">
                     <option value="">-- Select a class --</option>
                     <?php foreach ($classes as $c): ?>
                         <option value="<?= (int)$c['subject_id'] ?>-<?= (int)$c['section_id'] ?>"
                             <?= e(($selSubject == $c['subject_id'] && $selSection == $c['section_id']) ? 'selected' : '') ?>>
-                            <?= e($c['subject_name']) ?> (<?= e($c['subject_code']) ?>) - Section <?= e($c['section_name']) ?> (Grade <?= e($c['grade_level']) ?>)
+                            <?= e($c['subject_name']) ?> (<?= e($c['subject_code']) ?>) - Section <?= e($c['section_name']) ?> (<?= e(formatGradeLevel((string)$c['grade_level'])) ?>)
                         </option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label class="form-label">Grading Period</label>
+                <select class="form-select" name="grading_period" id="grading-period-select" <?= $currentClass ? '' : 'disabled' ?> onchange="
+                    var selectedClass = document.getElementById('class-select').value;
+                    if (selectedClass) {
+                        var parts = selectedClass.split('-');
+                        window.location.href='?subject_id='+parts[0]+'&section_id='+parts[1]+'&grading_period='+encodeURIComponent(this.value);
+                    }
+                ">
+                    <?php foreach ($periods as $periodKey => $periodLabel): ?>
+                        <option value="<?= e($periodKey) ?>" <?= $selPeriod === $periodKey ? 'selected' : '' ?>>
+                            <?= e($periodLabel) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-3">
                 <?php if ($currentClass): ?>
-                    <span class="badge bg-info"><?= e($selYear) ?> | <?= e($selTerm) ?></span>
+                    <span class="badge bg-info"><?= e($selYear) ?></span>
+                    <span class="badge bg-primary ms-1"><?= e($selPeriodLabel) ?></span>
                     <?php if ($publishedStatus): ?>
                         <span class="badge bg-success ms-1"><i class="bi bi-lock-fill me-1"></i>Published</span>
                     <?php else: ?>
@@ -247,6 +291,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <input type="hidden" name="section_id" value="<?= (int)$selSection ?>">
                 <input type="hidden" name="school_year" value="<?= e($selYear) ?>">
                 <input type="hidden" name="term" value="<?= e($selTerm) ?>">
+                <input type="hidden" name="grading_period" value="<?= e($selPeriod) ?>">
                 <?php if ($publishedStatus): ?>
                     <input type="hidden" name="form_action" value="unpublish">
                     <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Unpublish grades? Guardians will no longer see them.')">
@@ -268,6 +313,7 @@ require_once __DIR__ . '/../includes/header.php';
             <input type="hidden" name="section_id" value="<?= (int)$selSection ?>">
             <input type="hidden" name="school_year" value="<?= e($selYear) ?>">
             <input type="hidden" name="term" value="<?= e($selTerm) ?>">
+            <input type="hidden" name="grading_period" value="<?= e($selPeriod) ?>">
             <input type="hidden" name="form_action" value="save_grades">
 
             <div class="table-responsive">
@@ -277,14 +323,18 @@ require_once __DIR__ . '/../includes/header.php';
                             <th>#</th>
                             <th>Student Name</th>
                             <th>LRN</th>
-                            <th class="text-center" style="width:15%;">Midterm</th>
-                            <th class="text-center" style="width:15%;">Finals</th>
-                            <th class="text-center" style="width:15%;">Final Grade</th>
+                            <th class="text-center" style="width:18%;"><?= e($selPeriodLabel) ?></th>
+                            <th class="text-center">Descriptor</th>
                             <th class="text-center">Remarks</th>
+                            <th class="text-center" style="width:15%;">Final Rating</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($students as $idx => $stu): ?>
+                        <?php
+                            $periodGrade = $stu[$selPeriod] !== null ? (float)$stu[$selPeriod] : null;
+                            $finalGrade = $stu['final_grade'] !== null ? (float)$stu['final_grade'] : null;
+                        ?>
                         <tr>
                             <td><?= e((string)($idx + 1)) ?></td>
                             <td><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
@@ -292,29 +342,18 @@ require_once __DIR__ . '/../includes/header.php';
                             <td>
                                 <input type="hidden" name="student_ids[]" value="<?= (int)$stu['id'] ?>">
                                 <input type="number" class="form-control form-control-sm text-center grade-input" 
-                                       name="midterm[]" step="0.01" min="50" max="100"
-                                       value="<?= e($stu['midterm'] !== null ? number_format($stu['midterm'], 2) : '') ?>"
+                                       name="grade[]" step="0.01" min="0" max="100"
+                                       value="<?= e($periodGrade !== null ? number_format($periodGrade, 2) : '') ?>"
                                        data-row="<?= (int)$idx ?>">
                             </td>
-                            <td>
-                                <input type="number" class="form-control form-control-sm text-center grade-input" 
-                                       name="finals[]" step="0.01" min="50" max="100"
-                                       value="<?= e($stu['finals'] !== null ? number_format($stu['finals'], 2) : '') ?>"
-                                       data-row="<?= (int)$idx ?>">
-                            </td>
-                            <td>
-                                <input type="text" class="form-control form-control-sm text-center bg-light" 
-                                       id="final_<?= (int)$idx ?>" readonly
-                                       value="<?= e($stu['final_grade'] !== null ? number_format($stu['final_grade'], 2) : '') ?>">
+                            <td class="text-center" id="descriptor_<?= (int)$idx ?>">
+                                <?= e(depedDescriptor($periodGrade)) ?>
                             </td>
                             <td class="text-center" id="remark_<?= (int)$idx ?>">
-                                <?php if ($stu['final_grade'] !== null): ?>
-                                    <?php if ($stu['final_grade'] >= 75): ?>
-                                        <span class="badge bg-success">Passed</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-danger">Failed</span>
-                                    <?php endif; ?>
-                                <?php endif; ?>
+                                <span class="badge <?= e(depedRemarkBadgeClass($periodGrade)) ?>"><?= e(depedRemark($periodGrade)) ?></span>
+                            </td>
+                            <td class="text-center fw-semibold">
+                                <?= e($finalGrade !== null ? number_format($finalGrade, 2) : 'Pending') ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -330,25 +369,33 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <script>
+function depedDescriptor(grade) {
+    if (grade === null || Number.isNaN(grade)) return 'Pending';
+    if (grade >= 90) return 'Outstanding';
+    if (grade >= 85) return 'Very Satisfactory';
+    if (grade >= 80) return 'Satisfactory';
+    if (grade >= 75) return 'Fairly Satisfactory';
+    return 'Did Not Meet Expectations';
+}
+
+function depedRemark(grade) {
+    if (grade === null || Number.isNaN(grade)) {
+        return '<span class="badge bg-secondary">Pending</span>';
+    }
+    return grade >= 75
+        ? '<span class="badge bg-success">Passed</span>'
+        : '<span class="badge bg-danger">Failed</span>';
+}
+
 document.querySelectorAll('.grade-input').forEach(input => {
     input.addEventListener('input', function() {
-        const row = this.closest('tr');
-        const mid = row.querySelector('input[name="midterm[]"]').value;
-        const fin = row.querySelector('input[name="finals[]"]').value;
         const idx = this.dataset.row;
-        const finalEl = document.getElementById('final_' + idx);
+        const descriptorEl = document.getElementById('descriptor_' + idx);
         const remarkEl = document.getElementById('remark_' + idx);
+        const grade = this.value === '' ? null : parseFloat(this.value);
 
-        if (mid && fin) {
-            const fg = ((parseFloat(mid) + parseFloat(fin)) / 2).toFixed(2);
-            finalEl.value = fg;
-            remarkEl.innerHTML = fg >= 75 
-                ? '<span class="badge bg-success">Passed</span>' 
-                : '<span class="badge bg-danger">Failed</span>';
-        } else {
-            finalEl.value = '';
-            remarkEl.innerHTML = '';
-        }
+        descriptorEl.textContent = depedDescriptor(grade);
+        remarkEl.innerHTML = depedRemark(grade);
     });
 });
 </script>
@@ -357,5 +404,4 @@ document.querySelectorAll('.grade-input').forEach(input => {
 <?php else: ?>
     <div class="alert alert-info">Please select a class above to start encoding grades.</div>
 <?php endif; ?>
-
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

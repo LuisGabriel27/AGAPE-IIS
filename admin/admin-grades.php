@@ -1,6 +1,6 @@
 <?php
 /**
- * Admin Grades — View and override any student's grades with audit trail
+ * Admin Grades - View and override DepEd periodic grades with audit trail.
  * Admin can also toggle published status.
  */
 
@@ -15,13 +15,11 @@ $filterStudent = (int)($_GET['student_id'] ?? 0);
 $filterYear    = $_GET['school_year'] ?? '';
 $errors        = [];
 
-// ── Handle grade override ───────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
     $postAction = $_POST['form_action'] ?? 'override';
 
-    // ── Toggle Published Status ─────────────────────────
     if ($postAction === 'toggle_publish') {
         $gradeId = (int)($_POST['grade_id'] ?? 0);
         if ($gradeId) {
@@ -39,40 +37,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // ── Grade Override ──────────────────────────────────
     if ($postAction === 'override') {
         $gradeId = (int)($_POST['grade_id'] ?? 0);
-        $midterm = is_numeric($_POST['midterm'] ?? '') ? (float)$_POST['midterm'] : null;
-        $finals  = is_numeric($_POST['finals'] ?? '')  ? (float)$_POST['finals']  : null;
-        $finalGrade = ($midterm !== null && $finals !== null) ? round(($midterm + $finals) / 2, 2) : null;
+        $quarterGrades = [];
+        foreach (array_keys(gradingPeriods()) as $column) {
+            $value = $_POST[$column] ?? '';
+            $quarterGrades[$column] = is_numeric($value) ? (float)$value : null;
+            if ($quarterGrades[$column] !== null && ($quarterGrades[$column] < 0 || $quarterGrades[$column] > 100)) {
+                $errors[] = 'Grades must be between 0 and 100.';
+            }
+        }
 
-        if ($gradeId) {
-            // Get old values for audit
-            $stmt = $pdo->prepare("SELECT midterm, finals, final_grade FROM grades WHERE id = :id");
+        if ($gradeId && empty($errors)) {
+            $stmt = $pdo->prepare("SELECT quarter1, quarter2, quarter3, quarter4, final_grade FROM grades WHERE id = :id");
             $stmt->execute([':id' => $gradeId]);
             $oldData = $stmt->fetch();
 
-            $stmt = $pdo->prepare("UPDATE grades SET midterm = :m, finals = :f, final_grade = :fg, updated_at = NOW() WHERE id = :id");
-            $stmt->execute([':m' => $midterm, ':f' => $finals, ':fg' => $finalGrade, ':id' => $gradeId]);
+            $finalGrade = finalRatingFromQuarterGrades($quarterGrades);
+            $stmt = $pdo->prepare("
+                UPDATE grades
+                SET quarter1 = :q1,
+                    quarter2 = :q2,
+                    quarter3 = :q3,
+                    quarter4 = :q4,
+                    final_grade = :fg,
+                    updated_at = NOW()
+                WHERE id = :id
+            ");
+            $stmt->execute([
+                ':q1' => $quarterGrades['quarter1'],
+                ':q2' => $quarterGrades['quarter2'],
+                ':q3' => $quarterGrades['quarter3'],
+                ':q4' => $quarterGrades['quarter4'],
+                ':fg' => $finalGrade,
+                ':id' => $gradeId,
+            ]);
 
-            auditLog('grade_override', 'grades', $gradeId, $oldData, ['midterm' => $midterm, 'finals' => $finals, 'final_grade' => $finalGrade]);
+            auditLog('grade_override', 'grades', $gradeId, $oldData, $quarterGrades + ['final_grade' => $finalGrade]);
             setFlash('success', 'Grade overridden successfully.');
             redirect(APP_URL . '/admin/admin-grades.php?student_id=' . $filterStudent . '&school_year=' . urlencode($filterYear));
         }
     }
 }
 
-// Students dropdown
 $allStudents = $pdo->query("SELECT id, first_name, last_name FROM students ORDER BY last_name, first_name")->fetchAll();
 $years = $pdo->query("SELECT DISTINCT school_year FROM grades ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
-if (empty($years)) $years = [currentSchoolYear()];
+if (empty($years)) {
+    $years = [currentSchoolYear()];
+}
 
-// Fetch grades
 $grades = [];
 if ($filterStudent) {
     $where = "WHERE g.student_id = :sid";
     $params = [':sid' => $filterStudent];
-    if ($filterYear) { $where .= " AND g.school_year = :sy"; $params[':sy'] = $filterYear; }
+    if ($filterYear) {
+        $where .= " AND g.school_year = :sy";
+        $params[':sy'] = $filterYear;
+    }
 
     $stmt = $pdo->prepare("
         SELECT g.*, sub.name AS subject_name, sub.code AS subject_code,
@@ -95,7 +116,10 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="col-12"><h4 class="fw-bold"><i class="bi bi-card-checklist me-2"></i>Grades Management</h4></div>
 </div>
 
-<!-- Filters -->
+<?php if (!empty($errors)): ?>
+    <div class="alert alert-danger"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
+<?php endif; ?>
+
 <div class="card mb-4"><div class="card-body">
     <form method="GET" class="row g-3 align-items-end" id="grades-filter">
         <div class="col-md-5">
@@ -124,16 +148,32 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="table-container"><div class="table-responsive">
     <table class="table table-hover mb-0" id="admin-grades-table">
         <thead>
-            <tr><th>Subject</th><th>Year/Term</th><th class="text-center">Midterm</th><th class="text-center">Finals</th><th class="text-center">Final</th><th>Submitted By</th><th class="text-center">Status</th><th>Actions</th></tr>
+            <tr>
+                <th>Subject</th>
+                <th>School Year</th>
+                <th class="text-center">1st</th>
+                <th class="text-center">2nd</th>
+                <th class="text-center">3rd</th>
+                <th class="text-center">4th</th>
+                <th class="text-center">Final Rating</th>
+                <th class="text-center">Descriptor</th>
+                <th>Submitted By</th>
+                <th class="text-center">Status</th>
+                <th>Actions</th>
+            </tr>
         </thead>
         <tbody>
             <?php foreach ($grades as $g): ?>
+            <?php $final = $g['final_grade'] !== null ? (float)$g['final_grade'] : null; ?>
             <tr>
                 <td><span class="badge bg-secondary"><?= e($g['subject_code']) ?></span> <?= e($g['subject_name']) ?></td>
-                <td><?= e($g['school_year']) ?> - <?= e($g['term']) ?></td>
-                <td class="text-center"><?= e($g['midterm'] !== null ? number_format($g['midterm'], 2) : '-') ?></td>
-                <td class="text-center"><?= e($g['finals'] !== null ? number_format($g['finals'], 2) : '-') ?></td>
-                <td class="text-center fw-bold"><?= e($g['final_grade'] !== null ? number_format($g['final_grade'], 2) : '-') ?></td>
+                <td><?= e($g['school_year']) ?></td>
+                <td class="text-center"><?= e($g['quarter1'] !== null ? number_format((float)$g['quarter1'], 2) : '-') ?></td>
+                <td class="text-center"><?= e($g['quarter2'] !== null ? number_format((float)$g['quarter2'], 2) : '-') ?></td>
+                <td class="text-center"><?= e($g['quarter3'] !== null ? number_format((float)$g['quarter3'], 2) : '-') ?></td>
+                <td class="text-center"><?= e($g['quarter4'] !== null ? number_format((float)$g['quarter4'], 2) : '-') ?></td>
+                <td class="text-center fw-bold"><?= e($final !== null ? number_format($final, 2) : 'Pending') ?></td>
+                <td class="text-center"><?= e(depedDescriptor($final)) ?></td>
                 <td><small><?= e($g['teacher_name'] ?? 'N/A') ?></small></td>
                 <td class="text-center">
                     <?php if ((int)($g['published'] ?? 0)): ?>
@@ -147,28 +187,22 @@ require_once __DIR__ . '/../includes/header.php';
                         <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editGrade<?= (int)$g['id'] ?>">
                             <i class="bi bi-pencil"></i> Override
                         </button>
-                        <!-- Publish Toggle -->
                         <form method="POST" class="d-inline">
                             <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                             <input type="hidden" name="form_action" value="toggle_publish">
                             <input type="hidden" name="grade_id" value="<?= (int)$g['id'] ?>">
                             <?php if ((int)($g['published'] ?? 0)): ?>
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Unpublish">
-                                    <i class="bi bi-unlock"></i>
-                                </button>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Unpublish"><i class="bi bi-unlock"></i></button>
                             <?php else: ?>
-                                <button type="submit" class="btn btn-sm btn-outline-success" title="Publish">
-                                    <i class="bi bi-lock"></i>
-                                </button>
+                                <button type="submit" class="btn btn-sm btn-outline-success" title="Publish"><i class="bi bi-lock"></i></button>
                             <?php endif; ?>
                         </form>
                     </div>
                 </td>
             </tr>
 
-            <!-- Override Modal -->
             <div class="modal fade" id="editGrade<?= (int)$g['id'] ?>" tabindex="-1">
-                <div class="modal-dialog modal-sm">
+                <div class="modal-dialog">
                     <div class="modal-content">
                         <div class="modal-header">
                             <h6 class="modal-title">Override: <?= e($g['subject_name']) ?></h6>
@@ -179,14 +213,15 @@ require_once __DIR__ . '/../includes/header.php';
                                 <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                                 <input type="hidden" name="form_action" value="override">
                                 <input type="hidden" name="grade_id" value="<?= (int)$g['id'] ?>">
-                                <div class="mb-2">
-                                    <label class="form-label small">Midterm</label>
-                                    <input type="number" class="form-control form-control-sm" name="midterm" step="0.01" min="50" max="100" value="<?= e((string)($g['midterm'] ?? '')) ?>">
+                                <div class="row">
+                                    <?php foreach (gradingPeriods() as $column => $label): ?>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label small"><?= e($label) ?></label>
+                                            <input type="number" class="form-control form-control-sm" name="<?= e($column) ?>" step="0.01" min="0" max="100" value="<?= e((string)($g[$column] ?? '')) ?>">
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
-                                <div class="mb-2">
-                                    <label class="form-label small">Finals</label>
-                                    <input type="number" class="form-control form-control-sm" name="finals" step="0.01" min="50" max="100" value="<?= e((string)($g['finals'] ?? '')) ?>">
-                                </div>
+                                <div class="alert alert-info small mb-0">Final Rating is computed only after all four grading periods are encoded.</div>
                             </div>
                             <div class="modal-footer">
                                 <button type="submit" class="btn btn-sm btn-warning">Override</button>

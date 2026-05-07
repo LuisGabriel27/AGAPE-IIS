@@ -1,7 +1,7 @@
 <?php
 /**
  * Teacher Dashboard
- * Shows assigned subjects and sections for the current term.
+ * Shows assigned subjects and sections for the active school year.
  * Includes pending grade entry count, quick links, upcoming events, and recent activity.
  */
 
@@ -22,7 +22,7 @@ $teacher = $stmt->fetch();
 $assignments = [];
 if ($teacher) {
     $stmt = $pdo->prepare("
-        SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code, sub.units,
+        SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
                sec.name AS section_name, sec.grade_level
         FROM schedules sch
         JOIN subjects sub ON sch.subject_id = sub.id
@@ -56,7 +56,7 @@ $upcomingEvents = $stmt->fetchAll();
 // ── KPI: Pending Grade Entry ────────────────────────────
 $pendingGradeEntry = 0;
 if ($teacher) {
-    // Get distinct subject-section-term combos assigned to this teacher
+    // Get distinct subject-section groups assigned to this teacher.
     $stmt = $pdo->prepare("
         SELECT DISTINCT sch.subject_id, sch.section_id, sch.school_year, sch.term
         FROM schedules sch
@@ -66,14 +66,17 @@ if ($teacher) {
     $teacherCombos = $stmt->fetchAll();
 
     foreach ($teacherCombos as $combo) {
-        // Count students in this section who have NO grade record for this subject/year/term
+        // A student is complete only after all four DepEd grading periods are encoded.
         $stmt = $pdo->prepare("
             SELECT COUNT(*) FROM students s
             WHERE s.section_id = :secid
             AND s.id NOT IN (
                 SELECT g.student_id FROM grades g
                 WHERE g.subject_id = :subid AND g.school_year = :sy AND g.term = :term
-                AND g.final_grade IS NOT NULL
+                AND g.quarter1 IS NOT NULL
+                AND g.quarter2 IS NOT NULL
+                AND g.quarter3 IS NOT NULL
+                AND g.quarter4 IS NOT NULL
             )
         ");
         $stmt->execute([
@@ -188,7 +191,7 @@ require_once __DIR__ . '/../includes/header.php';
     <!-- Assigned Classes -->
     <div class="col-lg-8">
         <div class="card">
-            <div class="card-header bg-white"><i class="bi bi-clipboard-check me-2"></i>Assigned Classes This Term</div>
+            <div class="card-header bg-white"><i class="bi bi-clipboard-check me-2"></i>Assigned Classes</div>
             <div class="card-body p-0">
                 <?php if (empty($uniqueSubjects)): ?>
                     <p class="text-muted p-3">No classes assigned yet.</p>
@@ -196,7 +199,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead>
-                            <tr><th>Subject</th><th>Code</th><th>Section</th><th>Grade Level</th><th>Units</th><th>Action</th></tr>
+                            <tr><th>Subject</th><th>Code</th><th>Section</th><th>Grade Level</th><th>Action</th></tr>
                         </thead>
                         <tbody>
                             <?php foreach ($uniqueSubjects as $a): ?>
@@ -204,8 +207,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td><?= e($a['subject_name']) ?></td>
                                 <td><span class="badge bg-secondary"><?= e($a['subject_code']) ?></span></td>
                                 <td><?= e($a['section_name']) ?></td>
-                                <td>Grade <?= e($a['grade_level']) ?></td>
-                                <td><?= e((string)$a['units']) ?></td>
+                                <td><?= e(formatGradeLevel((string)$a['grade_level'])) ?></td>
                                 <td>
                                     <a href="<?= APP_URL ?>/teacher/teacher-grades.php?subject_id=<?= (int)$a['subject_id'] ?>&section_id=<?= (int)$a['section_id'] ?>" class="btn btn-sm btn-outline-primary">
                                         <i class="bi bi-pencil-square me-1"></i>Grades

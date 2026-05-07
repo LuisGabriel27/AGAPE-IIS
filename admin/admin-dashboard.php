@@ -17,16 +17,10 @@ $enrolledThisTerm  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status 
 $totalStudentsForRate = max(1, $totalStudents);
 $enrollmentRate    = round(($enrolledThisTerm / $totalStudentsForRate) * 100, 1);
 
-// These queries reference the payment_submitted_at column which may not exist yet
-// (added in upgrade_migrations.sql). Graceful fallback if the column is missing.
-try {
-    $pendingEnroll     = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending' AND payment_submitted_at IS NOT NULL")->fetchColumn();
-    $pendingPayment    = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending' AND payment_submitted_at IS NULL")->fetchColumn();
-} catch (PDOException $e) {
-    // Fallback: count all pending enrollments without distinguishing by payment_submitted_at
-    $pendingEnroll  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'pending'")->fetchColumn();
-    $pendingPayment = 0;
-}
+// "For Registrar" = cashier has verified payment, registrar needs to submit to teachers.
+// "For Cashier"   = guardian has submitted payment proof, cashier needs to verify.
+$pendingEnroll  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'paid_for_registrar'")->fetchColumn();
+$pendingPayment = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status IN ('awaiting_payment', 'assessed_for_payment')")->fetchColumn();
 
 $totalUsers        = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
 $totalTeachers     = $pdo->query("SELECT COUNT(*) FROM teachers")->fetchColumn();
@@ -154,7 +148,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 <span><i class="bi bi-lightning-charge-fill"></i>Quick Actions</span>
             </div>
             <div class="card-body d-flex flex-column gap-2">
-                <a href="<?= APP_URL ?>/admin/admin-enrollments.php?status=pending" class="quick-action">
+                <a href="<?= APP_URL ?>/admin/admin-enrollments.php?status=paid_for_registrar" class="quick-action">
                     <div class="qa-icon" style="background:var(--warning-light);color:var(--warning-dark);">
                         <i class="bi bi-hourglass-split"></i>
                     </div>

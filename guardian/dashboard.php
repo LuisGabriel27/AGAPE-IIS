@@ -1,7 +1,7 @@
 <?php
 /**
  * Guardian Dashboard
- * Shows student info, GWA, attendance summary, upcoming schedule, latest payment.
+ * Shows student info, general average, attendance summary, upcoming schedule, latest payment.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -32,7 +32,7 @@ if ($guardian) {
     $students = $stmt->fetchAll();
     $studentCount = count($students);
 
-    // Calculate GWA for first student
+    // Calculate General Average for first student
     if (!empty($students)) {
         $firstStudent = $students[0];
         $stmt = $pdo->prepare("
@@ -119,7 +119,7 @@ require_once __DIR__ . '/../includes/header.php';
             <?php if (!empty($students)): ?>
                 <div class="hero-title"><?= e(format_name($students[0]['first_name'], $students[0]['last_name'])) ?></div>
                 <div class="hero-subtitle">
-                    Grade <?= e($students[0]['grade_level'] ?? 'N/A') ?> — Section <?= e($students[0]['section_name'] ?? 'N/A') ?>
+                    <?= e(formatGradeLevel((string)($students[0]['grade_level'] ?? ''))) ?> — Section <?= e($students[0]['section_name'] ?? 'N/A') ?>
                     <?php if ($students[0]['lrn']): ?> | LRN: <?= e($students[0]['lrn']) ?><?php endif; ?>
                 </div>
             <?php else: ?>
@@ -129,7 +129,7 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <?php if ($gwa > 0): ?>
-                <span class="hero-badge"><i class="bi bi-trophy me-1"></i>GWA: <?= e(number_format((float)$gwa, 2)) ?></span>
+                <span class="hero-badge"><i class="bi bi-trophy me-1"></i>General Average: <?= e(number_format((float)$gwa, 2)) ?></span>
             <?php endif; ?>
             <?php if ($studentCount > 1): ?>
                 <span class="hero-badge"><i class="bi bi-people me-1"></i><?= e((string)$studentCount) ?> Students</span>
@@ -197,23 +197,36 @@ require_once __DIR__ . '/../includes/header.php';
                         <div>
                             <h6 class="mb-0 fw-bold"><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></h6>
                             <small class="text-muted">
-                                Grade <?= e($stu['grade_level'] ?? 'N/A') ?> — Section <?= e($stu['section_name'] ?? 'N/A') ?>
+                                <?= e(formatGradeLevel((string)($stu['grade_level'] ?? ''))) ?> — Section <?= e($stu['section_name'] ?? 'N/A') ?>
                                 <?php if ($stu['lrn']): ?> | LRN: <?= e($stu['lrn']) ?><?php endif; ?>
                             </small>
                             <?php
                                 $requirementStatus = $enrollmentRequirementStatus[(int)$stu['id']] ?? null;
                                 $documentCount = $requirementStatus ? (int)$requirementStatus['document_count'] : 0;
+                                $uploadableStatuses = ['submitted', 'requirements_incomplete', 'returned',
+                                                       // Legacy fallbacks
+                                                       'pending', 'rejected'];
                                 $canUploadRequirements = $requirementStatus
-                                    && in_array($requirementStatus['status'], ['pending', 'rejected'], true)
+                                    && in_array($requirementStatus['status'], $uploadableStatuses, true)
                                     && $documentCount < $requiredEnrollmentDocumentCount;
+                                $hasInProgressUpload = $requirementStatus
+                                    && in_array($requirementStatus['status'], $uploadableStatuses, true)
+                                    && $documentCount >= $requiredEnrollmentDocumentCount;
                             ?>
+                            <?php if ($requirementStatus): ?>
+                                <div class="mt-2">
+                                    <span class="badge <?= e(enrollmentStatusBadgeClass($requirementStatus['status'])) ?>">
+                                        <?= e(enrollmentStatusLabel($requirementStatus['status'])) ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
                             <?php if ($canUploadRequirements): ?>
                                 <div class="mt-2">
                                     <a class="btn btn-sm btn-outline-primary" href="<?= APP_URL ?>/guardian/enrollment/requirements.php?enrollment_id=<?= (int)$requirementStatus['enrollment_id'] ?>">
                                         <i class="bi bi-upload me-1"></i>Upload Requirements
                                     </a>
                                 </div>
-                            <?php elseif ($requirementStatus && $documentCount >= $requiredEnrollmentDocumentCount && in_array($requirementStatus['status'], ['pending', 'rejected'], true)): ?>
+                            <?php elseif ($hasInProgressUpload): ?>
                                 <div class="mt-2">
                                     <span class="badge badge-status-active"><i class="bi bi-check-circle me-1"></i>Requirements Uploaded</span>
                                 </div>

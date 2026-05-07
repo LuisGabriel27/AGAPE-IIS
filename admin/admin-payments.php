@@ -83,14 +83,28 @@ if ($action === 'record' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($status === 'paid') {
+            // Cashier verified payment -> ready for registrar submission. Only
+            // step forward from earlier-stage statuses; preserve already-final
+            // states (enrolled, archived).
+            $advancingStatuses = [
+                'submitted',
+                'requirements_incomplete',
+                'documents_under_review',
+                'assessed_for_payment',
+                'awaiting_payment',
+                'paid_for_registrar',
+                'returned',
+            ];
+            $placeholders = implode(',', array_fill(0, count($advancingStatuses), '?'));
             $stmt = $pdo->prepare("
                 UPDATE enrollments
                 SET payment_submitted_at = COALESCE(payment_submitted_at, NOW()),
-                    status = CASE WHEN status = 'rejected' THEN 'pending' ELSE status END,
+                    status = 'paid_for_registrar',
                     remarks = 'Cashier payment recorded; ready for registrar submission.'
-                WHERE id = :id
+                WHERE id = ?
+                  AND status::text IN ({$placeholders})
             ");
-            $stmt->execute([':id' => $enrollmentId]);
+            $stmt->execute(array_merge([$enrollmentId], $advancingStatuses));
         }
 
         auditLog('record_cashier_payment', 'payments', $paymentId);

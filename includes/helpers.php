@@ -201,6 +201,312 @@ function splitName(string $full): array
 }
 
 /**
+ * Canonical ordered list of enrollment workflow statuses with display labels.
+ *
+ * @return array<string, string>
+ */
+function enrollmentStatuses(): array
+{
+    return [
+        'submitted'                => 'Submitted',
+        'requirements_incomplete'  => 'Requirements Incomplete',
+        'documents_under_review'   => 'Documents Under Review',
+        'assessed_for_payment'     => 'Assessed for Payment',
+        'awaiting_payment'         => 'Awaiting Cashier Payment',
+        'paid_for_registrar'       => 'Paid - For Registrar',
+        'enrolled'                 => 'Enrolled',
+        'returned'                 => 'Returned',
+        'archived'                 => 'Archived',
+    ];
+}
+
+/**
+ * Display label for any enrollment status, including legacy values.
+ */
+function enrollmentStatusLabel(?string $status): string
+{
+    $status = (string)$status;
+    $labels = enrollmentStatuses() + [
+        // Legacy fallbacks (pre-v7 rows that have not yet been remapped)
+        'pending'  => 'In Process',
+        'approved' => 'Paid - For Registrar',
+        'rejected' => 'Returned',
+    ];
+    return $labels[$status] ?? ucfirst(str_replace('_', ' ', $status));
+}
+
+/**
+ * Bootstrap badge class for an enrollment status.
+ */
+function enrollmentStatusBadgeClass(?string $status): string
+{
+    return match ((string)$status) {
+        'submitted'                => 'badge-status-submitted',
+        'requirements_incomplete'  => 'badge-status-requirements-incomplete',
+        'documents_under_review'   => 'badge-status-documents-under-review',
+        'assessed_for_payment'     => 'badge-status-assessed-for-payment',
+        'awaiting_payment'         => 'badge-status-awaiting-payment',
+        'paid_for_registrar'       => 'badge-status-paid-for-registrar',
+        'enrolled'                 => 'badge-status-enrolled',
+        'returned'                 => 'badge-status-returned',
+        'archived'                 => 'badge-status-archived',
+        // Legacy fallbacks
+        'pending'                  => 'badge-status-submitted',
+        'approved'                 => 'badge-status-paid-for-registrar',
+        'rejected'                 => 'badge-status-returned',
+        default                    => 'badge-status-submitted',
+    };
+}
+
+/**
+ * Statuses that mean the enrollment can no longer be edited by the guardian
+ * (already submitted to teachers, archived, or in cashier's hands).
+ *
+ * @return list<string>
+ */
+function enrollmentLockedForGuardianStatuses(): array
+{
+    return ['paid_for_registrar', 'enrolled', 'archived'];
+}
+
+/**
+ * Statuses where a registrar/clerk has finished with the enrollment.
+ *
+ * @return list<string>
+ */
+function enrollmentTerminalStatuses(): array
+{
+    return ['enrolled', 'archived'];
+}
+
+/**
+ * Statuses considered open work-in-progress for the clerk pipeline.
+ *
+ * @return list<string>
+ */
+function enrollmentInPipelineStatuses(): array
+{
+    return [
+        'submitted',
+        'requirements_incomplete',
+        'documents_under_review',
+        'assessed_for_payment',
+        'awaiting_payment',
+        'paid_for_registrar',
+        'returned',
+    ];
+}
+
+/**
+ * Assessment line-item categories with display labels.
+ *
+ * @return array<string, string>
+ */
+function assessmentItemCategories(): array
+{
+    return [
+        'tuition'        => 'Tuition',
+        'enrollment_fee' => 'Enrollment Fee',
+        'miscellaneous'  => 'Miscellaneous Fee',
+        'discount'       => 'Discount',
+        'scholarship'    => 'Scholarship',
+        'other'          => 'Other Fee',
+    ];
+}
+
+/**
+ * Categories that subtract from the assessed total instead of adding to it.
+ *
+ * @return list<string>
+ */
+function assessmentDeductionCategories(): array
+{
+    return ['discount', 'scholarship'];
+}
+
+function assessmentItemCategoryLabel(?string $category): string
+{
+    $labels = assessmentItemCategories();
+    return $labels[(string)$category] ?? ucfirst(str_replace('_', ' ', (string)$category));
+}
+
+function assessmentStatusLabel(?string $status): string
+{
+    return match ((string)$status) {
+        'draft'           => 'Draft',
+        'sent_to_cashier' => 'Sent to Cashier',
+        'cancelled'       => 'Cancelled',
+        default           => 'No Assessment',
+    };
+}
+
+function assessmentStatusBadgeClass(?string $status): string
+{
+    return match ((string)$status) {
+        'sent_to_cashier' => 'badge-status-paid-for-registrar',
+        'draft'           => 'badge-doc-review-pending',
+        'cancelled'       => 'badge-status-archived',
+        default           => 'badge-doc-review-missing',
+    };
+}
+
+/**
+ * Per-document review checklist statuses.
+ *
+ * @return array<string, string>
+ */
+function documentReviewStatuses(): array
+{
+    return [
+        'pending'           => 'Pending Review',
+        'accepted'          => 'Accepted',
+        'needs_replacement' => 'Needs Replacement',
+        'missing'           => 'Missing',
+    ];
+}
+
+/**
+ * Display label for a document review status. Treats null/empty as 'missing'
+ * so "no row" naturally renders as a missing document.
+ */
+function documentReviewStatusLabel(?string $status): string
+{
+    $status = $status === null || $status === '' ? 'missing' : $status;
+    $labels = documentReviewStatuses();
+    return $labels[$status] ?? ucfirst(str_replace('_', ' ', $status));
+}
+
+function documentReviewStatusBadgeClass(?string $status): string
+{
+    $status = $status === null || $status === '' ? 'missing' : $status;
+    return match ($status) {
+        'accepted'          => 'badge-doc-review-accepted',
+        'needs_replacement' => 'badge-doc-review-needs-replacement',
+        'missing'           => 'badge-doc-review-missing',
+        'pending'           => 'badge-doc-review-pending',
+        default             => 'badge-doc-review-pending',
+    };
+}
+
+/**
+ * Pick the right pipeline status given the current document upload count
+ * (0..4). Used when guardians create or re-upload requirements.
+ */
+function enrollmentStatusForDocumentCount(int $documentCount, int $required = 4): string
+{
+    if ($documentCount <= 0) {
+        return 'submitted';
+    }
+    if ($documentCount >= $required) {
+        return 'documents_under_review';
+    }
+    return 'requirements_incomplete';
+}
+
+/**
+ * Grade levels offered by the system from preschool through elementary.
+ *
+ * @return array<string, string>
+ */
+function basicEducationGradeLevels(): array
+{
+    return [
+        'Preschool' => 'Preschool',
+        'Kindergarten' => 'Kindergarten',
+        '1' => 'Grade 1',
+        '2' => 'Grade 2',
+        '3' => 'Grade 3',
+        '4' => 'Grade 4',
+        '5' => 'Grade 5',
+        '6' => 'Grade 6',
+    ];
+}
+
+function formatGradeLevel(?string $gradeLevel): string
+{
+    $gradeLevel = trim((string)$gradeLevel);
+    if ($gradeLevel === '') {
+        return 'N/A';
+    }
+
+    $levels = basicEducationGradeLevels();
+    return $levels[$gradeLevel] ?? $gradeLevel;
+}
+
+/**
+ * DepEd K-12 grading periods used by basic education report cards.
+ *
+ * @return array<string, string>
+ */
+function gradingPeriods(): array
+{
+    return [
+        'quarter1' => '1st Grading Period',
+        'quarter2' => '2nd Grading Period',
+        'quarter3' => '3rd Grading Period',
+        'quarter4' => '4th Grading Period',
+    ];
+}
+
+function normalizeGradingPeriod(?string $period): string
+{
+    $period = (string)$period;
+    return array_key_exists($period, gradingPeriods()) ? $period : 'quarter1';
+}
+
+/**
+ * @param array<string, mixed> $grades
+ */
+function finalRatingFromQuarterGrades(array $grades): ?float
+{
+    $values = [];
+    foreach (array_keys(gradingPeriods()) as $column) {
+        if (!isset($grades[$column]) || $grades[$column] === '' || $grades[$column] === null || !is_numeric($grades[$column])) {
+            return null;
+        }
+        $values[] = (float)$grades[$column];
+    }
+
+    return round(array_sum($values) / count($values), 2);
+}
+
+function depedDescriptor(?float $grade): string
+{
+    if ($grade === null) {
+        return 'Pending';
+    }
+    if ($grade >= 90) {
+        return 'Outstanding';
+    }
+    if ($grade >= 85) {
+        return 'Very Satisfactory';
+    }
+    if ($grade >= 80) {
+        return 'Satisfactory';
+    }
+    if ($grade >= 75) {
+        return 'Fairly Satisfactory';
+    }
+    return 'Did Not Meet Expectations';
+}
+
+function depedRemark(?float $grade): string
+{
+    if ($grade === null) {
+        return 'Pending';
+    }
+    return $grade >= 75 ? 'Passed' : 'Failed';
+}
+
+function depedRemarkBadgeClass(?float $grade): string
+{
+    if ($grade === null) {
+        return 'bg-secondary';
+    }
+    return $grade >= 75 ? 'bg-success' : 'bg-danger';
+}
+
+/**
  * Generate standard DepEd calendar events for a given school year.
  * School year format: "2025-2026"
  */

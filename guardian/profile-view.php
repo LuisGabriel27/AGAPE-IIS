@@ -116,7 +116,7 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php foreach ($students as $stu): ?>
                             <tr>
                                 <td><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
-                                <td>Grade <?= e($stu['grade_level'] ?? 'N/A') ?></td>
+                                <td><?= e(formatGradeLevel((string)($stu['grade_level'] ?? ''))) ?></td>
                                 <td><?= e($stu['section_name'] ?? 'N/A') ?></td>
                                 <td><?= e($stu['lrn'] ?? 'N/A') ?></td>
                                 <td><?= $stu['birthdate'] ? e(date('M d, Y', strtotime($stu['birthdate']))) : 'N/A' ?></td>

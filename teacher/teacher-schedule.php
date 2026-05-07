@@ -74,7 +74,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <?php if (isset($dayCells[$day])): $c = $dayCells[$day]; ?>
                                     <div class="slot-filled p-1">
                                         <strong><?= e($c['subject_name']) ?></strong><br>
-                                        <small><?= e($c['section_name']) ?> (Gr. <?= e($c['grade_level']) ?>)</small><br>
+                                        <small><?= e($c['section_name']) ?> (<?= e(formatGradeLevel((string)$c['grade_level'])) ?>)</small><br>
                                         <small class="text-muted">Room <?= e($c['room'] ?? 'TBD') ?></small>
                                     </div>
                                 <?php endif; ?>

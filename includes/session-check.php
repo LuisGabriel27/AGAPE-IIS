@@ -89,7 +89,7 @@ function getRoleDashboardUrl(): string
         case 'admin':
             return APP_URL . '/admin/admin-dashboard.php';
         case 'clerk':
-            return APP_URL . '/admin/admin-enrollments.php';
+            return APP_URL . '/admin/clerk-dashboard.php';
         case 'teacher':
             return APP_URL . '/teacher/teacher-dashboard.php';
         case 'guardian':

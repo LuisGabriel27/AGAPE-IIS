@@ -159,6 +159,8 @@ $leftDescriptions = [
     'guardian' => 'Stay updated on your student\'s enrollment, grades, payments, and academic progress with a single account.',
 ];
 $leftDesc = $leftDescriptions[$role] ?? $roleMeta['description'];
+$stylePath = __DIR__ . '/../assets/css/style.css';
+$styleVersion = APP_VERSION . '-' . (is_file($stylePath) ? filemtime($stylePath) : time());
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -169,7 +171,7 @@ $leftDesc = $leftDescriptions[$role] ?? $roleMeta['description'];
     <link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="<?= APP_URL ?>/assets/css/style.css?v=<?= APP_VERSION ?>" rel="stylesheet">
+    <link href="<?= APP_URL ?>/assets/css/style.css?v=<?= e((string)$styleVersion) ?>" rel="stylesheet">
 </head>
 <body>
 <div class="auth-wrapper">
@@ -192,6 +194,7 @@ $leftDesc = $leftDescriptions[$role] ?? $roleMeta['description'];
 
             <div class="auth-left-decoration">
                 <span class="auth-left-dot <?= e($role === 'admin' ? 'active' : '') ?>"></span>
+                <span class="auth-left-dot <?= e($role === 'clerk' ? 'active' : '') ?>"></span>
                 <span class="auth-left-dot <?= e($role === 'teacher' ? 'active' : '') ?>"></span>
                 <span class="auth-left-dot <?= e($role === 'guardian' ? 'active' : '') ?>"></span>
             </div>

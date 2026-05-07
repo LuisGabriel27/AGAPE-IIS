@@ -264,8 +264,8 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Grade Level</label>
                     <select class="form-select" name="grade_level">
                         <option value="">Select...</option>
-                        <?php foreach (['Kindergarten','1','2','3','4','5','6'] as $gl): ?>
-                            <option value="<?= e($gl) ?>" <?= e(($editStudent['grade_level'] ?? '') == $gl ? 'selected' : '') ?>><?= $gl === 'Kindergarten' ? 'Kindergarten' : 'Grade ' . e($gl) ?></option>
+                        <?php foreach (basicEducationGradeLevels() as $gl => $label): ?>
+                            <option value="<?= e($gl) ?>" <?= e(($editStudent['grade_level'] ?? '') == $gl ? 'selected' : '') ?>><?= e($label) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -274,7 +274,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="section_id">
                         <option value="0">None / To be assigned</option>
                         <?php foreach ($sections as $sec): ?>
-                            <option value="<?= (int)$sec['id'] ?>" <?= e(($editStudent['section_id'] ?? 0) == $sec['id'] ? 'selected' : '') ?>><?= e($sec['name']) ?> (Grade <?= e((string)$sec['grade_level']) ?>)</option>
+                            <option value="<?= (int)$sec['id'] ?>" <?= e(($editStudent['section_id'] ?? 0) == $sec['id'] ? 'selected' : '') ?>><?= e($sec['name']) ?> (<?= e(formatGradeLevel((string)$sec['grade_level'])) ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -474,7 +474,7 @@ document.getElementById('existing-guardian-search')?.addEventListener('input', f
                                 <span class="text-muted small">—</span>
                             <?php endif; ?>
                         </td>
-                        <td><?= $s['grade_level'] ? 'Grade ' . e($s['grade_level']) : '<span class="text-muted">N/A</span>' ?></td>
+                        <td><?= $s['grade_level'] ? e(formatGradeLevel((string)$s['grade_level'])) : '<span class="text-muted">N/A</span>' ?></td>
                         <td><?= e($s['section_name'] ?? '—') ?></td>
                         <td><small><?= e($s['lrn'] ?? '—') ?></small></td>
                         <td>

@@ -1,13 +1,14 @@
 <?php
 /**
  * Guardian Printable Report Card
- * Print-friendly grade report for a selected student, school year, and term.
+ * Print-friendly DepEd-style grade report for a selected student and school year.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
 requireRole('guardian');
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/official-document.php';
 
 $pdo = getDB();
 $userId = $_SESSION['user_id'];
@@ -37,10 +38,6 @@ if (!in_array($selectedStudent, $allowedStudentIds, true)) {
 }
 
 $selectedYear = trim($_GET['school_year'] ?? currentSchoolYear());
-$selectedTerm = trim($_GET['term'] ?? '1st Semester');
-if (!in_array($selectedTerm, ['1st Semester', '2nd Semester'], true)) {
-    $selectedTerm = '1st Semester';
-}
 
 $stmt = $pdo->prepare("
     SELECT s.id, s.first_name, s.last_name, s.grade_level, s.lrn,
@@ -71,105 +68,66 @@ if (!in_array($selectedYear, $years, true)) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT sub.code, sub.name AS subject_name, sub.units,
-           g.midterm, g.finals, g.final_grade
+    SELECT sub.code, sub.name AS subject_name,
+           g.quarter1, g.quarter2, g.quarter3, g.quarter4, g.final_grade
     FROM grades g
     INNER JOIN subjects sub ON sub.id = g.subject_id
     WHERE g.student_id = :sid
       AND g.school_year = :sy
-      AND g.term = :term
+      AND g.published = 1
     ORDER BY sub.name
 ");
 $stmt->execute([
     ':sid' => $selectedStudent,
     ':sy' => $selectedYear,
-    ':term' => $selectedTerm,
 ]);
 $grades = $stmt->fetchAll();
 
-$totalUnits = 0;
-$weightedTotal = 0.0;
+$finalRatings = [];
 $failingSubjects = 0;
 foreach ($grades as $grade) {
     if ($grade['final_grade'] !== null) {
-        $units = (int)$grade['units'];
         $finalGrade = (float)$grade['final_grade'];
-        $totalUnits += $units;
-        $weightedTotal += $finalGrade * $units;
+        $finalRatings[] = $finalGrade;
         if ($finalGrade < 75) {
             $failingSubjects++;
         }
     }
 }
 
-$gwa = $totalUnits > 0 ? round($weightedTotal / $totalUnits, 2) : null;
-$generalRemark = 'Pending';
-if ($gwa !== null) {
-    $generalRemark = $failingSubjects > 0 ? 'Needs Improvement' : 'Passed';
-}
+$generalAverage = !empty($finalRatings) ? round(array_sum($finalRatings) / count($finalRatings), 2) : null;
+$generalRemark = $generalAverage === null ? 'Pending' : ($failingSubjects > 0 ? 'Failed' : depedRemark($generalAverage));
 
 $reportDate = date('F d, Y');
+$principalName = 'MRS. TERESA C. ATIENZA MACED, GC';
 $pageTitle = 'Report Card';
 require_once __DIR__ . '/../includes/header.php';
+renderOfficialDocumentStyles();
 ?>
 <style>
-    .report-card-page .sheet {
-        max-width: 980px;
-        margin: 0 auto;
-        background: #fff;
-        border: 1px solid #dfe6ef;
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-        overflow: hidden;
-    }
-    .report-card-page .sheet-header {
-        background: #1d4ed8;
-        color: #fff;
-        padding: 18px 22px;
-    }
-    .report-card-page .school-logo {
-        width: 56px;
-        height: 56px;
-        object-fit: cover;
-        border-radius: 50%;
-        border: 2px solid rgba(255, 255, 255, 0.65);
-    }
     .report-card-page .meta-table th {
-        width: 190px;
-        background: #f8fafc;
+        width: 1.55in;
+        background: #f7f7f7;
+        font-size: 9.5pt;
+        white-space: nowrap;
     }
-    .report-card-page .signature-line {
-        border-top: 1px solid #64748b;
-        width: 220px;
-        margin-top: 36px;
-        padding-top: 6px;
-        font-size: 0.82rem;
-        color: #475569;
+
+    .report-card-page .meta-table td,
+    .report-card-page .grades-table td,
+    .report-card-page .grades-table th,
+    .report-card-page .scale-table td,
+    .report-card-page .scale-table th {
+        font-size: 9.2pt;
+        padding: 0.07in;
+    }
+
+    .report-card-page .report-card-meta {
+        margin-bottom: 0.18in;
         text-align: center;
-    }
-    @media print {
-        body {
-            background: #fff !important;
-        }
-        .no-print,
-        .sidebar,
-        .top-header,
-        .main-footer,
-        .sidebar-overlay {
-            display: none !important;
-        }
-        .main-content {
-            margin: 0 !important;
-            padding: 0 !important;
-            min-height: auto !important;
-        }
-        .report-card-page .sheet {
-            margin: 0;
-            max-width: none;
-            border: none;
-            box-shadow: none;
-            border-radius: 0;
-        }
+        font-family: Arial, sans-serif;
+        font-size: 8.5pt;
+        line-height: 1.45;
+        text-transform: uppercase;
     }
 </style>
 
@@ -187,7 +145,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="card mb-4 no-print">
         <div class="card-body">
             <form method="GET" class="row g-3 align-items-end">
-                <div class="col-md-4">
+                <div class="col-md-5">
                     <label class="form-label">Student</label>
                     <select class="form-select" name="student_id">
                         <?php foreach ($students as $stu): ?>
@@ -197,19 +155,12 @@ require_once __DIR__ . '/../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-5">
                     <label class="form-label">School Year</label>
                     <select class="form-select" name="school_year">
                         <?php foreach ($years as $year): ?>
                             <option value="<?= e($year) ?>" <?= $selectedYear === $year ? 'selected' : '' ?>><?= e($year) ?></option>
                         <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Term</label>
-                    <select class="form-select" name="term">
-                        <option value="1st Semester" <?= $selectedTerm === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-                        <option value="2nd Semester" <?= $selectedTerm === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -219,23 +170,16 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
     </div>
 
-    <div class="sheet">
-        <div class="sheet-header">
-            <div class="d-flex align-items-center gap-3">
-                <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg" alt="School Logo" class="school-logo">
-                <div>
-                    <div class="fw-bold fs-5"><?= e(APP_NAME) ?></div>
-                    <div class="small">Student Report Card</div>
-                </div>
-                <div class="ms-auto text-end small">
-                    <div>Issued: <?= e($reportDate) ?></div>
-                    <div>School Year: <?= e($selectedYear) ?></div>
-                    <div>Term: <?= e($selectedTerm) ?></div>
-                </div>
-            </div>
-        </div>
+    <div class="official-document-sheet official-report-card-sheet">
+        <?php renderOfficialDocumentHeader(); ?>
 
-        <div class="p-4">
+        <div class="official-document-body">
+            <h2 class="official-document-title">Student Report Card</h2>
+            <div class="report-card-meta">
+                <div>School Year: <strong><?= e($selectedYear) ?></strong></div>
+                <div>Date Issued: <strong><?= e($reportDate) ?></strong></div>
+            </div>
+
             <table class="table table-bordered meta-table align-middle mb-4">
                 <tbody>
                     <tr>
@@ -246,7 +190,7 @@ require_once __DIR__ . '/../includes/header.php';
                     </tr>
                     <tr>
                         <th>Grade Level</th>
-                        <td>Grade <?= e($student['grade_level'] ?: 'N/A') ?></td>
+                        <td><?= e(formatGradeLevel((string)($student['grade_level'] ?: ''))) ?></td>
                         <th>Section</th>
                         <td><?= e($student['section_name'] ?: 'N/A') ?></td>
                     </tr>
@@ -260,58 +204,81 @@ require_once __DIR__ . '/../includes/header.php';
             </table>
 
             <div class="table-responsive">
-                <table class="table table-bordered align-middle mb-0">
+                <table class="table table-bordered align-middle mb-0 grades-table">
                     <thead class="table-light">
                         <tr>
                             <th>Subject Code</th>
                             <th>Subject</th>
-                            <th class="text-center">Units</th>
-                            <th class="text-center">Midterm</th>
-                            <th class="text-center">Finals</th>
-                            <th class="text-center">Final Grade</th>
+                            <th class="text-center">1st</th>
+                            <th class="text-center">2nd</th>
+                            <th class="text-center">3rd</th>
+                            <th class="text-center">4th</th>
+                            <th class="text-center">Final Rating</th>
+                            <th class="text-center">Descriptor</th>
                             <th class="text-center">Remarks</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($grades)): ?>
                             <tr>
-                                <td colspan="7" class="text-center text-muted py-4">
-                                    No grades available for this period.
-                                </td>
+                                <td colspan="9" class="text-center text-muted py-4">No grades available for this school year.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($grades as $grade): ?>
-                                <?php
-                                $final = $grade['final_grade'] !== null ? (float)$grade['final_grade'] : null;
-                                $remark = $final === null ? 'Pending' : ($final >= 75 ? 'Passed' : 'Failed');
-                                ?>
+                                <?php $final = $grade['final_grade'] !== null ? (float)$grade['final_grade'] : null; ?>
                                 <tr>
                                     <td><?= e($grade['code']) ?></td>
                                     <td><?= e($grade['subject_name']) ?></td>
-                                    <td class="text-center"><?= e((string)(int)$grade['units']) ?></td>
-                                    <td class="text-center"><?= e($grade['midterm'] !== null ? number_format((float)$grade['midterm'], 2) : '-') ?></td>
-                                    <td class="text-center"><?= e($grade['finals'] !== null ? number_format((float)$grade['finals'], 2) : '-') ?></td>
-                                    <td class="text-center fw-semibold"><?= e($final !== null ? number_format($final, 2) : '-') ?></td>
-                                    <td class="text-center"><?= e($remark) ?></td>
+                                    <td class="text-center"><?= e($grade['quarter1'] !== null ? number_format((float)$grade['quarter1'], 2) : '-') ?></td>
+                                    <td class="text-center"><?= e($grade['quarter2'] !== null ? number_format((float)$grade['quarter2'], 2) : '-') ?></td>
+                                    <td class="text-center"><?= e($grade['quarter3'] !== null ? number_format((float)$grade['quarter3'], 2) : '-') ?></td>
+                                    <td class="text-center"><?= e($grade['quarter4'] !== null ? number_format((float)$grade['quarter4'], 2) : '-') ?></td>
+                                    <td class="text-center fw-semibold"><?= e($final !== null ? number_format($final, 2) : 'Pending') ?></td>
+                                    <td class="text-center"><?= e(depedDescriptor($final)) ?></td>
+                                    <td class="text-center"><?= e(depedRemark($final)) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </tbody>
                     <tfoot>
                         <tr class="table-light fw-bold">
-                            <td colspan="5" class="text-end">General Weighted Average</td>
-                            <td class="text-center"><?= e($gwa !== null ? number_format((float)$gwa, 2) : 'N/A') ?></td>
+                            <td colspan="6" class="text-end">General Average</td>
+                            <td class="text-center"><?= e($generalAverage !== null ? number_format($generalAverage, 2) : 'N/A') ?></td>
+                            <td class="text-center"><?= e($generalAverage !== null ? depedDescriptor($generalAverage) : 'Pending') ?></td>
                             <td class="text-center"><?= e($generalRemark) ?></td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
 
-            <div class="d-flex justify-content-between mt-4">
-                <div class="signature-line">Class Adviser</div>
-                <div class="signature-line">School Principal</div>
+            <div class="table-responsive mt-4">
+                <table class="table table-bordered scale-table mb-0">
+                    <thead class="table-light"><tr><th>Descriptor</th><th class="text-center">Grading Scale</th><th class="text-center">Remarks</th></tr></thead>
+                    <tbody>
+                        <tr><td>Outstanding</td><td class="text-center">90-100</td><td class="text-center">Passed</td></tr>
+                        <tr><td>Very Satisfactory</td><td class="text-center">85-89</td><td class="text-center">Passed</td></tr>
+                        <tr><td>Satisfactory</td><td class="text-center">80-84</td><td class="text-center">Passed</td></tr>
+                        <tr><td>Fairly Satisfactory</td><td class="text-center">75-79</td><td class="text-center">Passed</td></tr>
+                        <tr><td>Did Not Meet Expectations</td><td class="text-center">Below 75</td><td class="text-center">Failed</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="official-signatures">
+                <div class="official-signature">
+                    <div class="official-signature-caption">Certified Correct:</div>
+                    <div class="official-signature-name"><?= e($student['adviser_name'] ?: 'Class Adviser') ?></div>
+                    <div class="official-signature-role">Class Adviser</div>
+                </div>
+                <div class="official-signature">
+                    <div class="official-signature-caption">Attested by:</div>
+                    <div class="official-signature-name"><?= e($principalName) ?></div>
+                    <div class="official-signature-role">School Principal</div>
+                </div>
             </div>
         </div>
+
+        <?php renderOfficialDocumentFooter(); ?>
     </div>
 </div>
 

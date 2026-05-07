@@ -64,9 +64,14 @@ if (!$record) {
     redirect(APP_URL . '/guardian/enrollment/');
 }
 
-if (in_array($record['enrollment_status'], ['approved', 'enrolled'], true)) {
+if (in_array($record['enrollment_status'], ['enrolled', 'archived'], true)) {
     setFlash('info', 'This enrollment has already been submitted by the Registrar.');
     redirect(APP_URL . '/guardian/enrollment/certificate.php?student_id=' . (int)$record['student_id']);
+}
+
+if (in_array($record['enrollment_status'], ['paid_for_registrar'], true)) {
+    setFlash('info', 'Cashier payment is already verified. The Registrar will review this enrollment shortly.');
+    redirect(APP_URL . '/guardian/dashboard.php');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -124,17 +129,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
 
+            // Move the enrollment forward to 'awaiting_payment' so the cashier
+            // can verify. Only step forward from earlier-stage statuses; once a
+            // record is already at 'paid_for_registrar' / 'enrolled' / 'archived'
+            // we leave it alone.
+            $advancingStatuses = [
+                'submitted',
+                'requirements_incomplete',
+                'documents_under_review',
+                'assessed_for_payment',
+                'awaiting_payment',
+                'returned',
+            ];
+            $placeholders = implode(',', array_fill(0, count($advancingStatuses), '?'));
+            $remark = 'Payment reference submitted by guardian; awaiting cashier verification.';
             $stmt = $pdo->prepare("
                 UPDATE enrollments
                 SET payment_submitted_at = NOW(),
-                    status = CASE WHEN status = 'rejected' THEN 'pending' ELSE status END,
-                    remarks = CASE
-                        WHEN status = 'rejected' THEN 'Payment details resubmitted by guardian; pending review.'
-                        ELSE remarks
-                    END
-                WHERE id = :id
+                    status = 'awaiting_payment',
+                    remarks = ?
+                WHERE id = ?
+                  AND status::text IN ({$placeholders})
             ");
-            $stmt->execute([':id' => $enrollmentId]);
+            $stmt->execute(array_merge([$remark], [$enrollmentId], $advancingStatuses));
 
             $pdo->commit();
 
@@ -190,11 +207,11 @@ require_once __DIR__ . '/../../includes/header.php';
             <div class="card-body">
                 <table class="table table-sm mb-0">
                     <tr><th>Student</th><td><?= e($record['student_name']) ?></td></tr>
-                    <tr><th>Grade</th><td>Grade <?= e($record['grade_level'] ?: 'N/A') ?></td></tr>
+                    <tr><th>Grade</th><td><?= e(formatGradeLevel((string)($record['grade_level'] ?: ''))) ?></td></tr>
                     <tr><th>LRN</th><td><?= e($record['lrn'] ?: 'N/A') ?></td></tr>
                     <tr><th>School Year</th><td><?= e($record['school_year']) ?></td></tr>
                     <tr><th>Term</th><td><?= e($record['term']) ?></td></tr>
-                    <tr><th>Enrollment Status</th><td><span class="badge badge-status-<?= e($record['enrollment_status']) ?>"><?= e(ucfirst($record['enrollment_status'])) ?></span></td></tr>
+                    <tr><th>Enrollment Status</th><td><span class="badge <?= e(enrollmentStatusBadgeClass($record['enrollment_status'])) ?>"><?= e(enrollmentStatusLabel($record['enrollment_status'])) ?></span></td></tr>
                 </table>
             </div>
         </div>

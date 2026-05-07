@@ -82,7 +82,15 @@ $enrolledCount = (int)$enrolledCount->fetchColumn();
 
 $activeTeachers = (int)$pdo->query("SELECT COUNT(*) FROM teachers t JOIN users u ON t.user_id = u.id WHERE u.is_active = 1")->fetchColumn();
 
-$pendingEnroll = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE school_year = :sy AND status = 'pending'");
+$pendingEnroll = $pdo->prepare("
+    SELECT COUNT(*) FROM enrollments
+    WHERE school_year = :sy
+      AND status IN (
+          'submitted', 'requirements_incomplete', 'documents_under_review',
+          'assessed_for_payment', 'awaiting_payment', 'paid_for_registrar', 'returned',
+          'pending', 'approved', 'rejected'
+      )
+");
 $pendingEnroll->execute([':sy' => $currentSY]);
 $pendingEnroll = (int)$pendingEnroll->fetchColumn();
 

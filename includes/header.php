@@ -10,8 +10,8 @@ require_once __DIR__ . '/session-check.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/helpers.php';
 
-$displayTitle = isset($pageTitle) ? e($pageTitle) : APP_NAME;
-$fullTitle    = isset($pageTitle) ? e($pageTitle) . ' — ' . APP_NAME : APP_NAME;
+$displayTitle = isset($pageTitle) ? (string)$pageTitle : APP_NAME;
+$fullTitle    = isset($pageTitle) ? (string)$pageTitle . ' - ' . APP_NAME : APP_NAME;
 $currentPage  = basename($_SERVER['PHP_SELF']);
 $currentPath  = str_replace('\\', '/', $_SERVER['PHP_SELF'] ?? '');
 $userRole     = $_SESSION['role'] ?? '';
@@ -127,9 +127,13 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
             <?php else: /* Clerk — enrollment module only */ ?>
 
             <div class="sidebar-section">Main</div>
+            <a class="sidebar-link <?= e($currentPage === 'clerk-dashboard.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/clerk-dashboard.php">
+                <i class="bi bi-grid-1x2-fill"></i> Dashboard
+            </a>
             <a class="sidebar-link <?= e($currentPage === 'admin-enrollments.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-enrollments.php">
-                <i class="bi bi-grid-1x2-fill"></i> Enrollment Queue
+                <i class="bi bi-pencil-square"></i> Enrollment Queue
             </a>
 
             <div class="sidebar-section">Records</div>

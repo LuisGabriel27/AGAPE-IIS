@@ -41,6 +41,20 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
     if (!$data['teacher_id']) $errors[] = 'Teacher is required.';
     if (empty($data['day_of_week'])) $errors[] = 'Day is required.';
     if (empty($data['time_start']) || empty($data['time_end'])) $errors[] = 'Time range is required.';
+    if ($data['subject_id'] && $data['section_id']) {
+        $stmt = $pdo->prepare("
+            SELECT sub.grade_level AS subject_grade_level, sec.grade_level AS section_grade_level
+            FROM subjects sub
+            CROSS JOIN sections sec
+            WHERE sub.id = :subid AND sec.id = :secid
+            LIMIT 1
+        ");
+        $stmt->execute([':subid' => $data['subject_id'], ':secid' => $data['section_id']]);
+        $gradeMatch = $stmt->fetch();
+        if ($gradeMatch && !empty($gradeMatch['subject_grade_level']) && $gradeMatch['subject_grade_level'] !== $gradeMatch['section_grade_level']) {
+            $errors[] = 'Subject grade level must match the selected section grade level.';
+        }
+    }
 
     if (empty($errors)) {
         if ($action === 'create') {
@@ -65,7 +79,21 @@ if ($action === 'edit' && $id) {
     $editSched = $stmt->fetch();
 }
 
-$subjectsList = $pdo->query("SELECT id, code, name FROM subjects ORDER BY name")->fetchAll();
+$subjectsList = $pdo->query("
+    SELECT id, code, name, grade_level
+    FROM subjects
+    ORDER BY CASE grade_level
+        WHEN 'Preschool' THEN 0
+        WHEN 'Kindergarten' THEN 1
+        WHEN '1' THEN 2
+        WHEN '2' THEN 3
+        WHEN '3' THEN 4
+        WHEN '4' THEN 5
+        WHEN '5' THEN 6
+        WHEN '6' THEN 7
+        ELSE 99
+    END, name
+")->fetchAll();
 $sectionsList = $pdo->query("SELECT id, name, grade_level FROM sections ORDER BY grade_level, name")->fetchAll();
 $teachersList = $pdo->query("SELECT id, first_name, last_name FROM teachers ORDER BY last_name, first_name")->fetchAll();
 
@@ -111,7 +139,9 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <select class="form-select" name="subject_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($subjectsList as $s): ?>
-                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['subject_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>><?= e($s['code'] . ' - ' . $s['name']) ?></option>
+                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['subject_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>>
+                                <?= e(formatGradeLevel($s['grade_level'] ?? '') . ' - ' . $s['code'] . ' - ' . $s['name']) ?>
+                            </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -120,7 +150,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <select class="form-select" name="section_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($sectionsList as $s): ?>
-                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['section_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>><?= e($s['name'] . ' (Gr. ' . $s['grade_level'] . ')') ?></option>
+                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['section_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>><?= e($s['name'] . ' (' . formatGradeLevel((string)$s['grade_level']) . ')') ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -177,7 +207,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                 <td><?= e($s['day_of_week']) ?></td>
                 <td><?= e(date('g:i A', strtotime($s['time_start']))) ?> - <?= e(date('g:i A', strtotime($s['time_end']))) ?></td>
                 <td><span class="badge bg-secondary"><?= e($s['subject_code']) ?></span> <?= e($s['subject_name']) ?></td>
-                <td><?= e($s['section_name']) ?> (Gr. <?= e((string)$s['grade_level']) ?>)</td>
+                <td><?= e($s['section_name']) ?> (<?= e(formatGradeLevel((string)$s['grade_level'])) ?>)</td>
                 <td><?= e($s['teacher_name']) ?></td>
                 <td><?= e($s['room'] ?? 'TBD') ?></td>
                 <td>

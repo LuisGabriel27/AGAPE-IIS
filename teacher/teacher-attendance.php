@@ -189,7 +189,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <?php foreach ($sections as $sec): ?>
                         <a href="?section_id=<?= (int)$sec['id'] ?>&date=<?= e(urlencode($selDate)) ?>"
                            class="btn <?= $selSection == $sec['id'] ? 'btn-primary' : 'btn-outline-primary' ?> btn-sm">
-                            <?= e($sec['name']) ?> (Grade <?= e($sec['grade_level']) ?>)
+                            <?= e($sec['name']) ?> (<?= e(formatGradeLevel((string)$sec['grade_level'])) ?>)
                         </a>
                     <?php endforeach; ?>
                     <?php if (empty($sections)): ?>
@@ -223,7 +223,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <span>
             <i class="bi bi-list-check me-2"></i>
-            <?= e($currentSection['name'] ?? '') ?> (Grade <?= e($currentSection['grade_level'] ?? '') ?>) — <?= e(date('M d, Y', strtotime($selDate))) ?>
+            <?= e($currentSection['name'] ?? '') ?> (<?= e(formatGradeLevel((string)($currentSection['grade_level'] ?? ''))) ?>) — <?= e(date('M d, Y', strtotime($selDate))) ?>
         </span>
         <div class="d-flex gap-2">
             <span class="badge bg-secondary"><?= e((string)count($students)) ?> students</span>

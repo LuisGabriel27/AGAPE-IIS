@@ -93,8 +93,8 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Grade Level <span class="text-danger">*</span></label>
                     <select class="form-select" name="grade_level" required>
                         <option value="">Select...</option>
-                        <?php foreach (['Kindergarten','1','2','3','4','5','6'] as $g): ?>
-                            <option value="<?= e($g) ?>" <?= e(($editSection['grade_level'] ?? '') == $g ? 'selected' : '') ?>><?= $g === 'Kindergarten' ? 'Kindergarten' : 'Grade ' . e($g) ?></option>
+                        <?php foreach (basicEducationGradeLevels() as $g => $label): ?>
+                            <option value="<?= e($g) ?>" <?= e(($editSection['grade_level'] ?? '') == $g ? 'selected' : '') ?>><?= e($label) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -128,7 +128,7 @@ require_once __DIR__ . '/../includes/header.php';
             <?php else: foreach ($sections as $s): ?>
             <tr>
                 <td class="fw-bold"><?= e($s['name']) ?></td>
-                <td>Grade <?= e($s['grade_level']) ?></td>
+                <td><?= e(formatGradeLevel((string)$s['grade_level'])) ?></td>
                 <td><?= e($s['adviser_name'] ?? 'None') ?></td>
                 <td class="text-center"><?= e((string)$s['capacity']) ?></td>
                 <td class="text-center"><?= e((string)$s['enrolled']) ?></td>

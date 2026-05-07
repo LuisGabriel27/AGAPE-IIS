@@ -6,7 +6,21 @@
 -- ── Custom ENUM Types ───────────────────────────────────────
 CREATE TYPE user_role AS ENUM ('admin', 'teacher', 'guardian');
 CREATE TYPE gender_type AS ENUM ('male', 'female', 'other');
-CREATE TYPE enrollment_status AS ENUM ('pending', 'approved', 'rejected', 'enrolled', 'archived');
+CREATE TYPE enrollment_status AS ENUM (
+    'submitted',
+    'requirements_incomplete',
+    'documents_under_review',
+    'assessed_for_payment',
+    'awaiting_payment',
+    'paid_for_registrar',
+    'enrolled',
+    'returned',
+    'archived',
+    -- Legacy values retained for backward compatibility with v6 and earlier.
+    'pending',
+    'approved',
+    'rejected'
+);
 CREATE TYPE event_type AS ENUM ('holiday', 'exam', 'event', 'other');
 CREATE TYPE payment_method AS ENUM ('cash', 'online', 'bank');
 CREATE TYPE payment_status AS ENUM ('paid', 'pending', 'failed');
@@ -14,6 +28,7 @@ CREATE TYPE attendance_status_type AS ENUM ('present', 'late', 'absent');
 CREATE TYPE attendance_method AS ENUM ('face', 'manual');
 CREATE TYPE day_of_week_type AS ENUM ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday');
 CREATE TYPE calendar_source AS ENUM ('manual', 'deped');
+CREATE TYPE document_review_status AS ENUM ('pending', 'accepted', 'needs_replacement', 'missing');
 
 -- ============================================================
 -- 1. users
@@ -76,7 +91,8 @@ CREATE TABLE subjects (
     id          SERIAL PRIMARY KEY,
     code        VARCHAR(20) NOT NULL,
     name        VARCHAR(255) NOT NULL,
-    units       SMALLINT NOT NULL DEFAULT 3,
+    grade_level VARCHAR(20) NOT NULL DEFAULT '',
+    units       SMALLINT NOT NULL DEFAULT 0,
     department  VARCHAR(100) DEFAULT NULL,
     CONSTRAINT uq_subject_code UNIQUE (code)
 );
@@ -154,11 +170,18 @@ CREATE TABLE enrollment_documents (
     file_size     BIGINT DEFAULT NULL,
     uploaded_by   INT DEFAULT NULL,
     uploaded_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+    review_status document_review_status NOT NULL DEFAULT 'pending',
+    reviewer_note TEXT DEFAULT NULL,
+    reviewed_by   INT DEFAULT NULL,
+    reviewed_at   TIMESTAMP DEFAULT NULL,
     CONSTRAINT chk_enrollment_document_type
         CHECK (document_type IN ('psa', 'medical', 'previous_school', 'parent_data')),
     CONSTRAINT fk_enrollment_document_enrollment
         FOREIGN KEY (enrollment_id) REFERENCES enrollments (id)
         ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_enrollment_document_reviewer
+        FOREIGN KEY (reviewed_by) REFERENCES users (id)
+        ON DELETE SET NULL,
     CONSTRAINT fk_enrollment_document_uploader
         FOREIGN KEY (uploaded_by) REFERENCES users (id)
         ON DELETE SET NULL ON UPDATE CASCADE,
@@ -178,6 +201,10 @@ CREATE TABLE grades (
     term          VARCHAR(20) NOT NULL,
     midterm       DECIMAL(5,2) DEFAULT NULL,
     finals        DECIMAL(5,2) DEFAULT NULL,
+    quarter1      DECIMAL(5,2) DEFAULT NULL,
+    quarter2      DECIMAL(5,2) DEFAULT NULL,
+    quarter3      DECIMAL(5,2) DEFAULT NULL,
+    quarter4      DECIMAL(5,2) DEFAULT NULL,
     final_grade   DECIMAL(5,2) DEFAULT NULL,
     submitted_by  INT DEFAULT NULL,
     submitted_at  TIMESTAMP DEFAULT NULL,

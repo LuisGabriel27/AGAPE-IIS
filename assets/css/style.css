@@ -746,6 +746,72 @@ body {
     border: 1px solid var(--border-color);
 }
 
+.badge-status-submitted {
+    background: var(--info-light);
+    color: var(--info-dark);
+    border: 1px solid #BAE6FD;
+}
+
+.badge-status-requirements-incomplete {
+    background: var(--danger-light);
+    color: var(--danger-dark);
+    border: 1px solid #FECACA;
+}
+
+.badge-status-documents-under-review {
+    background: var(--info-light);
+    color: var(--info-dark);
+    border: 1px solid #BAE6FD;
+}
+
+.badge-status-assessed-for-payment {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    border: 1px solid #FDE68A;
+}
+
+.badge-status-awaiting-payment {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    border: 1px solid #FDE68A;
+}
+
+.badge-status-paid-for-registrar {
+    background: var(--success-light);
+    color: var(--success-dark);
+    border: 1px solid #BBF7D0;
+}
+
+.badge-status-returned {
+    background: var(--danger-light);
+    color: var(--danger-dark);
+    border: 1px solid #FECACA;
+}
+
+.badge-doc-review-pending {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    border: 1px solid #FDE68A;
+}
+
+.badge-doc-review-accepted {
+    background: var(--success-light);
+    color: var(--success-dark);
+    border: 1px solid #BBF7D0;
+}
+
+.badge-doc-review-needs-replacement {
+    background: var(--danger-light);
+    color: var(--danger-dark);
+    border: 1px solid #FECACA;
+}
+
+.badge-doc-review-missing {
+    background: var(--secondary-light);
+    color: var(--secondary);
+    border: 1px solid var(--border-color);
+}
+
 .badge-status-paid {
     background: var(--success-light);
     color: var(--success-dark);
@@ -1001,6 +1067,10 @@ body {
     background: linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 40%, #4366F6 100%);
 }
 
+.auth-split-left.gradient-clerk {
+    background: linear-gradient(135deg, #0F172A 0%, #334155 44%, #0F766E 100%);
+}
+
 .auth-split-left.gradient-teacher {
     background: linear-gradient(135deg, #064E3B 0%, #15803D 40%, #22C55E 100%);
 }
@@ -1202,6 +1272,11 @@ body {
 .role-login-icon.role-admin {
     background: linear-gradient(135deg, #E0EAFF 0%, #C7D2FE 100%);
     color: #1D4ED8;
+}
+
+.role-login-icon.role-clerk {
+    background: linear-gradient(135deg, #E0F2FE 0%, #CCFBF1 100%);
+    color: #0F766E;
 }
 
 .role-login-icon.role-teacher {
@@ -1438,6 +1513,12 @@ body {
     background: linear-gradient(135deg, #E0EAFF 0%, #C7D2FE 100%);
     color: #1D4ED8;
     box-shadow: 0 4px 14px rgba(29,78,216,0.10);
+}
+
+.role-login-icon.role-clerk {
+    background: linear-gradient(135deg, #E0F2FE 0%, #CCFBF1 100%);
+    color: #0F766E;
+    box-shadow: 0 4px 14px rgba(15,118,110,0.10);
 }
 
 .role-login-icon.role-teacher {
