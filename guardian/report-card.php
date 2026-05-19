@@ -220,9 +220,7 @@ renderOfficialDocumentStyles();
                     </thead>
                     <tbody>
                         <?php if (empty($grades)): ?>
-                            <tr>
-                                <td colspan="9" class="text-center text-muted py-4">No grades available for this school year.</td>
-                            </tr>
+                            <?= emptyStateRow(9, 'No grades to show for this school year.', 'Grades appear on the report card once the class teacher encodes and publishes them.', 'bi-card-checklist') ?>
                         <?php else: ?>
                             <?php foreach ($grades as $grade): ?>
                                 <?php $final = $grade['final_grade'] !== null ? (float)$grade['final_grade'] : null; ?>

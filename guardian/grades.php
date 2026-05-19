@@ -23,12 +23,26 @@ if ($guardian) {
     $students = $stmt->fetchAll();
 }
 
-$selectedStudent = (int)($_GET['student_id'] ?? ($students[0]['id'] ?? 0));
+$allowedStudentIds = array_map('intval', array_column($students, 'id'));
+$requestedStudent = isset($_GET['student_id']) ? (int)$_GET['student_id'] : 0;
+$accessDenied = false;
+$selectedStudent = (int)($students[0]['id'] ?? 0);
+
+if ($requestedStudent > 0) {
+    if (in_array($requestedStudent, $allowedStudentIds, true)) {
+        $selectedStudent = $requestedStudent;
+    } else {
+        http_response_code(403);
+        $selectedStudent = 0;
+        $accessDenied = true;
+    }
+}
+
 $selectedYear    = $_GET['school_year'] ?? currentSchoolYear();
 
 $grades = [];
 $generalAverage = null;
-if ($selectedStudent) {
+if ($selectedStudent && !$accessDenied) {
     $stmt = $pdo->prepare("
         SELECT g.*, sub.code, sub.name AS subject_name
         FROM grades g
@@ -78,6 +92,11 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="card mb-4">
     <div class="card-body">
+        <?php if ($accessDenied): ?>
+            <div class="alert alert-danger mb-3">
+                You are not allowed to view grades for the selected student.
+            </div>
+        <?php endif; ?>
         <form method="GET" class="row g-3 align-items-end" id="grades-filter">
             <div class="col-md-5">
                 <label for="student_id" class="form-label">Student</label>
@@ -120,7 +139,7 @@ require_once __DIR__ . '/../includes/header.php';
             </thead>
             <tbody>
                 <?php if (empty($grades)): ?>
-                    <tr><td colspan="9" class="text-center text-muted py-4">No grades available for the selected filters.</td></tr>
+                    <?= emptyStateRow(9, 'No grades to show for the selected student and school year.', 'Grades become visible here once the class teacher encodes and publishes them. If you expect grades this term, please follow up with the school.', 'bi-card-checklist') ?>
                 <?php else: ?>
                     <?php foreach ($grades as $g): ?>
                     <?php $final = $g['final_grade'] !== null ? (float)$g['final_grade'] : null; ?>

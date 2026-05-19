@@ -131,84 +131,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
     // â”€â”€ Save Grades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     $periodGrades = $_POST['grade'] ?? [];
     $studentIds  = $_POST['student_ids'] ?? [];
+    $submittedStudentIds = array_map('intval', $studentIds);
+    $allowedStudentIds = array_map('intval', array_column($students, 'id'));
 
-    try {
-        $pdo->beginTransaction();
+    if (count($submittedStudentIds) !== count(array_unique($submittedStudentIds))) {
+        $errors[] = 'Submitted student list contains duplicate rows. Please reload the page and try again.';
+    }
 
-        foreach ($studentIds as $idx => $studentId) {
-            $studentId = (int)$studentId;
-            $gradeValue = is_numeric($periodGrades[$idx] ?? '') ? (float)$periodGrades[$idx] : null;
-            if ($gradeValue !== null && ($gradeValue < 0 || $gradeValue > 100)) {
-                throw new InvalidArgumentException('Grades must be between 0 and 100.');
-            }
+    $invalidStudentIds = array_values(array_diff($submittedStudentIds, $allowedStudentIds));
+    if (!empty($invalidStudentIds)) {
+        error_log('Teacher grade student tampering attempt by user_id=' . $userId . ' teacher_id=' . $teacher['id'] . ' section_id=' . $selSection . ' invalid_student_ids=' . implode(',', $invalidStudentIds));
+        $errors[] = 'Submitted student list does not match this class. Please reload the page and try again.';
+    }
 
-            $stmt = $pdo->prepare("
-                SELECT id, quarter1, quarter2, quarter3, quarter4
-                FROM grades
-                WHERE student_id = :sid AND subject_id = :subid AND school_year = :sy AND term = :term
-                LIMIT 1
-            ");
-            $stmt->execute([':sid' => $studentId, ':subid' => $selSubject, ':sy' => $selYear, ':term' => $selTerm]);
-            $existing = $stmt->fetch();
+    if (empty($errors)) {
+        try {
+            $pdo->beginTransaction();
 
-            if ($existing) {
-                $quarterGrades = [
-                    'quarter1' => $existing['quarter1'],
-                    'quarter2' => $existing['quarter2'],
-                    'quarter3' => $existing['quarter3'],
-                    'quarter4' => $existing['quarter4'],
-                ];
-                $quarterGrades[$selPeriod] = $gradeValue;
-                $finalGrade = finalRatingFromQuarterGrades($quarterGrades);
+            foreach ($submittedStudentIds as $idx => $studentId) {
+                $gradeValue = is_numeric($periodGrades[$idx] ?? '') ? (float)$periodGrades[$idx] : null;
+                if ($gradeValue !== null && ($gradeValue < 0 || $gradeValue > 100)) {
+                    throw new InvalidArgumentException('Grades must be between 0 and 100.');
+                }
 
                 $stmt = $pdo->prepare("
-                    UPDATE grades SET {$selPeriod} = :period_grade, final_grade = :fg,
-                           submitted_by = :tch, submitted_at = NOW()
-                    WHERE id = :gid
+                    SELECT id, quarter1, quarter2, quarter3, quarter4
+                    FROM grades
+                    WHERE student_id = :sid AND subject_id = :subid AND school_year = :sy AND term = :term
+                    LIMIT 1
                 ");
-                $stmt->execute([
-                    ':period_grade' => $gradeValue,
-                    ':fg' => $finalGrade,
-                    ':tch' => $teacher['id'],
-                    ':gid' => $existing['id'],
-                ]);
-            } else {
-                $quarterGrades = [
-                    'quarter1' => null,
-                    'quarter2' => null,
-                    'quarter3' => null,
-                    'quarter4' => null,
-                ];
-                $quarterGrades[$selPeriod] = $gradeValue;
-                $finalGrade = finalRatingFromQuarterGrades($quarterGrades);
+                $stmt->execute([':sid' => $studentId, ':subid' => $selSubject, ':sy' => $selYear, ':term' => $selTerm]);
+                $existing = $stmt->fetch();
 
-                $stmt = $pdo->prepare("
-                    INSERT INTO grades (student_id, subject_id, school_year, term, quarter1, quarter2, quarter3, quarter4, final_grade, submitted_by, submitted_at, published)
-                    VALUES (:sid, :subid, :sy, :term, :q1, :q2, :q3, :q4, :fg, :tch, NOW(), 0)
-                ");
-                $stmt->execute([
-                    ':sid' => $studentId,
-                    ':subid' => $selSubject,
-                    ':sy' => $selYear,
-                    ':term' => $selTerm,
-                    ':q1' => $quarterGrades['quarter1'],
-                    ':q2' => $quarterGrades['quarter2'],
-                    ':q3' => $quarterGrades['quarter3'],
-                    ':q4' => $quarterGrades['quarter4'],
-                    ':fg' => $finalGrade,
-                    ':tch' => $teacher['id'],
-                ]);
+                if ($existing) {
+                    $quarterGrades = [
+                        'quarter1' => $existing['quarter1'],
+                        'quarter2' => $existing['quarter2'],
+                        'quarter3' => $existing['quarter3'],
+                        'quarter4' => $existing['quarter4'],
+                    ];
+                    $quarterGrades[$selPeriod] = $gradeValue;
+                    $finalGrade = finalRatingFromQuarterGrades($quarterGrades);
+
+                    $stmt = $pdo->prepare("
+                        UPDATE grades SET {$selPeriod} = :period_grade, final_grade = :fg,
+                               submitted_by = :tch, submitted_at = NOW()
+                        WHERE id = :gid
+                    ");
+                    $stmt->execute([
+                        ':period_grade' => $gradeValue,
+                        ':fg' => $finalGrade,
+                        ':tch' => $teacher['id'],
+                        ':gid' => $existing['id'],
+                    ]);
+                } else {
+                    $quarterGrades = [
+                        'quarter1' => null,
+                        'quarter2' => null,
+                        'quarter3' => null,
+                        'quarter4' => null,
+                    ];
+                    $quarterGrades[$selPeriod] = $gradeValue;
+                    $finalGrade = finalRatingFromQuarterGrades($quarterGrades);
+
+                    $stmt = $pdo->prepare("
+                        INSERT INTO grades (student_id, subject_id, school_year, term, quarter1, quarter2, quarter3, quarter4, final_grade, submitted_by, submitted_at, published)
+                        VALUES (:sid, :subid, :sy, :term, :q1, :q2, :q3, :q4, :fg, :tch, NOW(), 0)
+                    ");
+                    $stmt->execute([
+                        ':sid' => $studentId,
+                        ':subid' => $selSubject,
+                        ':sy' => $selYear,
+                        ':term' => $selTerm,
+                        ':q1' => $quarterGrades['quarter1'],
+                        ':q2' => $quarterGrades['quarter2'],
+                        ':q3' => $quarterGrades['quarter3'],
+                        ':q4' => $quarterGrades['quarter4'],
+                        ':fg' => $finalGrade,
+                        ':tch' => $teacher['id'],
+                    ]);
+                }
             }
+
+            $pdo->commit();
+            auditLog('grades_submitted', 'grades', $selSubject, null, ['section_id' => $selSection, 'period' => $selPeriod, 'count' => count($submittedStudentIds)]);
+            setFlash('success', $selPeriodLabel . ' grades saved successfully.');
+            redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection . '&grading_period=' . urlencode($selPeriod));
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            error_log('Grade save error: ' . $e->getMessage());
+            $errors[] = 'An error occurred while saving grades. Please try again.';
         }
-
-        $pdo->commit();
-        auditLog('grades_submitted', 'grades', $selSubject, null, ['section_id' => $selSection, 'period' => $selPeriod, 'count' => count($studentIds)]);
-        setFlash('success', $selPeriodLabel . ' grades saved successfully.');
-        redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection . '&grading_period=' . urlencode($selPeriod));
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        error_log('Grade save error: ' . $e->getMessage());
-        $errors[] = 'An error occurred while saving grades. Please try again.';
     }
 }
 
@@ -294,12 +307,12 @@ require_once __DIR__ . '/../includes/header.php';
                 <input type="hidden" name="grading_period" value="<?= e($selPeriod) ?>">
                 <?php if ($publishedStatus): ?>
                     <input type="hidden" name="form_action" value="unpublish">
-                    <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Unpublish grades? Guardians will no longer see them.')">
+                    <button type="submit" class="btn btn-sm btn-outline-warning" data-confirm="Unpublish these grades? Guardians will no longer be able to see them." data-confirm-variant="warning">
                         <i class="bi bi-unlock me-1"></i>Unpublish
                     </button>
                 <?php else: ?>
                     <input type="hidden" name="form_action" value="publish">
-                    <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Publish grades? Guardians will be able to view them.')">
+                    <button type="submit" class="btn btn-sm btn-success" data-confirm="Publish these grades? Guardians will be able to view them." data-confirm-variant="primary">
                         <i class="bi bi-lock-fill me-1"></i>Publish Grades
                     </button>
                 <?php endif; ?>
@@ -400,8 +413,8 @@ document.querySelectorAll('.grade-input').forEach(input => {
 });
 </script>
 <?php elseif ($currentClass): ?>
-    <div class="alert alert-info">No students found in this section.</div>
+    <?= emptyStateHtml('No students are enrolled in this section yet.', 'Students appear here once the registrar enrolls and assigns them to this section. Please coordinate with the registrar if you expect students.', 'bi-people') ?>
 <?php else: ?>
-    <div class="alert alert-info">Please select a class above to start encoding grades.</div>
+    <?= emptyStateHtml('Select a class to start encoding grades.', 'Choose a section, subject, and grading period above. If no classes are listed, ask the administrator to assign your teaching load.', 'bi-pencil-square') ?>
 <?php endif; ?>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

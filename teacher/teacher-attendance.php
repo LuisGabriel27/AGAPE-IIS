@@ -94,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hasAccess) {
 
     $statuses   = $_POST['status'] ?? [];
     $studentIds = $_POST['student_ids'] ?? [];
+    $submittedStudentIds = array_map('intval', $studentIds);
     $postDate   = $_POST['date'] ?? date('Y-m-d');
     $postSection = (int)($_POST['section_id'] ?? 0);
 
@@ -110,12 +111,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hasAccess) {
         $errors[] = 'You do not have access to this section.';
     }
 
+    $allowedStudentIds = array_map('intval', array_column($students, 'id'));
+    if (count($submittedStudentIds) !== count(array_unique($submittedStudentIds))) {
+        $errors[] = 'Submitted student list contains duplicate rows. Please reload the page and try again.';
+    }
+
+    $invalidStudentIds = array_values(array_diff($submittedStudentIds, $allowedStudentIds));
+    if (!empty($invalidStudentIds)) {
+        error_log('Teacher attendance student tampering attempt by user_id=' . $userId . ' teacher_id=' . $teacher['id'] . ' section_id=' . $postSection . ' invalid_student_ids=' . implode(',', $invalidStudentIds));
+        $errors[] = 'Submitted student list does not match this section. Please reload the page and try again.';
+    }
+
     if (empty($errors)) {
         try {
             $pdo->beginTransaction();
 
-            foreach ($studentIds as $idx => $studentId) {
-                $studentId = (int)$studentId;
+            foreach ($submittedStudentIds as $idx => $studentId) {
                 $status = $statuses[$idx] ?? 'present';
                 if (!in_array($status, ['present', 'absent', 'late'])) {
                     $status = 'present';
@@ -193,7 +204,7 @@ require_once __DIR__ . '/../includes/header.php';
                         </a>
                     <?php endforeach; ?>
                     <?php if (empty($sections)): ?>
-                        <span class="text-muted">No sections assigned to you.</span>
+                        <span class="text-muted">No sections are assigned to you yet. Ask the administrator to assign your advisory or teaching sections.</span>
                     <?php endif; ?>
                 </div>
             </div>
@@ -310,9 +321,9 @@ function markAll(status) {
 </script>
 
 <?php elseif ($hasAccess): ?>
-    <div class="alert alert-info">No students found in this section.</div>
+    <?= emptyStateHtml('No students are enrolled in this section yet.', 'Students appear here once the registrar enrolls and assigns them to this section. Please coordinate with the registrar if you expect students.', 'bi-people') ?>
 <?php elseif (!empty($sections)): ?>
-    <div class="alert alert-info">Please select a section above to mark attendance.</div>
+    <?= emptyStateHtml('Select a section to mark attendance.', 'Pick one of your sections above. If no sections are listed, ask the administrator to assign them to you.', 'bi-calendar-check') ?>
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -5,7 +5,19 @@
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
+require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    if (isLoggedIn()) {
+        setFlash('warning', 'Use the logout button to sign out.');
+        redirect(getRoleDashboardUrl());
+    }
+
+    redirect(APP_URL . '/auth/select-role.php');
+}
+
+validateCsrf();
 
 // Audit before destroying session
 if (isset($_SESSION['user_id'])) {

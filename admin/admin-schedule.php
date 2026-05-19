@@ -201,7 +201,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
         <thead><tr><th>Day</th><th>Time</th><th>Subject</th><th>Section</th><th>Teacher</th><th>Room</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($schedules)): ?>
-                <tr><td colspan="7" class="text-center text-muted py-3">No schedules found.</td></tr>
+                <?= emptyStateRow(7, 'No class schedules for the active school year.', 'Add schedule entries using the form above. Guardians and teachers will see timetables only after schedules exist for the active school year.', 'bi-calendar-week') ?>
             <?php else: foreach ($schedules as $s): ?>
             <tr>
                 <td><?= e($s['day_of_week']) ?></td>
@@ -211,10 +211,10 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                 <td><?= e($s['teacher_name']) ?></td>
                 <td><?= e($s['room'] ?? 'TBD') ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit schedule entry" aria-label="Edit schedule entry"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" data-confirm="Delete this schedule entry? This cannot be undone." data-confirm-variant="danger">
                         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
-                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" title="Delete schedule entry" aria-label="Delete schedule entry"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>
             </tr>

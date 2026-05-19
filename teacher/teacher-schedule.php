@@ -51,7 +51,7 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php if (empty($slots)): ?>
-    <div class="alert alert-info">No schedule entries found for your account.</div>
+    <?= emptyStateHtml('You have no class schedule yet.', 'Class schedules are created by the school administrator. Please contact the admin or registrar if you expect to be assigned classes this term.', 'bi-calendar-week') ?>
 <?php else: ?>
 <div class="card">
     <div class="card-body p-0">

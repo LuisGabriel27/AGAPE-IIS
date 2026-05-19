@@ -53,34 +53,13 @@ if (in_array($enrollment['status'], enrollmentLockedForGuardianStatuses(), true)
     redirect(APP_URL . '/guardian/dashboard.php');
 }
 
-$requiredDocuments = [
-    'psa' => 'PSA Birth Certificate',
-    'medical' => 'Medical Records',
-    'previous_school' => 'Previous School Records',
-    'parent_data' => 'Parent / Guardian Data',
-];
+$requiredDocuments = requiredEnrollmentDocuments();
 $allowedRequirementExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
 $allowedRequirementMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 $maxRequirementFileSize = 5 * 1024 * 1024;
 $errors = [];
 
-$loadDocuments = static function (PDO $pdo, int $enrollmentId): array {
-    $stmt = $pdo->prepare("
-        SELECT *
-        FROM enrollment_documents
-        WHERE enrollment_id = :id
-        ORDER BY document_type
-    ");
-    $stmt->execute([':id' => $enrollmentId]);
-    $documents = [];
-    foreach ($stmt->fetchAll() as $doc) {
-        $documents[(string)$doc['document_type']] = $doc;
-    }
-    return $documents;
-};
-
-$documentsByType = $loadDocuments($pdo, $enrollmentId);
-$documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$doc['file_path'], '/');
+$documentsByType = loadEnrollmentDocumentsByType($pdo, $enrollmentId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -90,11 +69,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach ($requiredDocuments as $docKey => $docLabel) {
         $uploadError = $_FILES['requirements']['error'][$docKey] ?? UPLOAD_ERR_NO_FILE;
         $hasExistingFile = !empty($documentsByType[$docKey]);
+        $existingReviewStatus = $hasExistingFile ? (string)($documentsByType[$docKey]['review_status'] ?? 'pending') : 'missing';
 
         if ($uploadError === UPLOAD_ERR_NO_FILE) {
             if (!$hasExistingFile) {
                 $errors[] = $docLabel . ' is required.';
             }
+            continue;
+        }
+
+        if ($hasExistingFile && $existingReviewStatus === 'accepted') {
+            $errors[] = $docLabel . ' has already been accepted and cannot be replaced.';
             continue;
         }
 
@@ -203,7 +188,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $countStmt->execute([':id' => $enrollmentId]);
             $newDocCount = (int)$countStmt->fetchColumn();
 
-            $resubmittableStatuses = ['returned', 'requirements_incomplete', 'submitted'];
+            $resubmittableStatuses = [
+                'returned',
+                'requirements_incomplete',
+                'submitted',
+                'documents_under_review',
+                'assessed_for_payment',
+                'awaiting_payment',
+            ];
             if (in_array($enrollment['status'], $resubmittableStatuses, true)) {
                 $newStatus = enrollmentStatusForDocumentCount($newDocCount);
                 $resubmitRemark = $enrollment['status'] === 'returned'
@@ -256,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    $documentsByType = $loadDocuments($pdo, $enrollmentId);
+    $documentsByType = loadEnrollmentDocumentsByType($pdo, $enrollmentId);
 }
 
 $pageTitle = 'Upload Requirements';
@@ -282,18 +274,19 @@ require_once __DIR__ . '/../../includes/header.php';
         <?php endif; ?>
 
         <?php
-        $needsReplacementCount = 0;
-        $acceptedCount = 0;
-        $missingCount = 0;
+        $documentSummary = summarizeEnrollmentDocumentsByType($documentsByType, $requiredDocuments);
+        $needsReplacementCount = (int)$documentSummary['counts']['needs_replacement'];
+        $hasReplaceableDocuments = false;
         foreach ($requiredDocuments as $docKey => $_label) {
             $existing = $documentsByType[$docKey] ?? null;
             if (!$existing) {
-                $missingCount++;
+                $hasReplaceableDocuments = true;
                 continue;
             }
             $rs = (string)($existing['review_status'] ?? 'pending');
-            if ($rs === 'accepted') $acceptedCount++;
-            elseif ($rs === 'needs_replacement') $needsReplacementCount++;
+            if ($rs !== 'accepted') {
+                $hasReplaceableDocuments = true;
+            }
         }
         ?>
 
@@ -307,8 +300,15 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="card">
             <div class="card-body p-4">
                 <div class="alert alert-info small">
-                    Upload clear copies of the required documents. Existing files can be replaced by choosing a new file for the same requirement.
+                    Upload clear copies of the required documents. Accepted files are locked; only missing, pending, or replacement-needed files can be changed.
                 </div>
+
+                <?php if (!$hasReplaceableDocuments): ?>
+                    <div class="alert alert-success small">
+                        <i class="bi bi-check-circle me-1"></i>
+                        All required documents have been accepted by the Enrollment Clerk.
+                    </div>
+                <?php endif; ?>
 
                 <form method="POST" enctype="multipart/form-data">
                     <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
@@ -319,6 +319,7 @@ require_once __DIR__ . '/../../includes/header.php';
                             $existing = $documentsByType[$docKey] ?? null;
                             $reviewStatus = $existing ? (string)($existing['review_status'] ?? 'pending') : 'missing';
                             $reviewerNote = $existing ? (string)($existing['reviewer_note'] ?? '') : '';
+                            $isAccepted = $existing && $reviewStatus === 'accepted';
                         ?>
                             <div class="col-md-6 mb-3">
                                 <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
@@ -331,7 +332,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                 </div>
                                 <?php if ($existing): ?>
                                     <div class="small mb-2">
-                                        <a href="<?= e($documentUrl($existing)) ?>" target="_blank" rel="noopener">
+                                        <a href="<?= e(enrollmentDocumentUrl($existing)) ?>" target="_blank" rel="noopener">
                                             <i class="bi bi-file-earmark-text me-1"></i><?= e($existing['original_name']) ?>
                                         </a>
                                     </div>
@@ -341,15 +342,15 @@ require_once __DIR__ . '/../../includes/header.php';
                                         <i class="bi bi-chat-left-text me-1"></i><strong>Clerk note:</strong> <?= e($reviewerNote) ?>
                                     </div>
                                 <?php endif; ?>
-                                <input type="file" class="form-control" name="requirements[<?= e($docKey) ?>]" accept=".pdf,.jpg,.jpeg,.png" <?= $existing ? '' : 'required' ?>>
-                                <div class="form-text">PDF, JPG, JPEG, or PNG. Max 5MB.</div>
+                                <input type="file" class="form-control" name="requirements[<?= e($docKey) ?>]" accept=".pdf,.jpg,.jpeg,.png" <?= $existing ? '' : 'required' ?> <?= $isAccepted ? 'disabled' : '' ?>>
+                                <div class="form-text"><?= $isAccepted ? 'Accepted documents are locked.' : 'PDF, JPG, JPEG, or PNG. Max 5MB.' ?></div>
                             </div>
                         <?php endforeach; ?>
                     </div>
 
                     <div class="d-flex justify-content-end gap-2">
                         <a href="<?= APP_URL ?>/guardian/dashboard.php" class="btn btn-outline-secondary">Cancel</a>
-                        <button type="submit" class="btn btn-success">
+                        <button type="submit" class="btn btn-success" <?= $hasReplaceableDocuments ? '' : 'disabled' ?>>
                             <i class="bi bi-upload me-1"></i>Upload Requirements for Clerk Review
                         </button>
                     </div>

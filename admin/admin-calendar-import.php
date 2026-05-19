@@ -225,7 +225,7 @@ require_once __DIR__ . '/../includes/header.php';
             <input type="hidden" name="step" value="confirm">
             <input type="hidden" name="school_year" value="<?= e($selectedSY) ?>">
             <a href="<?= APP_URL ?>/admin/admin-calendar-import.php" class="btn btn-outline-secondary">Cancel</a>
-            <button type="submit" class="btn btn-success" onclick="return confirm('Import <?= e((string)count($previewEvents)) ?> DepEd events for SY <?= e($selectedSY) ?>?')">
+            <button type="submit" class="btn btn-success" data-confirm="Import <?= e((string)count($previewEvents)) ?> DepEd events for SY <?= e($selectedSY) ?>?" data-confirm-variant="primary">
                 <i class="bi bi-cloud-download me-1"></i>Confirm Import
             </button>
         </form>

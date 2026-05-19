@@ -84,7 +84,7 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
             </thead>
             <tbody>
                 <?php if (empty($payments)): ?>
-                    <tr><td colspan="9" class="text-center text-muted py-4">No payment records found.</td></tr>
+                    <?= emptyStateRow(9, 'No payment records yet.', 'Payments appear here after the enrollment clerk issues a fee assessment. There is nothing for you to do until an assessment is issued.', 'bi-receipt') ?>
                 <?php else: ?>
                     <?php $runningTotal = 0; ?>
                     <?php foreach ($payments as $pay): ?>
@@ -98,7 +98,7 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
                         <td><?= e(ucfirst($pay['method'])) ?></td>
                         <td><?= e($pay['reference_no'] ?? 'N/A') ?></td>
                         <td class="text-center">
-                            <span class="badge badge-status-<?= e($pay['status']) ?>"><?= e(ucfirst($pay['status'])) ?></span>
+                            <span class="badge <?= e(paymentStatusBadgeClass($pay['status'])) ?>"><?= e(paymentStatusLabel($pay['status'])) ?></span>
                         </td>
                         <td class="text-center">
                             <?php if ($pay['status'] === 'paid'): ?>

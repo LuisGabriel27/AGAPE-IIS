@@ -17,6 +17,7 @@ $errorMessages = [
     'oauth_failed'    => 'Sign-in failed. Please try again.',
     'oauth_disabled'  => 'Google sign-in has been disabled. Please use your email and password.',
     'account_inactive'=> 'Your account has been deactivated. Contact an administrator.',
+    'csrf_expired'    => 'Your form session expired. Please choose a portal and try again.',
 ];
 
 $baseUrl = rtrim(APP_URL, '/');
@@ -76,7 +77,7 @@ $roleSvgIcons = [
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Choose Portal &mdash; <?= e(APP_NAME) ?></title>
-    <link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg">
+    <link rel="icon" type="image/png" href="<?= APP_URL ?>/assets/images/branding/agape-logo.png">
     <meta name="description" content="Select your role to access the <?= e(APP_NAME) ?> portal. Sign in as Administrator, Teacher, or Guardian.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -441,7 +442,7 @@ $roleSvgIcons = [
     <?php endif; ?>
 
     <div class="portal-banner">
-        <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg" alt="Agape Logo" class="portal-banner-logo">
+        <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.png" alt="Agape Logo" class="portal-banner-logo">
         <div class="portal-banner-content">
             <div class="portal-badge">
                 <?= e(APP_NAME) ?>

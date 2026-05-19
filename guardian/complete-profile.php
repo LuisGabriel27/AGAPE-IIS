@@ -15,6 +15,7 @@ if (empty($_SESSION['needs_profile_completion'])) {
 
 $errors   = [];
 $formData = [
+    'middle_name'      => '',
     'contact'          => '',
     'address'          => '',
     'relationship'     => '',
@@ -42,12 +43,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo  = getDB();
         $pdo->prepare("
             UPDATE guardians
-            SET contact_number = :contact, address = :addr,
+            SET middle_name = :mn, contact_number = :contact, address = :addr,
                 relationship_to_student = :rel, occupation = :occ,
                 civil_status = :cs, nationality = :nat, religion = :religion,
-                emergency_contact_name = :en, emergency_contact_number = :ec
+                emergency_contact_name = :en, emergency_contact_number = :ec,
+                data_privacy_consent = TRUE,
+                data_privacy_consented_at = COALESCE(data_privacy_consented_at, NOW())
             WHERE user_id = :uid
         ")->execute([
+            ':mn'       => $formData['middle_name'],
             ':contact'  => $formData['contact'],
             ':addr'     => $formData['address'],
             ':rel'      => $formData['relationship'],
@@ -96,6 +100,10 @@ require_once __DIR__ . '/../includes/header.php';
 
         <h6 class="fw-semibold text-primary mb-3">Contact Information</h6>
         <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Middle Name</label>
+                <input type="text" class="form-control" name="middle_name" value="<?= e($formData['middle_name']) ?>">
+            </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Contact Number <span class="text-danger">*</span></label>
                 <input type="text" class="form-control" name="contact" value="<?= e($formData['contact']) ?>" required>

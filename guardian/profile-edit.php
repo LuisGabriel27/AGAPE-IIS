@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
     $firstName       = trim($_POST['first_name'] ?? '');
+    $middleName      = trim($_POST['middle_name'] ?? '');
     $lastName        = trim($_POST['last_name'] ?? '');
     $contact         = trim($_POST['contact'] ?? '');
     $address         = trim($_POST['address'] ?? '');
@@ -51,15 +52,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $oldData = [
-            'first_name' => $guardian['first_name'],
-            'last_name'  => $guardian['last_name'],
-            'contact'    => $guardian['contact_number'],
-            'address'    => $guardian['address'],
+            'first_name'  => $guardian['first_name'],
+            'middle_name' => $guardian['middle_name'] ?? '',
+            'last_name'   => $guardian['last_name'],
+            'contact'     => $guardian['contact_number'],
+            'address'     => $guardian['address'],
         ];
 
         $pdo->prepare("
             UPDATE guardians
             SET first_name = :fn,
+                middle_name = :mn,
                 last_name = :ln,
                 contact_number = :contact,
                 address = :addr,
@@ -73,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE user_id = :uid
         ")->execute([
             ':fn'       => $firstName,
+            ':mn'       => $middleName,
             ':ln'       => $lastName,
             ':contact'  => $contact,
             ':addr'     => $address ?: null,
@@ -97,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (empty($errors)) {
-            $newData = ['first_name' => $firstName, 'last_name' => $lastName, 'contact' => $contact, 'address' => $address];
+            $newData = ['first_name' => $firstName, 'middle_name' => $middleName, 'last_name' => $lastName, 'contact' => $contact, 'address' => $address];
             auditLog('profile_update', 'guardians', $guardian['id'], $oldData, $newData);
             setFlash('success', 'Profile updated successfully.');
             redirect(APP_URL . '/guardian/profile-view.php');
@@ -142,7 +146,12 @@ require_once __DIR__ . '/../includes/header.php';
                 <input type="text" class="form-control" name="first_name"
                        value="<?= e($g['first_name'] ?? '') ?>">
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Middle Name</label>
+                <input type="text" class="form-control" name="middle_name"
+                       value="<?= e($g['middle_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
                 <label class="form-label">Email Address</label>
                 <input type="email" class="form-control" value="<?= e($user['email']) ?>" disabled>
                 <div class="form-text">Email cannot be changed.</div>

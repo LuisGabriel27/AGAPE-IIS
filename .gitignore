@@ -2,5 +2,7 @@
 /logs/
 config/config.php
 .env
+.env.*
+!.env.example
 *.log
 /uploads/attendance-faces/

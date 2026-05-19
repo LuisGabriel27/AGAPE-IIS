@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Login Page
  * Role-specific email/password login with brute-force protection.
@@ -48,6 +48,8 @@ $errors = [];
 $email = '';
 $urlError = $_GET['error'] ?? '';
 $role = trim($_GET['role'] ?? $_POST['role'] ?? '');
+$genericLoginError = 'Invalid email or password for the selected portal.';
+$tooManyAttemptsError = 'Too many failed sign-in attempts. Please wait a few minutes and try again.';
 
 if (!isset($allowedRoles[$role])) {
     $query = [];
@@ -63,10 +65,62 @@ if (!isset($allowedRoles[$role])) {
 
 $roleMeta = $allowedRoles[$role];
 
+function normalizeLoginEmail(string $email): string
+{
+    return strtolower(trim($email));
+}
+
+function currentLoginUserAgentHash(): string
+{
+    return hash('sha256', substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 512));
+}
+
+function recentFailedLoginCounts(PDO $pdo, string $email): array
+{
+    $windowSeconds = max(60, (int)LOCKOUT_DURATION);
+    $stmt = $pdo->prepare("
+        SELECT
+            COUNT(*) FILTER (WHERE COALESCE(new_value->>'email', '') = :email) AS email_count,
+            COUNT(*) FILTER (
+                WHERE ip_address = :ip
+                  AND COALESCE(new_value->>'user_agent_hash', '') = :user_agent_hash
+            ) AS client_count
+        FROM audit_log
+        WHERE action = 'login_failed'
+          AND timestamp >= NOW() - ({$windowSeconds} * INTERVAL '1 second')
+    ");
+    $stmt->execute([
+        ':ip' => $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
+        ':user_agent_hash' => currentLoginUserAgentHash(),
+        ':email' => $email,
+    ]);
+
+    $counts = $stmt->fetch() ?: [];
+    return [
+        'email' => (int)($counts['email_count'] ?? 0),
+        'client' => (int)($counts['client_count'] ?? 0),
+    ];
+}
+
+function recordLoginFailure(string $email, string $role, ?int $userId, string $reason): void
+{
+    try {
+        auditLog('login_failed', 'users', $userId, null, [
+            'email' => $email,
+            'role' => $role,
+            'reason' => $reason,
+            'user_agent_hash' => currentLoginUserAgentHash(),
+        ]);
+    } catch (Throwable $e) {
+        error_log('Unable to audit failed login: ' . $e->getMessage());
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
     $email = trim($_POST['email'] ?? '');
+    $normalizedEmail = normalizeLoginEmail($email);
     $password = $_POST['password'] ?? '';
 
     if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -79,61 +133,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $pdo = getDB();
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
-        $stmt->execute([':email' => $email]);
-        $user = $stmt->fetch();
+        $failedCounts = recentFailedLoginCounts($pdo, $normalizedEmail);
 
-        if ($user) {
-            if ($user['failed_attempts'] >= MAX_LOGIN_ATTEMPTS && $user['lockout_until'] && strtotime($user['lockout_until']) > time()) {
-                $remaining = strtotime($user['lockout_until']) - time();
-                $minutes = ceil($remaining / 60);
-                $errors[] = "Account is locked. Try again in {$minutes} minute(s).";
-            } elseif ($user['password_hash'] === null) {
-                $errors[] = 'This account does not have a password yet. Please contact an administrator for a password reset.';
-            } elseif (password_verify($password, $user['password_hash'])) {
-                // Check selected role is one this account holds (primary OR secondary)
-                $rolesStmt = $pdo->prepare('SELECT role FROM user_roles WHERE user_id = :id');
-                $rolesStmt->execute([':id' => $user['id']]);
-                $userRoles = $rolesStmt->fetchAll(PDO::FETCH_COLUMN);
+        if (
+            $failedCounts['email'] >= MAX_LOGIN_ATTEMPTS
+            || $failedCounts['client'] >= (MAX_LOGIN_ATTEMPTS * 3)
+        ) {
+            recordLoginFailure($normalizedEmail, $role, null, 'throttled');
+            $errors[] = $tooManyAttemptsError;
+        } else {
+            $stmt = $pdo->prepare('SELECT * FROM users WHERE LOWER(email) = :email LIMIT 1');
+            $stmt->execute([':email' => $normalizedEmail]);
+            $user = $stmt->fetch();
 
-                // Fallback: if user_roles is empty, use the primary role from users table
-                if (empty($userRoles)) {
-                    $userRoles = [$user['role']];
-                }
+            if ($user) {
+                $userId = (int)$user['id'];
+                if ($user['failed_attempts'] >= MAX_LOGIN_ATTEMPTS && $user['lockout_until'] && strtotime($user['lockout_until']) > time()) {
+                    recordLoginFailure($normalizedEmail, $role, $userId, 'account_locked');
+                    $errors[] = $tooManyAttemptsError;
+                } elseif ($user['password_hash'] === null) {
+                    recordLoginFailure($normalizedEmail, $role, $userId, 'missing_password_hash');
+                    $errors[] = $genericLoginError;
+                } elseif (password_verify($password, $user['password_hash'])) {
+                    // user_roles is the source of truth; users.role is only a legacy fallback.
+                    $userRoles = getUserRolesForUser($pdo, $userId, (string)$user['role'], true);
 
-                if (!in_array($role, $userRoles, true)) {
-                    $errors[] = 'Selected role does not match the account role.';
-                } elseif (!$user['is_active']) {
-                    $errors[] = 'Your account has been deactivated. Contact an administrator.';
+                    if (!in_array($role, $userRoles, true)) {
+                        recordLoginFailure($normalizedEmail, $role, $userId, 'role_mismatch');
+                        $errors[] = $genericLoginError;
+                    } elseif (!$user['is_active']) {
+                        recordLoginFailure($normalizedEmail, $role, $userId, 'inactive_account');
+                        $errors[] = 'Unable to sign in. Contact an administrator if this continues.';
+                    } else {
+                        $stmt = $pdo->prepare('UPDATE users SET failed_attempts = 0, lockout_until = NULL, last_login = NOW() WHERE id = :id');
+                        $stmt->execute([':id' => $userId]);
+
+                        session_regenerate_id(true);
+                        $_SESSION['user_id']     = $userId;
+                        $_SESSION['user_email']  = $user['email'];
+                        $_SESSION['role']        = $role;         // active role = what they selected
+                        $_SESSION['all_roles']   = $userRoles;    // all roles they hold
+                        $_SESSION['google_avatar'] = $user['google_avatar'];
+
+                        auditLog('login', 'users', $userId);
+                        redirect(getRoleDashboardUrl());
+                    }
                 } else {
-                    $stmt = $pdo->prepare('UPDATE users SET failed_attempts = 0, lockout_until = NULL, last_login = NOW() WHERE id = :id');
-                    $stmt->execute([':id' => $user['id']]);
+                    $attempts = (int)$user['failed_attempts'] + 1;
+                    $lockout = $attempts >= MAX_LOGIN_ATTEMPTS ? date('Y-m-d H:i:s', time() + LOCKOUT_DURATION) : null;
+                    $stmt = $pdo->prepare('UPDATE users SET failed_attempts = :att, lockout_until = :lock WHERE id = :id');
+                    $stmt->execute([':att' => $attempts, ':lock' => $lockout, ':id' => $userId]);
 
-                    session_regenerate_id(true);
-                    $_SESSION['user_id']     = $user['id'];
-                    $_SESSION['user_email']  = $user['email'];
-                    $_SESSION['role']        = $role;         // active role = what they selected
-                    $_SESSION['all_roles']   = $userRoles;    // all roles they hold
-                    $_SESSION['google_avatar'] = $user['google_avatar'];
-
-                    auditLog('login', 'users', $user['id']);
-                    redirect(getRoleDashboardUrl());
+                    recordLoginFailure($normalizedEmail, $role, $userId, 'bad_password');
+                    $errors[] = $attempts >= MAX_LOGIN_ATTEMPTS ? $tooManyAttemptsError : $genericLoginError;
                 }
             } else {
-                $attempts = $user['failed_attempts'] + 1;
-                $lockout = $attempts >= MAX_LOGIN_ATTEMPTS ? date('Y-m-d H:i:s', time() + LOCKOUT_DURATION) : null;
-                $stmt = $pdo->prepare('UPDATE users SET failed_attempts = :att, lockout_until = :lock WHERE id = :id');
-                $stmt->execute([':att' => $attempts, ':lock' => $lockout, ':id' => $user['id']]);
-
-                $remaining = MAX_LOGIN_ATTEMPTS - $attempts;
-                if ($remaining > 0) {
-                    $errors[] = "Invalid password. {$remaining} attempt(s) remaining.";
-                } else {
-                    $errors[] = 'Account locked for 15 minutes due to too many failed attempts.';
-                }
+                recordLoginFailure($normalizedEmail, $role, null, 'unknown_email');
+                $errors[] = $genericLoginError;
             }
-        } else {
-            $errors[] = 'No account found with that email address.';
         }
     }
 }
@@ -145,6 +202,7 @@ $errorMessages = [
     'oauth_disabled' => 'Google sign-in has been disabled. Please sign in with email and password.',
     'account_inactive' => 'Your account has been deactivated. Contact an administrator.',
     'role_mismatch' => 'Selected role does not match the account role.',
+    'csrf_expired' => 'Your sign-in form expired. Please enter your password and try again.',
 ];
 
 if (isset($errorMessages[$urlError])) {
@@ -168,7 +226,7 @@ $styleVersion = APP_VERSION . '-' . (is_file($stylePath) ? filemtime($stylePath)
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($roleMeta['label']) ?> Sign In - <?= e(APP_NAME) ?></title>
-    <link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg">
+    <link rel="icon" type="image/png" href="<?= APP_URL ?>/assets/images/branding/agape-logo.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="<?= APP_URL ?>/assets/css/style.css?v=<?= e((string)$styleVersion) ?>" rel="stylesheet">
@@ -185,7 +243,7 @@ $styleVersion = APP_VERSION . '-' . (is_file($stylePath) ? filemtime($stylePath)
             </a>
 
             <div class="auth-left-badge">
-                <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg" alt="Agape Logo" class="auth-left-logo">
+                <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.png" alt="Agape Logo" class="auth-left-logo">
                 <?= e(APP_NAME) ?>
             </div>
 
@@ -265,5 +323,4 @@ $styleVersion = APP_VERSION . '-' . (is_file($stylePath) ? filemtime($stylePath)
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-
 

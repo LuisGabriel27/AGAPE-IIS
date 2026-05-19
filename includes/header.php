@@ -30,7 +30,7 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Academy Information System — Manage students, grades, enrollments, and schedules.">
     <title><?= e($fullTitle) ?></title>
-    <link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg">
+    <link rel="icon" type="image/png" href="<?= APP_URL ?>/assets/images/branding/agape-logo.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
@@ -49,7 +49,7 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
 <aside class="sidebar" id="sidebar">
     <a href="<?= getRoleDashboardUrl() ?>" class="sidebar-brand">
         <div class="sidebar-brand-icon">
-            <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg" alt="Agape Logo" class="sidebar-brand-logo">
+            <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.png" alt="Agape Logo" class="sidebar-brand-logo">
         </div>
         <div class="sidebar-brand-text">
             AGAPE
@@ -115,13 +115,17 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
             <div class="sidebar-section">Finance</div>
             <a class="sidebar-link <?= e($currentPage === 'admin-payments.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-payments.php">
-                <i class="bi bi-cash-stack"></i> Cashier Payments
+                <i class="bi bi-cash-stack"></i> Payment Verification
             </a>
 
             <div class="sidebar-section">Settings</div>
             <a class="sidebar-link <?= e($currentPage === 'admin-schoolyear.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-schoolyear.php">
                 <i class="bi bi-calendar-range"></i> School Year
+            </a>
+            <a class="sidebar-link <?= e($currentPage === 'admin-sync.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/admin-sync.php">
+                <i class="bi bi-cloud-arrow-up-fill"></i> Manual Sync
             </a>
 
             <?php else: /* Clerk — enrollment module only */ ?>
@@ -221,9 +225,12 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
     </nav>
 
     <div class="sidebar-footer">
-        <a class="sidebar-link text-danger" href="<?= APP_URL ?>/auth/logout.php" style="color: var(--danger) !important;">
-            <i class="bi bi-box-arrow-left"></i> Sign Out
-        </a>
+        <form method="POST" action="<?= APP_URL ?>/auth/logout.php" class="m-0">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <button type="submit" class="sidebar-link text-danger w-100" style="color: var(--danger) !important; border: 0; background: transparent; text-align: left;">
+                <i class="bi bi-box-arrow-left"></i> Sign Out
+            </button>
+        </form>
     </div>
 </aside>
 
@@ -263,9 +270,13 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                 <li><span class="dropdown-item-text text-muted small fw-semibold">Switch Role</span></li>
                 <?php foreach ($otherRoles as $r): ?>
                     <li>
-                        <a class="dropdown-item" href="<?= APP_URL ?>/auth/switch-role.php?role=<?= urlencode($r) ?>">
+                        <form method="POST" action="<?= APP_URL ?>/auth/switch-role.php" class="m-0">
+                            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                            <input type="hidden" name="role" value="<?= e($r) ?>">
+                            <button type="submit" class="dropdown-item">
                             <i class="bi bi-arrow-left-right me-2"></i><?= e($roleLabels[$r] ?? ucfirst($r)) ?>
-                        </a>
+                            </button>
+                        </form>
                     </li>
                 <?php endforeach; ?>
                 <?php endif; ?>
@@ -274,7 +285,12 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                 <?php if ($userRole === 'guardian'): ?>
                     <li><a class="dropdown-item" href="<?= APP_URL ?>/guardian/profile-view.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
                 <?php endif; ?>
-                <li><a class="dropdown-item text-danger" href="<?= APP_URL ?>/auth/logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                <li>
+                    <form method="POST" action="<?= APP_URL ?>/auth/logout.php" class="m-0">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                        <button type="submit" class="dropdown-item text-danger"><i class="bi bi-box-arrow-right me-2"></i>Logout</button>
+                    </form>
+                </li>
             </ul>
         </div>
     </div>

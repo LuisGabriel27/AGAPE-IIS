@@ -75,7 +75,8 @@ if (!empty($students)) {
     $latestPayment = $stmt->fetch();
 }
 
-$requiredEnrollmentDocumentCount = 4;
+$requiredEnrollmentDocuments = requiredEnrollmentDocuments();
+$requiredEnrollmentDocumentCount = count($requiredEnrollmentDocuments);
 $enrollmentRequirementStatus = [];
 if (!empty($students)) {
     $studentIds = array_map(static fn(array $student): int => (int)$student['id'], $students);
@@ -84,19 +85,36 @@ if (!empty($students)) {
         SELECT DISTINCT ON (e.student_id)
                e.student_id,
                e.id AS enrollment_id,
-               e.status,
-               (
-                   SELECT COUNT(DISTINCT d.document_type)
-                   FROM enrollment_documents d
-                   WHERE d.enrollment_id = e.id
-                     AND d.document_type IN ('psa', 'medical', 'previous_school', 'parent_data')
-               ) AS document_count
+               e.status
         FROM enrollments e
         WHERE e.student_id IN ({$placeholders})
         ORDER BY e.student_id, e.id DESC
     ");
     $stmt->execute($studentIds);
-    foreach ($stmt->fetchAll() as $row) {
+    $latestEnrollmentRows = $stmt->fetchAll();
+
+    $documentsByEnrollment = [];
+    if (!empty($latestEnrollmentRows)) {
+        $enrollmentIds = array_map(static fn(array $row): int => (int)$row['enrollment_id'], $latestEnrollmentRows);
+        $docPlaceholders = implode(',', array_fill(0, count($enrollmentIds), '?'));
+        $docStmt = $pdo->prepare("
+            SELECT *
+            FROM enrollment_documents
+            WHERE enrollment_id IN ({$docPlaceholders})
+        ");
+        $docStmt->execute($enrollmentIds);
+        foreach ($docStmt->fetchAll() as $doc) {
+            $documentsByEnrollment[(int)$doc['enrollment_id']][(string)$doc['document_type']] = $doc;
+        }
+    }
+
+    foreach ($latestEnrollmentRows as $row) {
+        $summary = summarizeEnrollmentDocumentsByType(
+            $documentsByEnrollment[(int)$row['enrollment_id']] ?? [],
+            $requiredEnrollmentDocuments
+        );
+        $row['document_summary'] = $summary;
+        $row['document_count'] = $summary['uploaded_count'];
         $enrollmentRequirementStatus[(int)$row['student_id']] = $row;
     }
 }
@@ -203,15 +221,17 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php
                                 $requirementStatus = $enrollmentRequirementStatus[(int)$stu['id']] ?? null;
                                 $documentCount = $requirementStatus ? (int)$requirementStatus['document_count'] : 0;
-                                $uploadableStatuses = ['submitted', 'requirements_incomplete', 'returned',
-                                                       // Legacy fallbacks
-                                                       'pending', 'rejected'];
+                                $documentSummary = $requirementStatus['document_summary'] ?? null;
+                                $needsReplacement = $documentSummary && !empty($documentSummary['needs_replacement_labels']);
+                                $hasPendingReview = $documentSummary && !empty($documentSummary['pending_labels']);
+                                $documentsAccepted = $documentSummary && !empty($documentSummary['all_accepted']);
                                 $canUploadRequirements = $requirementStatus
-                                    && in_array($requirementStatus['status'], $uploadableStatuses, true)
-                                    && $documentCount < $requiredEnrollmentDocumentCount;
+                                    && !in_array($requirementStatus['status'], enrollmentLockedForGuardianStatuses(), true)
+                                    && ($documentCount < $requiredEnrollmentDocumentCount || $needsReplacement);
                                 $hasInProgressUpload = $requirementStatus
-                                    && in_array($requirementStatus['status'], $uploadableStatuses, true)
+                                    && !$canUploadRequirements
                                     && $documentCount >= $requiredEnrollmentDocumentCount;
+                                $uploadButtonLabel = $needsReplacement ? 'Replace Requirements' : 'Upload Requirements';
                             ?>
                             <?php if ($requirementStatus): ?>
                                 <div class="mt-2">
@@ -223,12 +243,23 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php if ($canUploadRequirements): ?>
                                 <div class="mt-2">
                                     <a class="btn btn-sm btn-outline-primary" href="<?= APP_URL ?>/guardian/enrollment/requirements.php?enrollment_id=<?= (int)$requirementStatus['enrollment_id'] ?>">
-                                        <i class="bi bi-upload me-1"></i>Upload Requirements
+                                        <i class="bi bi-upload me-1"></i><?= e($uploadButtonLabel) ?>
                                     </a>
+                                    <?php if ($needsReplacement): ?>
+                                        <div class="small text-danger mt-1">
+                                            Needs replacement: <?= e(implode(', ', $documentSummary['needs_replacement_labels'])) ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                             <?php elseif ($hasInProgressUpload): ?>
                                 <div class="mt-2">
-                                    <span class="badge badge-status-active"><i class="bi bi-check-circle me-1"></i>Requirements Uploaded</span>
+                                    <?php if ($documentsAccepted): ?>
+                                        <span class="badge badge-doc-review-accepted"><i class="bi bi-check-circle me-1"></i>Requirements Accepted</span>
+                                    <?php elseif ($hasPendingReview): ?>
+                                        <span class="badge badge-doc-review-pending"><i class="bi bi-hourglass-split me-1"></i>Under Clerk Review</span>
+                                    <?php else: ?>
+                                        <span class="badge badge-status-active"><i class="bi bi-check-circle me-1"></i>Requirements Uploaded</span>
+                                    <?php endif; ?>
                                 </div>
                             <?php endif; ?>
                         </div>

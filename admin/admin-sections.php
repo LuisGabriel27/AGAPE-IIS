@@ -124,7 +124,7 @@ require_once __DIR__ . '/../includes/header.php';
         <thead><tr><th>Name</th><th>Grade Level</th><th>Adviser</th><th class="text-center">Capacity</th><th class="text-center">Enrolled</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($sections)): ?>
-                <tr><td colspan="6" class="text-center text-muted py-3">No sections found.</td></tr>
+                <?= emptyStateRow(6, 'No sections created yet.', 'Use the "Add Section" form above to create sections for each grade level before enrolling or scheduling students.', 'bi-diagram-3') ?>
             <?php else: foreach ($sections as $s): ?>
             <tr>
                 <td class="fw-bold"><?= e($s['name']) ?></td>
@@ -133,10 +133,10 @@ require_once __DIR__ . '/../includes/header.php';
                 <td class="text-center"><?= e((string)$s['capacity']) ?></td>
                 <td class="text-center"><?= e((string)$s['enrolled']) ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit section" aria-label="Edit section"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" data-confirm="Delete this section? This cannot be undone." data-confirm-variant="danger">
                         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
-                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" title="Delete section" aria-label="Delete section"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>
             </tr>

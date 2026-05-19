@@ -614,7 +614,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <thead><tr><th>Student</th><th>Section</th><th>Marked Time</th><th>Confidence</th></tr></thead>
                         <tbody id="todayAttendanceBody">
                         <?php if (empty($todayAttendance)): ?>
-                            <tr id="noAttendanceRow"><td colspan="4" class="text-center text-muted py-3">No attendance records yet today.</td></tr>
+                            <tr id="noAttendanceRow"><td colspan="4"><?= emptyStateHtml('No attendance recorded today.', 'Records appear here as students are marked present during the day. Use the camera capture above to start marking attendance.', 'bi-calendar-check') ?></td></tr>
                         <?php else: ?>
                             <?php foreach ($todayAttendance as $record): ?>
                                 <tr data-attendance-student-id="<?= (int)$record['student_id'] ?>">

@@ -2,7 +2,7 @@
 /**
  * Admin Enrollments
  * Registrar enrollment queue: intake, document requirements, payment assessment,
- * cashier payment, and final submission to teachers.
+ * payment verification, and final submission to teachers.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -16,12 +16,7 @@ $filterStatus = $_GET['status'] ?? '';
 $filterYear   = $_GET['year'] ?? '';
 $search       = trim($_GET['search'] ?? '');
 $errors = [];
-$requiredDocuments = [
-    'psa' => 'PSA Birth Certificate',
-    'medical' => 'Medical Records',
-    'previous_school' => 'Previous School Records',
-    'parent_data' => 'Parent / Guardian Data',
-];
+$requiredDocuments = requiredEnrollmentDocuments();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -32,10 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Decisions:
     //   save_reviews - persist per-doc reviews without changing enrollment status
-    //   assess       - clerk validated docs, mark assessed_for_payment
     //   submit       - registrar submits paid enrollee to teachers
     //   return       - bounce back to guardian (any open stage)
-    $validDecisions = ['save_reviews', 'assess', 'submit', 'return'];
+    $validDecisions = ['save_reviews', 'submit', 'return'];
     if ($enrollId < 1) {
         $errors[] = 'Invalid enrollment reference.';
     }
@@ -79,28 +73,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$enrollment) {
             $errors[] = 'Enrollment record was not found.';
         } else {
-            $docStmt = $pdo->prepare("
-                SELECT COUNT(DISTINCT document_type)
-                FROM enrollment_documents
-                WHERE enrollment_id = :id
-                  AND document_type IN ('psa', 'medical', 'previous_school', 'parent_data')
-            ");
-            $docStmt->execute([':id' => $enrollId]);
-            $uploadedDocumentCount = (int)$docStmt->fetchColumn();
+            $documentsForValidation = loadEnrollmentDocumentsByType($pdo, $enrollId);
+            foreach ($docReviewUpdates as $docKey => $update) {
+                if (isset($documentsForValidation[$docKey])) {
+                    $documentsForValidation[$docKey]['review_status'] = $update['status'];
+                    $documentsForValidation[$docKey]['reviewer_note'] = $update['note'];
+                }
+            }
+            $documentReviewSummary = summarizeEnrollmentDocumentsByType($documentsForValidation, $requiredDocuments);
+            $documentReviewBlockers = enrollmentDocumentReviewBlockerText($documentReviewSummary);
 
-            if ($decision === 'assess') {
-                if ($uploadedDocumentCount < count($requiredDocuments)) {
-                    $errors[] = 'Cannot mark as assessed for payment: required documents are not complete.';
-                }
-                if (!in_array($enrollment['status'], ['documents_under_review', 'requirements_incomplete', 'returned'], true)) {
-                    $errors[] = 'This enrollment is not in a stage that can be assessed.';
-                }
-            } elseif ($decision === 'submit') {
+            if ($decision === 'submit') {
                 if ($enrollment['status'] !== 'paid_for_registrar') {
-                    $errors[] = 'This enrollment is not ready for registrar submission yet. Cashier payment has not been verified.';
+                    $errors[] = 'This enrollment is not ready for registrar submission yet. Payment has not been verified.';
                 }
-                if ($uploadedDocumentCount < count($requiredDocuments)) {
-                    $errors[] = 'Required documents are not complete.';
+                if (!$documentReviewSummary['all_accepted']) {
+                    $errors[] = 'Required documents must all be accepted before registrar submission.'
+                        . ($documentReviewBlockers !== '' ? ' ' . $documentReviewBlockers : '');
                 }
             } elseif ($decision === 'return') {
                 if (in_array($enrollment['status'], enrollmentTerminalStatuses(), true)) {
@@ -142,13 +131,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $statusChange = false;
                     $auditAction = 'enrollment_doc_reviews_saved';
                     $flashMessage = 'Document reviews saved.';
-                    break;
-                case 'assess':
-                    $newStatus = 'assessed_for_payment';
-                    $enrolledAt = $enrollment['payment_submitted_at']; // unchanged
-                    $auditAction = 'enrollment_assessed_for_payment';
-                    $flashMessage = 'Enrollment marked as assessed for payment. Guardian can now submit payment.';
-                    $defaultRemarks = 'Documents validated; payment assessment generated.';
                     break;
                 case 'submit':
                     $newStatus = 'enrolled';
@@ -288,7 +270,6 @@ $pageTitle = 'Student Enrollment';
 require_once __DIR__ . '/../includes/header.php';
 
 $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
-$documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$doc['file_path'], '/');
 ?>
 
 <?php if (!empty($errors)): ?>
@@ -302,13 +283,13 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
     <div class="row g-3 small">
         <div class="col-md-3"><strong>1. Guardian Uploads</strong><br><span class="text-muted">Guardian submits enrollment and uploads all required files.</span></div>
         <div class="col-md-3"><strong>2. Clerk Assessment</strong><br><span class="text-muted">Enrollment Clerk checks PSA, medical records, previous school records, and parent data, then assesses payment.</span></div>
-        <div class="col-md-3"><strong>3. Cashier Payment</strong><br><span class="text-muted">Enrollee proceeds to the treasurer / cashier for payment.</span></div>
+        <div class="col-md-3"><strong>3. Payment Verification</strong><br><span class="text-muted">Enrollee pays through the school treasurer process, then payment is verified.</span></div>
         <div class="col-md-3"><strong>4. Submit to Teachers</strong><br><span class="text-muted">After payment, registrar submits the enrollee to teachers.</span></div>
     </div>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-xl col-md-4 col-6">
+<div class="row g-3 mb-4 row-cols-2 row-cols-md-3 row-cols-xl-4 kpi-row">
+    <div class="col">
         <div class="kpi-card kpi-primary">
             <div class="kpi-icon-wrap"><i class="bi bi-people-fill"></i></div>
             <div>
@@ -317,7 +298,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
             </div>
         </div>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="?status=requirements_incomplete">
             <div class="kpi-card kpi-danger">
                 <div class="kpi-icon-wrap"><i class="bi bi-exclamation-triangle-fill"></i></div>
@@ -328,7 +309,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="?status=documents_under_review">
             <div class="kpi-card kpi-info">
                 <div class="kpi-icon-wrap"><i class="bi bi-clipboard-data-fill"></i></div>
@@ -339,7 +320,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="?status=assessed_for_payment">
             <div class="kpi-card kpi-warning">
                 <div class="kpi-icon-wrap"><i class="bi bi-cash-coin"></i></div>
@@ -350,18 +331,18 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="?status=awaiting_payment">
             <div class="kpi-card kpi-warning">
                 <div class="kpi-icon-wrap"><i class="bi bi-hourglass-split"></i></div>
                 <div>
-                    <div class="kpi-label">Awaiting Cashier</div>
+                    <div class="kpi-label">Awaiting Payment</div>
                     <div class="kpi-value"><?= e(number_format($awaitingPaymentCount)) ?></div>
                 </div>
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="?status=paid_for_registrar">
             <div class="kpi-card kpi-info">
                 <div class="kpi-icon-wrap"><i class="bi bi-inbox-fill"></i></div>
@@ -372,7 +353,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="?status=enrolled">
             <div class="kpi-card kpi-success">
                 <div class="kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
@@ -383,7 +364,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="?status=returned">
             <div class="kpi-card kpi-danger">
                 <div class="kpi-icon-wrap"><i class="bi bi-arrow-counterclockwise"></i></div>
@@ -442,7 +423,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                 <th>School Year</th>
                 <th>Term</th>
                 <th>Requirements</th>
-                <th>Cashier Payment</th>
+                <th>Payment</th>
                 <th>Registrar Step</th>
                 <th>Status</th>
                 <th>Remarks</th>
@@ -451,7 +432,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
         </thead>
         <tbody>
             <?php if (empty($enrollments)): ?>
-                <tr><td colspan="11"><div class="empty-state"><i class="bi bi-inbox d-block"></i><p>No enrollments found.</p></div></td></tr>
+                <?= emptyStateRow(11, 'No enrollment records match the current view.', 'Enrollments are created when a guardian submits an enrollment from their portal. Clear any status or search filters above, or wait for new submissions to arrive.', 'bi-inbox') ?>
             <?php else: foreach ($enrollments as $i => $en):
                 $color = $avatarColors[$i % count($avatarColors)];
                 $initial = strtoupper(substr($en['student_name'], 0, 1));
@@ -460,28 +441,20 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                 foreach ($docs as $doc) {
                     $docsByType[(string)$doc['document_type']] = $doc;
                 }
-                $missingDocumentLabels = [];
-                $reviewCounts = ['accepted' => 0, 'needs_replacement' => 0, 'pending' => 0, 'missing' => 0];
-                foreach ($requiredDocuments as $docKey => $docLabel) {
-                    if (empty($docsByType[$docKey])) {
-                        $missingDocumentLabels[] = $docLabel;
-                        $reviewCounts['missing']++;
-                    } else {
-                        $rs = (string)($docsByType[$docKey]['review_status'] ?? 'pending');
-                        if (!isset($reviewCounts[$rs])) $rs = 'pending';
-                        $reviewCounts[$rs]++;
-                    }
-                }
-                $documentsComplete = empty($missingDocumentLabels);
-                $allAccepted = $documentsComplete && $reviewCounts['accepted'] === count($requiredDocuments);
+                $documentSummary = summarizeEnrollmentDocumentsByType($docsByType, $requiredDocuments);
+                $missingDocumentLabels = $documentSummary['missing_labels'];
+                $reviewCounts = $documentSummary['counts'];
+                $documentsComplete = (bool)$documentSummary['all_uploaded'];
+                $allAccepted = (bool)$documentSummary['all_accepted'];
+                $documentBlockerText = enrollmentDocumentReviewBlockerText($documentSummary);
                 $statusValue = (string)$en['status'];
 
                 // Which clerk decisions are available for this row?
-                $canAssess = $documentsComplete && in_array($statusValue, ['documents_under_review', 'requirements_incomplete', 'returned'], true);
-                $canSubmitToTeachers = $documentsComplete && $statusValue === 'paid_for_registrar';
+                $canCreateAssessment = $allAccepted && canSendEnrollmentAssessment($statusValue);
+                $canSubmitToTeachers = $allAccepted && $statusValue === 'paid_for_registrar';
                 $canReturn = !in_array($statusValue, enrollmentTerminalStatuses(), true);
                 $canSaveReviews = !in_array($statusValue, enrollmentTerminalStatuses(), true);
-                $canReview = $canAssess || $canSubmitToTeachers || $canReturn || $canSaveReviews;
+                $canReview = $canCreateAssessment || $canSubmitToTeachers || $canReturn || $canSaveReviews;
             ?>
             <tr>
                 <td><?= e((string)($offset + $i + 1)) ?></td>
@@ -502,7 +475,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                 <td>
                     <div class="mb-2">
                         <span class="badge <?= $documentsComplete ? 'badge-status-active' : 'badge-status-inactive' ?>">
-                            <?= e((string)count($docsByType)) ?>/<?= e((string)count($requiredDocuments)) ?> uploaded
+                            <?= e((string)$documentSummary['uploaded_count']) ?>/<?= e((string)$documentSummary['required_count']) ?> uploaded
                         </span>
                         <?php if ($reviewCounts['accepted'] > 0): ?>
                             <span class="badge badge-doc-review-accepted ms-1"><?= (int)$reviewCounts['accepted'] ?> accepted</span>
@@ -521,7 +494,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                         ?>
                             <div class="d-flex align-items-center gap-2 py-1">
                                 <?php if ($doc): ?>
-                                    <a class="text-truncate" style="max-width: 180px;" href="<?= e($documentUrl($doc)) ?>" target="_blank" rel="noopener" title="<?= e($docLabel) ?>">
+                                    <a class="text-truncate" style="max-width: 180px;" href="<?= e(enrollmentDocumentUrl($doc)) ?>" target="_blank" rel="noopener" title="<?= e($docLabel) ?>">
                                         <i class="bi bi-file-earmark-text me-1"></i><?= e($docLabel) ?>
                                     </a>
                                 <?php else: ?>
@@ -537,7 +510,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                 <td>
                     <?php if (!empty($en['payment_id'])): ?>
                         <div class="small">
-                            <span class="badge badge-status-<?= e($en['payment_status'] ?: 'pending') ?>"><?= e(ucfirst($en['payment_status'] ?: 'pending')) ?></span>
+                            <span class="badge <?= e(paymentStatusBadgeClass($en['payment_status'] ?: 'pending')) ?>"><?= e(paymentStatusLabel($en['payment_status'] ?: 'pending')) ?></span>
                         </div>
                         <div class="small text-muted mt-1">Method: <?= e(ucfirst($en['payment_method'] ?? 'N/A')) ?></div>
                         <div class="small text-muted">Ref: <?= e($en['payment_reference_no'] ?: 'N/A') ?></div>
@@ -549,20 +522,23 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                     <?php if (!$documentsComplete): ?>
                         <span class="badge badge-status-inactive">Waiting for Requirements</span>
                         <div class="small text-muted mt-1"><?= e(implode(', ', $missingDocumentLabels)) ?></div>
+                    <?php elseif (!$allAccepted): ?>
+                        <span class="badge badge-doc-review-pending">Document Review Required</span>
+                        <div class="small text-muted mt-1"><?= e($documentBlockerText) ?></div>
                     <?php elseif ($statusValue === 'paid_for_registrar'): ?>
                         <span class="badge badge-status-active">Paid - Ready for Registrar</span>
                         <?php if (!empty($en['payment_submitted_at'])): ?>
                             <div class="small text-muted mt-1"><?= e(date('M d, Y h:i A', strtotime($en['payment_submitted_at']))) ?></div>
                         <?php endif; ?>
                     <?php elseif ($statusValue === 'awaiting_payment'): ?>
-                        <span class="badge badge-status-awaiting-payment">Awaiting Cashier</span>
-                        <div class="small text-muted mt-1">Guardian submitted payment proof. Cashier needs to verify.</div>
+                        <span class="badge badge-status-awaiting-payment">Awaiting Verification</span>
+                        <div class="small text-muted mt-1">Guardian submitted payment proof. Admin needs to verify.</div>
                     <?php elseif ($statusValue === 'assessed_for_payment'): ?>
                         <span class="badge badge-status-assessed-for-payment">Assessed - Awaiting Guardian Payment</span>
-                        <div class="small text-muted mt-1">Payment slip generated. Guardian to pay.</div>
+                        <div class="small text-muted mt-1">Payment assessment issued. Guardian to pay.</div>
                     <?php elseif ($statusValue === 'documents_under_review'): ?>
-                        <span class="badge badge-status-documents-under-review">Ready for Clerk Review</span>
-                        <div class="small text-muted mt-1">All documents uploaded. Clerk to assess for payment.</div>
+                        <span class="badge badge-status-documents-under-review">Ready for Payment Assessment</span>
+                        <div class="small text-muted mt-1">All required documents are accepted.</div>
                     <?php else: ?>
                         <span class="badge <?= e(enrollmentStatusBadgeClass($statusValue)) ?>"><?= e(enrollmentStatusLabel($statusValue)) ?></span>
                     <?php endif; ?>
@@ -601,24 +577,31 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                                 </div>
 
                                 <div class="alert alert-info small">
-                                    Review the uploaded requirements. From here you can return the enrollment, mark it as assessed for payment (so the guardian can pay), or — once the cashier has verified payment — submit it to teachers.
+                                    Review the uploaded requirements. Payment assessment and final submission are available only after every required document is marked accepted.
                                 </div>
 
                                 <?php if ($canSubmitToTeachers): ?>
                                     <div class="alert alert-success small">
-                                        Cashier payment is verified. This enrollment is ready to be submitted to teachers.
+                                        Payment is verified. This enrollment is ready to be submitted to teachers.
                                     </div>
-                                <?php elseif ($canAssess): ?>
+                                <?php elseif ($canCreateAssessment): ?>
                                     <div class="alert alert-warning small">
-                                        Documents are complete. Validate them and click <strong>Mark Assessed for Payment</strong> to let the guardian pay.
+                                        All required documents are accepted. Create the payment assessment next.
+                                    </div>
+                                <?php elseif (!$allAccepted): ?>
+                                    <div class="alert alert-danger small">
+                                        Payment assessment is blocked until every required document is accepted.
+                                        <?php if ($documentBlockerText !== ''): ?>
+                                            <div class="mt-1"><?= e($documentBlockerText) ?></div>
+                                        <?php endif; ?>
                                     </div>
                                 <?php elseif ($statusValue === 'awaiting_payment'): ?>
                                     <div class="alert alert-warning small">
-                                        Guardian has submitted payment proof. Waiting for the cashier to verify before this enrollment can be submitted to teachers.
+                                        Guardian has submitted payment proof. Waiting for payment verification before this enrollment can be submitted to teachers.
                                     </div>
                                 <?php elseif ($statusValue === 'assessed_for_payment'): ?>
                                     <div class="alert alert-warning small">
-                                        Payment slip generated. Waiting for the guardian to submit payment.
+                                        Payment assessment issued. Waiting for the guardian to submit payment.
                                     </div>
                                 <?php endif; ?>
 
@@ -641,7 +624,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                                                 </div>
                                                 <?php if ($doc): ?>
                                                     <div class="small mb-2">
-                                                        <a href="<?= e($documentUrl($doc)) ?>" target="_blank" rel="noopener">
+                                                        <a href="<?= e(enrollmentDocumentUrl($doc)) ?>" target="_blank" rel="noopener">
                                                             <i class="bi bi-box-arrow-up-right me-1"></i><?= e($doc['original_name']) ?>
                                                         </a>
                                                         <span class="text-muted ms-2">Uploaded <?= e(date('M d, Y', strtotime((string)$doc['uploaded_at']))) ?></span>
@@ -673,7 +656,7 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                                 </div>
 
                                 <div class="mb-3">
-                                    <label class="form-label fw-semibold">Cashier Payment Snapshot</label>
+                                    <label class="form-label fw-semibold">Payment Snapshot</label>
                                     <div class="small text-muted">
                                         Amount: <?= !empty($en['payment_amount']) ? '&#8369;' . e(number_format((float)$en['payment_amount'], 2)) : 'N/A' ?><br>
                                         Method: <?= e(ucfirst($en['payment_method'] ?? 'N/A')) ?><br>
@@ -698,10 +681,10 @@ $documentUrl = static fn(array $doc): string => APP_URL . '/' . ltrim((string)$d
                                         <i class="bi bi-arrow-counterclockwise me-1"></i>Return
                                     </button>
                                 <?php endif; ?>
-                                <?php if ($canAssess): ?>
-                                    <button type="submit" name="decision" value="assess" class="btn btn-warning">
-                                        <i class="bi bi-cash-coin me-1"></i>Mark Assessed for Payment
-                                    </button>
+                                <?php if ($canCreateAssessment): ?>
+                                    <a href="<?= APP_URL ?>/admin/enrollment-assessment.php?enrollment_id=<?= (int)$en['id'] ?>" class="btn btn-warning">
+                                        <i class="bi bi-cash-coin me-1"></i>Create Payment Assessment
+                                    </a>
                                 <?php endif; ?>
                                 <?php if ($canSubmitToTeachers): ?>
                                     <button type="submit" name="decision" value="submit" class="btn btn-success">

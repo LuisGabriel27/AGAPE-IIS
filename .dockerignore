@@ -1,0 +1,9 @@
+.git
+.env
+config/config.php
+logs/*
+uploads/*
+vendor/
+composer-setup.php
+composer.phar
+*.log

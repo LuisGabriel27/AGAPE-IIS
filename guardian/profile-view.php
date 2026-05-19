@@ -88,7 +88,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card-header bg-white"><i class="bi bi-person-vcard me-2"></i>Personal Information</div>
             <div class="card-body">
                 <table class="table table-sm">
-                    <tr><th width="40%">Full Name</th><td><?= e(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? '')) ?></td></tr>
+                    <tr><th width="40%">Full Name</th><td><?= e(trim(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? '') . ' ' . ($guardian['middle_name'] ?? ''))) ?></td></tr>
                     <tr><th>Contact Number</th><td><?= e($guardian['contact_number'] ?? 'N/A') ?></td></tr>
                     <tr><th>Address</th><td><?= e($guardian['address'] ?? 'N/A') ?></td></tr>
                     <tr><th>Relationship</th><td><?= e($guardian['relationship_to_student'] ?? 'N/A') ?></td></tr>
@@ -115,7 +115,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <tbody>
                             <?php foreach ($students as $stu): ?>
                             <tr>
-                                <td><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
+                                <td><?= e(trim(format_name($stu['first_name'], $stu['last_name']) . ' ' . ($stu['middle_name'] ?? '') . ' ' . ($stu['extension_name'] ?? ''))) ?></td>
                                 <td><?= e(formatGradeLevel((string)($stu['grade_level'] ?? ''))) ?></td>
                                 <td><?= e($stu['section_name'] ?? 'N/A') ?></td>
                                 <td><?= e($stu['lrn'] ?? 'N/A') ?></td>

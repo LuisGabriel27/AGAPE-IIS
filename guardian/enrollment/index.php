@@ -31,6 +31,7 @@ $profileComplete = !empty($guardian['last_name'])
 
 $step    = (int)($_POST['step'] ?? $_GET['step'] ?? ($profileComplete ? 2 : 1));
 $errors  = [];
+$readPostedBool = static fn(string $key): bool => ($_POST[$key] ?? '0') === '1';
 $sections = $pdo->query("SELECT id, name, grade_level, capacity FROM sections ORDER BY grade_level, name")->fetchAll();
 $requiredDocuments = [
     'psa' => 'PSA Birth Certificate',
@@ -41,6 +42,89 @@ $requiredDocuments = [
 $allowedRequirementExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
 $allowedRequirementMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 $maxRequirementFileSize = 5 * 1024 * 1024;
+$studentEnrollmentColumns = [
+    'first_name',
+    'middle_name',
+    'last_name',
+    'extension_name',
+    'birthdate',
+    'gender',
+    'grade_level',
+    'section_id',
+    'lrn',
+    'psa_birth_certificate_no',
+    'place_of_birth',
+    'mother_tongue',
+    'religion',
+    'current_house_street',
+    'current_barangay',
+    'current_city_municipality',
+    'current_province',
+    'current_country',
+    'current_zip_code',
+    'permanent_same_as_current',
+    'permanent_house_street',
+    'permanent_barangay',
+    'permanent_city_municipality',
+    'permanent_province',
+    'permanent_country',
+    'permanent_zip_code',
+    'father_first_name',
+    'father_middle_name',
+    'father_last_name',
+    'father_contact_number',
+    'mother_first_name',
+    'mother_middle_name',
+    'mother_maiden_last_name',
+    'mother_contact_number',
+    'is_ip_community',
+    'ip_group',
+    'is_4ps_beneficiary',
+    'four_ps_household_id',
+    'learner_with_disability',
+    'disability_type',
+    'returning_learner',
+    'transferee',
+    'last_grade_level_completed',
+    'last_school_year_completed',
+    'last_school_attended',
+    'previous_school_id',
+];
+$studentBooleanColumns = [
+    'permanent_same_as_current',
+    'is_ip_community',
+    'is_4ps_beneficiary',
+    'learner_with_disability',
+    'returning_learner',
+    'transferee',
+];
+$truthyDbValue = static fn(mixed $value): bool => in_array($value, [true, 1, '1', 't', 'true', 'yes', 'on'], true);
+$studentRecordToEnrollData = static function (array $student) use ($studentEnrollmentColumns, $studentBooleanColumns, $truthyDbValue): array {
+    $data = ['student_id' => (int)($student['id'] ?? 0)];
+    foreach ($studentEnrollmentColumns as $column) {
+        if (in_array($column, $studentBooleanColumns, true)) {
+            $data[$column] = $truthyDbValue($student[$column] ?? false);
+        } elseif ($column === 'section_id') {
+            $data[$column] = (int)($student[$column] ?? 0);
+        } else {
+            $data[$column] = (string)($student[$column] ?? '');
+        }
+    }
+    return $data;
+};
+
+$studentStmt = $pdo->prepare("
+    SELECT *
+    FROM students
+    WHERE guardian_id = :guardian_id
+    ORDER BY grade_level, last_name, first_name, id
+");
+$studentStmt->execute([':guardian_id' => $guardian['id']]);
+$guardianStudents = $studentStmt->fetchAll();
+$guardianStudentsById = [];
+foreach ($guardianStudents as $studentRow) {
+    $guardianStudentsById[(int)$studentRow['id']] = $studentRow;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -48,6 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ── STEP 1 → 2: Save guardian profile ─────────────────
     if ($step === 2) {
         $gFirstName   = trim($_POST['g_first_name'] ?? '');
+        $gMiddleName  = trim($_POST['g_middle_name'] ?? '');
         $gLastName    = trim($_POST['g_last_name'] ?? '');
         $gContact     = trim($_POST['g_contact'] ?? '');
         $gAddress     = trim($_POST['g_address'] ?? '');
@@ -66,13 +151,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($errors)) {
             $pdo->prepare("
                 UPDATE guardians
-                SET first_name = :fn, last_name = :ln, contact_number = :contact, address = :addr,
+                SET first_name = :fn, middle_name = :mn, last_name = :ln, contact_number = :contact, address = :addr,
                     relationship_to_student = :rel, occupation = :occ,
                     civil_status = :cs, nationality = :nat, religion = :rel2,
-                    emergency_contact_name = :en, emergency_contact_number = :ec
+                    emergency_contact_name = :en, emergency_contact_number = :ec,
+                    data_privacy_consent = TRUE,
+                    data_privacy_consented_at = COALESCE(data_privacy_consented_at, NOW())
                 WHERE user_id = :uid
             ")->execute([
                 ':fn'      => $gFirstName,
+                ':mn'      => $gMiddleName,
                 ':ln'      => $gLastName,
                 ':contact' => $gContact,
                 ':addr'    => $gAddress ?: null,
@@ -96,17 +184,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ── STEP 2 → 3: Save student info in session ──────────
     if ($step === 3 && empty($errors)) {
+        $selectedStudentId = (int)($_POST['existing_student_id'] ?? 0);
+        $selectedStudent = null;
+        if ($selectedStudentId > 0) {
+            $selectedStudent = $guardianStudentsById[$selectedStudentId] ?? null;
+            if (!$selectedStudent) {
+                $errors[] = 'Selected student was not found under your guardian account.';
+                $step = 2;
+            }
+        }
+
         $_SESSION['enroll'] = [
-            'first_name' => trim($_POST['first_name'] ?? ''),
-            'last_name'  => trim($_POST['last_name'] ?? ''),
-            'birthdate'  => trim($_POST['birthdate'] ?? ''),
-            'gender'     => trim($_POST['gender'] ?? ''),
-            'lrn'        => trim($_POST['lrn'] ?? ''),
+            'student_id'                   => $selectedStudent ? $selectedStudentId : 0,
+            'first_name'                  => trim($_POST['first_name'] ?? ''),
+            'middle_name'                 => trim($_POST['middle_name'] ?? ''),
+            'last_name'                   => trim($_POST['last_name'] ?? ''),
+            'extension_name'              => trim($_POST['extension_name'] ?? ''),
+            'birthdate'                   => trim($_POST['birthdate'] ?? ''),
+            'gender'                      => trim($_POST['gender'] ?? ''),
+            'lrn'                         => trim($_POST['lrn'] ?? ''),
+            'psa_birth_certificate_no'    => trim($_POST['psa_birth_certificate_no'] ?? ''),
+            'place_of_birth'              => trim($_POST['place_of_birth'] ?? ''),
+            'mother_tongue'               => trim($_POST['mother_tongue'] ?? ''),
+            'religion'                    => trim($_POST['religion'] ?? ''),
+            'current_house_street'        => trim($_POST['current_house_street'] ?? ''),
+            'current_barangay'            => trim($_POST['current_barangay'] ?? ''),
+            'current_city_municipality'   => trim($_POST['current_city_municipality'] ?? ''),
+            'current_province'            => trim($_POST['current_province'] ?? ''),
+            'current_country'             => trim($_POST['current_country'] ?? 'Philippines') ?: 'Philippines',
+            'current_zip_code'            => trim($_POST['current_zip_code'] ?? ''),
+            'permanent_same_as_current'   => $readPostedBool('permanent_same_as_current'),
+            'permanent_house_street'      => trim($_POST['permanent_house_street'] ?? ''),
+            'permanent_barangay'          => trim($_POST['permanent_barangay'] ?? ''),
+            'permanent_city_municipality' => trim($_POST['permanent_city_municipality'] ?? ''),
+            'permanent_province'          => trim($_POST['permanent_province'] ?? ''),
+            'permanent_country'           => trim($_POST['permanent_country'] ?? 'Philippines') ?: 'Philippines',
+            'permanent_zip_code'          => trim($_POST['permanent_zip_code'] ?? ''),
+            'father_first_name'           => trim($_POST['father_first_name'] ?? ''),
+            'father_middle_name'          => trim($_POST['father_middle_name'] ?? ''),
+            'father_last_name'            => trim($_POST['father_last_name'] ?? ''),
+            'father_contact_number'       => trim($_POST['father_contact_number'] ?? ''),
+            'mother_first_name'           => trim($_POST['mother_first_name'] ?? ''),
+            'mother_middle_name'          => trim($_POST['mother_middle_name'] ?? ''),
+            'mother_maiden_last_name'     => trim($_POST['mother_maiden_last_name'] ?? ''),
+            'mother_contact_number'       => trim($_POST['mother_contact_number'] ?? ''),
+            'is_ip_community'             => $readPostedBool('is_ip_community'),
+            'ip_group'                    => trim($_POST['ip_group'] ?? ''),
+            'is_4ps_beneficiary'          => $readPostedBool('is_4ps_beneficiary'),
+            'four_ps_household_id'        => trim($_POST['four_ps_household_id'] ?? ''),
+            'learner_with_disability'     => $readPostedBool('learner_with_disability'),
+            'disability_type'             => trim($_POST['disability_type'] ?? ''),
+            'returning_learner'           => $readPostedBool('returning_learner'),
+            'transferee'                  => $readPostedBool('transferee'),
+            'last_grade_level_completed'  => trim($_POST['last_grade_level_completed'] ?? ''),
+            'last_school_year_completed'  => trim($_POST['last_school_year_completed'] ?? ''),
+            'last_school_attended'        => trim($_POST['last_school_attended'] ?? ''),
+            'previous_school_id'          => trim($_POST['previous_school_id'] ?? ''),
         ];
+
+        if ($selectedStudent) {
+            $selectedStudentData = $studentRecordToEnrollData($selectedStudent);
+            $_SESSION['enroll']['grade_level'] = $selectedStudentData['grade_level'];
+            $_SESSION['enroll']['section_id'] = $selectedStudentData['section_id'];
+        }
+
+        if ($_SESSION['enroll']['permanent_same_as_current']) {
+            $_SESSION['enroll']['permanent_house_street'] = $_SESSION['enroll']['current_house_street'];
+            $_SESSION['enroll']['permanent_barangay'] = $_SESSION['enroll']['current_barangay'];
+            $_SESSION['enroll']['permanent_city_municipality'] = $_SESSION['enroll']['current_city_municipality'];
+            $_SESSION['enroll']['permanent_province'] = $_SESSION['enroll']['current_province'];
+            $_SESSION['enroll']['permanent_country'] = $_SESSION['enroll']['current_country'];
+            $_SESSION['enroll']['permanent_zip_code'] = $_SESSION['enroll']['current_zip_code'];
+        }
 
         if (empty($_SESSION['enroll']['last_name'])) {
             $errors[] = 'Student last name is required.';
             $step = 2;
+        }
+
+        if ($_SESSION['enroll']['lrn'] !== '' && !preg_match('/^\d{12}$/', $_SESSION['enroll']['lrn'])) {
+            $errors[] = 'LRN must be exactly 12 digits.';
+            $step = 2;
+        }
+
+        if (empty($errors)) {
+            try {
+                $duplicate = findDuplicateStudent(
+                    $pdo,
+                    $_SESSION['enroll']['first_name'],
+                    $_SESSION['enroll']['last_name'],
+                    $_SESSION['enroll']['lrn'],
+                    (int)($_SESSION['enroll']['student_id'] ?? 0)
+                );
+
+                if ($duplicate) {
+                    $duplicateName = format_name($duplicate['first_name'] ?? '', $duplicate['last_name'] ?? '');
+                    if (($duplicate['duplicate_type'] ?? '') === 'lrn') {
+                        $errors[] = 'A student with this LRN already exists: ' . $duplicateName . '. Please contact the registrar if this is your child.';
+                    } else {
+                        $errors[] = 'A student with the same full name already exists: ' . $duplicateName . '. Please contact the registrar if this is your child.';
+                    }
+                    $step = 2;
+                }
+            } catch (Exception $e) {
+                error_log('Enrollment duplicate check error: ' . $e->getMessage());
+                $errors[] = 'Unable to check for duplicate students. Please try again.';
+                $step = 2;
+            }
         }
     }
 
@@ -184,21 +368,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $pdo->beginTransaction();
 
-                $stmt = $pdo->prepare("
-                    INSERT INTO students (guardian_id, first_name, last_name, birthdate, gender, grade_level, section_id, lrn)
-                    VALUES (:gid, :fname, :lname, :birth, :gender, :grade, :sec, :lrn) RETURNING id
+                $studentColumns = array_merge(['guardian_id'], $studentEnrollmentColumns);
+                $studentParams = [];
+                foreach ($studentColumns as $column) {
+                    if ($column === 'guardian_id') {
+                        $studentParams[':' . $column] = $guardian['id'];
+                        continue;
+                    }
+                    $value = $enrollData[$column] ?? null;
+                    if (is_bool($value)) {
+                        $studentParams[':' . $column] = $value ? 'true' : 'false';
+                    } elseif ($column === 'section_id') {
+                        $sectionId = (int)($value ?? 0);
+                        $studentParams[':' . $column] = $sectionId > 0 ? $sectionId : null;
+                    } elseif (is_int($value) || $value === null) {
+                        $studentParams[':' . $column] = $value;
+                    } elseif (in_array($column, ['first_name', 'middle_name', 'last_name'], true)) {
+                        $studentParams[':' . $column] = trim((string)$value);
+                    } elseif (in_array($column, ['current_country', 'permanent_country'], true)) {
+                        $studentParams[':' . $column] = trim((string)$value) !== '' ? trim((string)$value) : 'Philippines';
+                    } else {
+                        $value = trim((string)$value);
+                        $studentParams[':' . $column] = $value === '' ? null : $value;
+                    }
+                }
+
+                $existingStudentId = (int)($enrollData['student_id'] ?? 0);
+                if ($existingStudentId > 0) {
+                    $updateColumns = array_values(array_filter($studentEnrollmentColumns, static fn(string $column): bool => $column !== 'student_id'));
+                    $setParts = array_map(static fn(string $column): string => "{$column} = :{$column}", $updateColumns);
+                    $stmt = $pdo->prepare("
+                        UPDATE students
+                        SET " . implode(', ', $setParts) . "
+                        WHERE id = :student_id
+                          AND guardian_id = :guardian_id
+                    ");
+                    $stmt->execute($studentParams + [':student_id' => $existingStudentId]);
+                    if ($stmt->rowCount() !== 1) {
+                        throw new RuntimeException('Selected student was not found under your guardian account.');
+                    }
+                    $studentId = $existingStudentId;
+                } else {
+                    $placeholders = array_map(static fn(string $col): string => ':' . $col, $studentColumns);
+                    $stmt = $pdo->prepare("
+                        INSERT INTO students (" . implode(', ', $studentColumns) . ")
+                        VALUES (" . implode(', ', $placeholders) . ")
+                        RETURNING id
+                    ");
+                    $stmt->execute($studentParams);
+                    $studentId = (int)$stmt->fetchColumn();
+                }
+
+                $existingEnrollmentStmt = $pdo->prepare("
+                    SELECT id
+                    FROM enrollments
+                    WHERE student_id = :student_id
+                      AND school_year = :school_year
+                      AND term = :term
+                    LIMIT 1
                 ");
-                $stmt->execute([
-                    ':gid'    => $guardian['id'],
-                    ':fname'  => $enrollData['first_name'],
-                    ':lname'  => $enrollData['last_name'],
-                    ':birth'  => $enrollData['birthdate'] ?: null,
-                    ':gender' => $enrollData['gender'] ?: null,
-                    ':grade'  => $enrollData['grade_level'],
-                    ':sec'    => $enrollData['section_id'] ?: null,
-                    ':lrn'    => $enrollData['lrn'] ?: null,
+                $existingEnrollmentStmt->execute([
+                    ':student_id' => $studentId,
+                    ':school_year' => $enrollData['school_year'],
+                    ':term' => $enrollData['term'],
                 ]);
-                $studentId = (int)$stmt->fetchColumn();
+                if ($existingEnrollmentStmt->fetchColumn()) {
+                    throw new RuntimeException('This student already has an enrollment for the selected school year and term.');
+                }
 
                 $initialStatus = enrollmentStatusForDocumentCount(count($uploadedRequirements));
                 $stmt = $pdo->prepare("
@@ -212,11 +448,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':status' => $initialStatus,
                 ]);
                 $enrollmentId = (int)$stmt->fetchColumn();
-
-                $pdo->prepare("
-                    INSERT INTO payments (enrollment_id, amount, method, description, status)
-                    VALUES (:eid, 15000.00, 'cash', 'Enrollment Fee', 'pending')
-                ")->execute([':eid' => $enrollmentId]);
 
                 $uploadDir = __DIR__ . '/../../uploads/enrollment-documents/' . $enrollmentId;
                 $relativeDir = 'uploads/enrollment-documents/' . $enrollmentId;
@@ -291,7 +522,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 error_log('Enrollment creation error: ' . $e->getMessage());
-                $errors[] = 'An error occurred while saving enrollment. Please try again.';
+                if (str_contains($e->getMessage(), 'already has an enrollment')) {
+                    $errors[] = $e->getMessage();
+                } elseif (str_contains($e->getMessage(), 'Selected student was not found')) {
+                    $errors[] = 'Selected student was not found under your guardian account.';
+                } else {
+                    $errors[] = 'An error occurred while saving enrollment. Please try again.';
+                }
                 $step = 3;
             }
         }
@@ -299,6 +536,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $enrollData = $_SESSION['enroll'] ?? [];
+$hasMeaningfulStudentData = isset($enrollData['student_id'])
+    || trim((string)($enrollData['last_name'] ?? '')) !== ''
+    || trim((string)($enrollData['first_name'] ?? '')) !== ''
+    || trim((string)($enrollData['lrn'] ?? '')) !== '';
+if ($step === 2 && !$hasMeaningfulStudentData && !empty($guardianStudents)) {
+    $enrollData = $studentRecordToEnrollData($guardianStudents[0]);
+}
+$selectedStudentIdForForm = (int)($enrollData['student_id'] ?? ($guardianStudents[0]['id'] ?? 0));
+$guardianStudentPrefill = [];
+foreach ($guardianStudents as $studentRow) {
+    $data = $studentRecordToEnrollData($studentRow);
+    $guardianStudentPrefill[(string)$studentRow['id']] = $data;
+}
 $totalSteps = $profileComplete ? 3 : 4; // if profile is already done, skip step 1 visually
 $pageTitle  = 'Enrollment';
 require_once __DIR__ . '/../../includes/header.php';
@@ -375,7 +625,12 @@ $stepKeys = array_keys($stepLabels);
                 <input type="text" class="form-control" name="g_first_name"
                        value="<?= e($guardian['first_name'] ?? '') ?>">
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Middle Name</label>
+                <input type="text" class="form-control" name="g_middle_name"
+                       value="<?= e($guardian['middle_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
                 <label class="form-label">Contact Number <span class="text-danger">*</span></label>
                 <input type="text" class="form-control" name="g_contact"
                        value="<?= e($guardian['contact_number'] ?? '') ?>" required>
@@ -447,25 +702,53 @@ $stepKeys = array_keys($stepLabels);
         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
         <input type="hidden" name="step" value="3">
 
+        <?php if (!empty($guardianStudents)): ?>
+            <div class="mb-3">
+                <label class="form-label">Student to Enroll</label>
+                <select class="form-select" name="existing_student_id" id="existing-student-select">
+                    <?php foreach ($guardianStudents as $studentOption): ?>
+                        <?php
+                        $studentOptionId = (int)$studentOption['id'];
+                        $studentOptionName = trim(format_name($studentOption['first_name'] ?? '', $studentOption['last_name'] ?? '') . ' ' . ($studentOption['middle_name'] ?? ''));
+                        ?>
+                        <option value="<?= $studentOptionId ?>" <?= $selectedStudentIdForForm === $studentOptionId ? 'selected' : '' ?>>
+                            <?= e($studentOptionName) ?><?= !empty($studentOption['grade_level']) ? ' - ' . e(formatGradeLevel((string)$studentOption['grade_level'])) : '' ?>
+                        </option>
+                    <?php endforeach; ?>
+                    <option value="0" <?= $selectedStudentIdForForm === 0 ? 'selected' : '' ?>>Enroll a new student</option>
+                </select>
+            </div>
+        <?php else: ?>
+            <input type="hidden" name="existing_student_id" value="0">
+        <?php endif; ?>
+
         <div class="row">
-            <div class="col-md-6 mb-3">
+            <div class="col-md-3 mb-3">
                 <label class="form-label">Student Last Name <span class="text-danger">*</span></label>
                 <input type="text" class="form-control" name="last_name"
                        value="<?= e($enrollData['last_name'] ?? '') ?>" required>
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-3 mb-3">
                 <label class="form-label">Student First Name</label>
                 <input type="text" class="form-control" name="first_name"
                        value="<?= e($enrollData['first_name'] ?? '') ?>">
             </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3">
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Middle Name</label>
+                <input type="text" class="form-control" name="middle_name"
+                       value="<?= e($enrollData['middle_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Extension</label>
+                <input type="text" class="form-control" name="extension_name"
+                       value="<?= e($enrollData['extension_name'] ?? '') ?>" placeholder="Jr., III">
+            </div>
+            <div class="col-md-4 mb-3">
                 <label class="form-label">Birthdate</label>
                 <input type="date" class="form-control" name="birthdate"
                        value="<?= e($enrollData['birthdate'] ?? '') ?>">
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-4 mb-3">
                 <label class="form-label">Gender</label>
                 <select class="form-select" name="gender">
                     <option value="">Select...</option>
@@ -474,12 +757,227 @@ $stepKeys = array_keys($stepLabels);
                     <?php endforeach; ?>
                 </select>
             </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Learner Reference Number (LRN)</label>
+                <input type="text" class="form-control" name="lrn"
+                       value="<?= e($enrollData['lrn'] ?? '') ?>"
+                       maxlength="12" placeholder="12-digit LRN">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">PSA Birth Certificate No.</label>
+                <input type="text" class="form-control" name="psa_birth_certificate_no"
+                       value="<?= e($enrollData['psa_birth_certificate_no'] ?? '') ?>">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Place of Birth</label>
+                <input type="text" class="form-control" name="place_of_birth"
+                       value="<?= e($enrollData['place_of_birth'] ?? '') ?>">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label class="form-label">Mother Tongue</label>
+                <input type="text" class="form-control" name="mother_tongue"
+                       value="<?= e($enrollData['mother_tongue'] ?? '') ?>">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label class="form-label">Religion</label>
+                <input type="text" class="form-control" name="religion"
+                       value="<?= e($enrollData['religion'] ?? '') ?>">
+            </div>
         </div>
-        <div class="mb-3">
-            <label class="form-label">Learner Reference Number (LRN)</label>
-            <input type="text" class="form-control" name="lrn"
-                   value="<?= e($enrollData['lrn'] ?? '') ?>"
-                   maxlength="12" placeholder="12-digit LRN (if available)">
+
+        <h6 class="fw-semibold mb-3 mt-2">Address</h6>
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Current House / Street</label>
+                <input type="text" class="form-control" name="current_house_street"
+                       value="<?= e($enrollData['current_house_street'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Current Barangay</label>
+                <input type="text" class="form-control" name="current_barangay"
+                       value="<?= e($enrollData['current_barangay'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">City / Municipality</label>
+                <input type="text" class="form-control" name="current_city_municipality"
+                       value="<?= e($enrollData['current_city_municipality'] ?? '') ?>">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label class="form-label">ZIP Code</label>
+                <input type="text" class="form-control" name="current_zip_code"
+                       value="<?= e($enrollData['current_zip_code'] ?? '') ?>">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Province</label>
+                <input type="text" class="form-control" name="current_province"
+                       value="<?= e($enrollData['current_province'] ?? '') ?>">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Country</label>
+                <input type="text" class="form-control" name="current_country"
+                       value="<?= e($enrollData['current_country'] ?? 'Philippines') ?>">
+            </div>
+            <div class="col-md-4 mb-3 d-flex align-items-end">
+                <div class="form-check">
+                    <input type="hidden" name="permanent_same_as_current" value="0">
+                    <input class="form-check-input" type="checkbox" name="permanent_same_as_current" value="1" id="enroll-same-address"
+                           <?= !isset($enrollData['permanent_same_as_current']) || !empty($enrollData['permanent_same_as_current']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="enroll-same-address">Permanent address is same</label>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Permanent House / Street</label>
+                <input type="text" class="form-control" name="permanent_house_street"
+                       value="<?= e($enrollData['permanent_house_street'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Permanent Barangay</label>
+                <input type="text" class="form-control" name="permanent_barangay"
+                       value="<?= e($enrollData['permanent_barangay'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">City / Municipality</label>
+                <input type="text" class="form-control" name="permanent_city_municipality"
+                       value="<?= e($enrollData['permanent_city_municipality'] ?? '') ?>">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label class="form-label">ZIP Code</label>
+                <input type="text" class="form-control" name="permanent_zip_code"
+                       value="<?= e($enrollData['permanent_zip_code'] ?? '') ?>">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Province</label>
+                <input type="text" class="form-control" name="permanent_province"
+                       value="<?= e($enrollData['permanent_province'] ?? '') ?>">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Country</label>
+                <input type="text" class="form-control" name="permanent_country"
+                       value="<?= e($enrollData['permanent_country'] ?? 'Philippines') ?>">
+            </div>
+        </div>
+
+        <h6 class="fw-semibold mb-3 mt-2">Parents</h6>
+        <div class="row">
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Father Last Name</label>
+                <input type="text" class="form-control" name="father_last_name"
+                       value="<?= e($enrollData['father_last_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Father First Name</label>
+                <input type="text" class="form-control" name="father_first_name"
+                       value="<?= e($enrollData['father_first_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Father Middle Name</label>
+                <input type="text" class="form-control" name="father_middle_name"
+                       value="<?= e($enrollData['father_middle_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Father Contact</label>
+                <input type="text" class="form-control" name="father_contact_number"
+                       value="<?= e($enrollData['father_contact_number'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Mother Maiden Last Name</label>
+                <input type="text" class="form-control" name="mother_maiden_last_name"
+                       value="<?= e($enrollData['mother_maiden_last_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Mother First Name</label>
+                <input type="text" class="form-control" name="mother_first_name"
+                       value="<?= e($enrollData['mother_first_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Mother Middle Name</label>
+                <input type="text" class="form-control" name="mother_middle_name"
+                       value="<?= e($enrollData['mother_middle_name'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Mother Contact</label>
+                <input type="text" class="form-control" name="mother_contact_number"
+                       value="<?= e($enrollData['mother_contact_number'] ?? '') ?>">
+            </div>
+        </div>
+
+        <h6 class="fw-semibold mb-3 mt-2">Learner Background</h6>
+        <div class="row">
+            <div class="col-md-3 mb-3">
+                <input type="hidden" name="is_ip_community" value="0">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="is_ip_community" value="1" id="enroll-is-ip"
+                           <?= !empty($enrollData['is_ip_community']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="enroll-is-ip">Indigenous Peoples</label>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">IP Group</label>
+                <input type="text" class="form-control" name="ip_group"
+                       value="<?= e($enrollData['ip_group'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <input type="hidden" name="is_4ps_beneficiary" value="0">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="is_4ps_beneficiary" value="1" id="enroll-is-4ps"
+                           <?= !empty($enrollData['is_4ps_beneficiary']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="enroll-is-4ps">4Ps Beneficiary</label>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">4Ps Household ID</label>
+                <input type="text" class="form-control" name="four_ps_household_id"
+                       value="<?= e($enrollData['four_ps_household_id'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <input type="hidden" name="learner_with_disability" value="0">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="learner_with_disability" value="1" id="enroll-has-disability"
+                           <?= !empty($enrollData['learner_with_disability']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="enroll-has-disability">Learner with Disability</label>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Disability Type</label>
+                <input type="text" class="form-control" name="disability_type"
+                       value="<?= e($enrollData['disability_type'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <input type="hidden" name="returning_learner" value="0">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="returning_learner" value="1" id="enroll-returning"
+                           <?= !empty($enrollData['returning_learner']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="enroll-returning">Returning Learner</label>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <input type="hidden" name="transferee" value="0">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="transferee" value="1" id="enroll-transferee"
+                           <?= !empty($enrollData['transferee']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="enroll-transferee">Transferee</label>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Last Grade Completed</label>
+                <input type="text" class="form-control" name="last_grade_level_completed"
+                       value="<?= e($enrollData['last_grade_level_completed'] ?? '') ?>">
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label">Last School Year</label>
+                <input type="text" class="form-control" name="last_school_year_completed"
+                       value="<?= e($enrollData['last_school_year_completed'] ?? '') ?>">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Last School Attended</label>
+                <input type="text" class="form-control" name="last_school_attended"
+                       value="<?= e($enrollData['last_school_attended'] ?? '') ?>">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label class="form-label">School ID</label>
+                <input type="text" class="form-control" name="previous_school_id"
+                       value="<?= e($enrollData['previous_school_id'] ?? '') ?>">
+            </div>
         </div>
 
         <div class="d-flex gap-2">
@@ -569,5 +1067,97 @@ $stepKeys = array_keys($stepLabels);
 </div>
 </div>
 </div>
+
+<script>
+const guardianStudentPrefill = <?= json_encode($guardianStudentPrefill, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+
+function setEnrollmentField(form, name, value) {
+    const checkboxNames = new Set([
+        'permanent_same_as_current',
+        'is_ip_community',
+        'is_4ps_beneficiary',
+        'learner_with_disability',
+        'returning_learner',
+        'transferee'
+    ]);
+
+    if (checkboxNames.has(name)) {
+        const checkbox = form.querySelector(`input[type="checkbox"][name="${name}"]`);
+        if (checkbox) {
+            checkbox.checked = value === true || value === 1 || value === '1';
+        }
+        return;
+    }
+
+    const field = form.querySelector(`[name="${name}"]:not([type="hidden"])`);
+    if (field) {
+        field.value = value ?? '';
+    }
+}
+
+function blankEnrollmentStudentData() {
+    return {
+        first_name: '',
+        middle_name: '',
+        last_name: '',
+        extension_name: '',
+        birthdate: '',
+        gender: '',
+        lrn: '',
+        psa_birth_certificate_no: '',
+        place_of_birth: '',
+        mother_tongue: '',
+        religion: '',
+        current_house_street: '',
+        current_barangay: '',
+        current_city_municipality: '',
+        current_province: '',
+        current_country: 'Philippines',
+        current_zip_code: '',
+        permanent_same_as_current: true,
+        permanent_house_street: '',
+        permanent_barangay: '',
+        permanent_city_municipality: '',
+        permanent_province: '',
+        permanent_country: 'Philippines',
+        permanent_zip_code: '',
+        father_first_name: '',
+        father_middle_name: '',
+        father_last_name: '',
+        father_contact_number: '',
+        mother_first_name: '',
+        mother_middle_name: '',
+        mother_maiden_last_name: '',
+        mother_contact_number: '',
+        is_ip_community: false,
+        ip_group: '',
+        is_4ps_beneficiary: false,
+        four_ps_household_id: '',
+        learner_with_disability: false,
+        disability_type: '',
+        returning_learner: false,
+        transferee: false,
+        last_grade_level_completed: '',
+        last_school_year_completed: '',
+        last_school_attended: '',
+        previous_school_id: ''
+    };
+}
+
+document.getElementById('existing-student-select')?.addEventListener('change', function () {
+    const form = document.getElementById('enrollment-step-student');
+    if (!form) return;
+
+    const data = this.value !== '0'
+        ? guardianStudentPrefill[this.value] || blankEnrollmentStudentData()
+        : blankEnrollmentStudentData();
+
+    Object.entries(data).forEach(([name, value]) => {
+        if (name !== 'student_id' && name !== 'grade_level' && name !== 'section_id') {
+            setEnrollmentField(form, name, value);
+        }
+    });
+});
+</script>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

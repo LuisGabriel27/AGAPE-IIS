@@ -1,6 +1,9 @@
 ﻿# Academy Information System â€” Setup Checklist
 
 ## Prerequisites
+
+> Active branch note: this `w/supabase` branch uses **Supabase PostgreSQL**. For the active database setup path, use [database/README.md](database/README.md). The older MySQL/phpMyAdmin setup notes in this file are retained only as legacy reference.
+
 - **XAMPP** installed with Apache + MySQL running
 - **PHP 7.4+** (PHP 8.x recommended)
 - **Composer** installed globally â€” [https://getcomposer.org](https://getcomposer.org)

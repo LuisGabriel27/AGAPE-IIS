@@ -14,6 +14,7 @@ $search = trim($_GET['search'] ?? '');
 $action = $_GET['action'] ?? '';
 $id     = (int)($_GET['id'] ?? 0);
 $errors = [];
+$roleOptions = validUserRoles();
 
 // ── Handle actions ──────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -40,12 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($postAction === 'change_role' && $id) {
         $newRole = $_POST['new_role'] ?? '';
-        if (in_array($newRole, ['admin', 'teacher', 'guardian', 'clerk'])) {
-            $stmt = $pdo->prepare("UPDATE users SET role = :r WHERE id = :id");
-            $stmt->execute([':r' => $newRole, ':id' => $id]);
-            // Keep user_roles in sync: ensure primary role exists
-            $stmt = $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, :r) ON CONFLICT DO NOTHING");
-            $stmt->execute([':uid' => $id, ':r' => $newRole]);
+        if (isValidUserRole($newRole)) {
+            syncPrimaryUserRole($pdo, $id, $newRole);
             auditLog('change_role', 'users', $id, null, ['role' => $newRole]);
             setFlash('success', 'Role updated to ' . ucfirst($newRole === 'clerk' ? 'Enrollment Clerk' : $newRole) . '.');
         }
@@ -54,25 +51,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($postAction === 'toggle_secondary_role' && $id) {
         $secRole = $_POST['secondary_role'] ?? '';
-        if (in_array($secRole, ['admin', 'teacher', 'guardian', 'clerk'])) {
+        if (isValidUserRole($secRole)) {
             // Check if it already exists
             $stmt = $pdo->prepare("SELECT 1 FROM user_roles WHERE user_id = :uid AND role = :r LIMIT 1");
             $stmt->execute([':uid' => $id, ':r' => $secRole]);
             if ($stmt->fetch()) {
                 // Remove secondary role (can't remove primary)
-                $stmt2 = $pdo->prepare("SELECT role FROM users WHERE id = :id LIMIT 1");
-                $stmt2->execute([':id' => $id]);
-                $primary = $stmt2->fetchColumn();
-                if ($secRole !== $primary) {
-                    $pdo->prepare("DELETE FROM user_roles WHERE user_id = :uid AND role = :r")
-                        ->execute([':uid' => $id, ':r' => $secRole]);
+                if (removeSecondaryUserRole($pdo, $id, $secRole)) {
                     setFlash('success', 'Secondary role removed.');
                 } else {
                     setFlash('warning', 'Cannot remove primary role. Change primary role first.');
                 }
             } else {
-                $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, :r) ON CONFLICT DO NOTHING")
-                    ->execute([':uid' => $id, ':r' => $secRole]);
+                ensureUserRole($pdo, $id, $secRole);
                 setFlash('success', 'Secondary role added.');
             }
         }
@@ -80,41 +71,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($postAction === 'create_user') {
-        $email   = trim($_POST['email'] ?? '');
+        $email   = normalizeEmailAddress($_POST['email'] ?? '');
         $role    = trim($_POST['role'] ?? 'guardian');
         $password = trim($_POST['password'] ?? '');
+        $profileData = [
+            'first_name'               => trim($_POST['profile_first_name'] ?? ''),
+            'middle_name'              => trim($_POST['profile_middle_name'] ?? ''),
+            'last_name'                => trim($_POST['profile_last_name'] ?? ''),
+            'extension_name'           => trim($_POST['profile_extension_name'] ?? ''),
+            'employee_number'          => trim($_POST['profile_employee_number'] ?? ''),
+            'contact_number'           => trim($_POST['profile_contact_number'] ?? ''),
+            'office'                   => trim($_POST['profile_office'] ?? ''),
+            'position_title'           => trim($_POST['profile_position_title'] ?? ''),
+            'address'                  => trim($_POST['profile_address'] ?? ''),
+            'employment_status'        => trim($_POST['profile_employment_status'] ?? ''),
+            'date_hired'               => trim($_POST['profile_date_hired'] ?? ''),
+            'emergency_contact_name'   => trim($_POST['profile_emergency_contact_name'] ?? ''),
+            'emergency_contact_number' => trim($_POST['profile_emergency_contact_number'] ?? ''),
+        ];
 
         if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Valid email is required.';
+        if (!isValidUserRole($role)) $errors[] = 'Valid role is required.';
         if (strlen($password) < 8) $errors[] = 'Password must be at least 8 characters.';
 
         if (empty($errors)) {
-            $stmt = $pdo->prepare("SELECT id FROM users WHERE email = :e LIMIT 1");
-            $stmt->execute([':e' => $email]);
-            if ($stmt->fetch()) {
+            if (findUserByEmail($pdo, $email)) {
                 $errors[] = 'Email already exists.';
-            } else {
-                $hash = password_hash($password, PASSWORD_BCRYPT);
-                $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, :r, 1, NOW()) RETURNING id");
-                $stmt->execute([':e' => $email, ':h' => $hash, ':r' => $role]);
-                $newId = (int)$stmt->fetchColumn();
-                // Seed user_roles with the primary role
-                $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, :r) ON CONFLICT DO NOTHING")
-                    ->execute([':uid' => $newId, ':r' => $role]);
-                auditLog('create_user', 'users', $newId);
-                setFlash('success', 'User created.');
-                redirect(APP_URL . '/admin/admin-users.php');
             }
+        }
+
+        if (empty($errors) && $profileData['employee_number'] !== '') {
+            $stmt = $pdo->prepare("SELECT user_id, first_name, last_name FROM user_profiles WHERE LOWER(TRIM(employee_number)) = LOWER(TRIM(:employee_number)) LIMIT 1");
+            $stmt->execute([':employee_number' => $profileData['employee_number']]);
+            $duplicateProfile = $stmt->fetch();
+            if ($duplicateProfile) {
+                $errors[] = 'A staff profile with the same employee number already exists: '
+                    . format_name($duplicateProfile['first_name'] ?? '', $duplicateProfile['last_name'] ?? '') . '.';
+            }
+        }
+
+        if (empty($errors)) {
+            $hash = password_hash($password, PASSWORD_BCRYPT);
+            $stmt = $pdo->prepare("INSERT INTO users (email, password_hash, role, is_active, created_at) VALUES (:e, :h, :r, 1, NOW()) RETURNING id");
+            $stmt->execute([':e' => $email, ':h' => $hash, ':r' => $role]);
+            $newId = (int)$stmt->fetchColumn();
+            // Seed user_roles with the primary role
+            ensureUserRole($pdo, $newId, $role);
+            $profileColumns = array_keys($profileData);
+            $profilePlaceholders = array_map(static fn(string $col): string => ':' . $col, $profileColumns);
+            $profileStmt = $pdo->prepare("
+                INSERT INTO user_profiles (user_id, " . implode(', ', $profileColumns) . ")
+                VALUES (:user_id, " . implode(', ', $profilePlaceholders) . ")
+            ");
+            $profileParams = [':user_id' => $newId];
+            foreach ($profileData as $key => $value) {
+                if (in_array($key, ['first_name', 'middle_name', 'last_name'], true)) {
+                    $profileParams[':' . $key] = $value;
+                } else {
+                    $profileParams[':' . $key] = nullIfBlank($value);
+                }
+            }
+            $profileStmt->execute($profileParams);
+            auditLog('create_user', 'users', $newId);
+            setFlash('success', 'User created.');
+            redirect(APP_URL . '/admin/admin-users.php');
         }
     }
 }
 
 // ── List with search & pagination ───────────────────────
 $where = ''; $params = [];
-if ($search) { $where = "WHERE email ILIKE :s OR role::text ILIKE :s2"; $params[':s'] = $params[':s2'] = "%{$search}%"; }
-$total = $pdo->prepare("SELECT COUNT(*) FROM users {$where}"); $total->execute($params);
+if ($search) {
+    $where = "WHERE u.email ILIKE :s OR u.role::text ILIKE :s2 OR up.last_name ILIKE :s3 OR up.first_name ILIKE :s4 OR up.employee_number ILIKE :s5 OR up.position_title ILIKE :s6 OR up.office ILIKE :s7";
+    $params[':s'] = "%{$search}%";
+    $params[':s2'] = "%{$search}%";
+    $params[':s3'] = "{$search}%";
+    $params[':s4'] = "%{$search}%";
+    $params[':s5'] = "%{$search}%";
+    $params[':s6'] = "%{$search}%";
+    $params[':s7'] = "%{$search}%";
+}
+$total = $pdo->prepare("SELECT COUNT(*) FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id {$where}"); $total->execute($params);
 [$offset, $limit, $page, $totalPages] = paginate($total->fetchColumn());
 
-$stmt = $pdo->prepare("SELECT * FROM users {$where} ORDER BY id DESC LIMIT {$limit} OFFSET {$offset}");
+$stmt = $pdo->prepare("
+    SELECT u.*,
+           up.first_name AS profile_first_name,
+           up.middle_name AS profile_middle_name,
+           up.last_name AS profile_last_name,
+           up.extension_name AS profile_extension_name,
+           up.employee_number AS profile_employee_number,
+           up.office AS profile_office,
+           up.position_title AS profile_position_title,
+           up.contact_number AS profile_contact_number
+    FROM users u
+    LEFT JOIN user_profiles up ON up.user_id = u.id
+    {$where}
+    ORDER BY u.id DESC
+    LIMIT {$limit} OFFSET {$offset}
+");
 $stmt->execute($params);
 $users = $stmt->fetchAll();
 
@@ -150,6 +205,7 @@ require_once __DIR__ . '/../includes/header.php';
         <form method="POST" id="user-create-form">
             <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <input type="hidden" name="action" value="create_user">
+            <h6 class="fw-semibold text-primary mb-3">Account</h6>
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Email <span class="text-danger">*</span></label>
@@ -162,11 +218,65 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Role</label>
                     <select class="form-select" name="role">
-                        <option value="guardian">Guardian</option>
-                        <option value="clerk">Enrollment Clerk</option>
-                        <option value="teacher">Teacher</option>
-                        <option value="admin">Admin</option>
+                        <?php foreach (['guardian', 'clerk', 'teacher', 'admin'] as $r): ?>
+                            <option value="<?= e($r) ?>"><?= e($r === 'clerk' ? 'Enrollment Clerk' : ucfirst($r)) ?></option>
+                        <?php endforeach; ?>
                     </select>
+                </div>
+            </div>
+            <h6 class="fw-semibold text-primary mb-3 mt-2">Profile</h6>
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Last Name</label>
+                    <input type="text" class="form-control" name="profile_last_name">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">First Name</label>
+                    <input type="text" class="form-control" name="profile_first_name">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Middle Name</label>
+                    <input type="text" class="form-control" name="profile_middle_name">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Extension</label>
+                    <input type="text" class="form-control" name="profile_extension_name" placeholder="Jr., III">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Employee Number</label>
+                    <input type="text" class="form-control" name="profile_employee_number">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Contact Number</label>
+                    <input type="text" class="form-control" name="profile_contact_number">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Office</label>
+                    <input type="text" class="form-control" name="profile_office">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Position Title</label>
+                    <input type="text" class="form-control" name="profile_position_title">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Employment Status</label>
+                    <input type="text" class="form-control" name="profile_employment_status">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Date Hired</label>
+                    <input type="date" class="form-control" name="profile_date_hired">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Emergency Contact Name</label>
+                    <input type="text" class="form-control" name="profile_emergency_contact_name">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Emergency Contact Number</label>
+                    <input type="text" class="form-control" name="profile_emergency_contact_number">
+                </div>
+                <div class="col-12 mb-3">
+                    <label class="form-label">Address</label>
+                    <textarea class="form-control" name="profile_address" rows="2"></textarea>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Create</button>
@@ -178,9 +288,9 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="card mb-3"><div class="card-body py-2">
     <form method="GET" class="row g-2 align-items-center" id="user-search">
-        <div class="col-md-8"><input type="text" class="form-control form-control-sm" name="search" placeholder="Search by email or role..." value="<?= e($search) ?>"></div>
+        <div class="col-md-8"><input type="text" class="form-control form-control-sm" name="search" placeholder="Search by email, role, name, employee number..." value="<?= e($search) ?>"></div>
         <div class="col-md-4 d-flex gap-2">
-            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i></button>
+            <button type="submit" class="btn btn-sm btn-primary" title="Search users" aria-label="Search users"><i class="bi bi-search"></i></button>
             <?php if ($search): ?><a href="<?= APP_URL ?>/admin/admin-users.php" class="btn btn-sm btn-outline-secondary">Clear</a><?php endif; ?>
         </div>
     </form>
@@ -188,14 +298,15 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="table-container"><div class="table-responsive">
     <table class="table table-hover mb-0" id="users-table">
-        <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Password Login</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <thead><tr><th>ID</th><th>Email</th><th>Name</th><th>Employee #</th><th>Role</th><th>Password Login</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($users)): ?>
-                <tr><td colspan="7" class="text-center text-muted py-3">No users found.</td></tr>
+                <?= emptyStateRow(9, 'No user accounts match the current view.', 'User accounts are created through the Teachers, Guardians, and admin tools. Clear the search box above to see all accounts.', 'bi-people') ?>
             <?php else: foreach ($users as $u):
                 $hasPass = !empty($u['password_hash']);
                 $methodClass = $hasPass ? 'bg-secondary' : 'bg-warning text-dark';
                 $methodLabel = $hasPass ? 'Enabled' : 'Not Set';
+                $profileName = trim(format_name($u['profile_first_name'] ?? '', $u['profile_last_name'] ?? '') . ' ' . ($u['profile_middle_name'] ?? '') . ' ' . ($u['profile_extension_name'] ?? ''));
             ?>
             <tr>
                 <td><?= e((string)(int)$u['id']) ?></td>
@@ -206,17 +317,24 @@ require_once __DIR__ . '/../includes/header.php';
                     <?= e($u['email']) ?>
                 </td>
                 <td>
+                    <?= e($profileName !== '' ? $profileName : 'N/A') ?>
+                    <?php if (!empty($u['profile_position_title']) || !empty($u['profile_office'])): ?>
+                        <small class="d-block text-muted"><?= e(trim(($u['profile_position_title'] ?? '') . ' ' . ($u['profile_office'] ? '(' . $u['profile_office'] . ')' : ''))) ?></small>
+                    <?php endif; ?>
+                </td>
+                <td><?= e($u['profile_employee_number'] ?: 'N/A') ?></td>
+                <td>
                     <form method="POST" action="?id=<?= (int)$u['id'] ?>" class="d-inline">
                         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <input type="hidden" name="action" value="change_role">
                         <select class="form-select form-select-sm d-inline-block" style="width:auto;" name="new_role" onchange="this.form.submit()">
-                            <?php foreach (['admin','clerk','teacher','guardian'] as $r): ?>
+                            <?php foreach ($roleOptions as $r): ?>
                                 <option value="<?= e($r) ?>" <?= e($u['role'] === $r ? 'selected' : '') ?>><?= e($r === 'clerk' ? 'Enrollment Clerk' : ucfirst($r)) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </form>
                     <?php
-                    $secRoles = $allSecRoles[$u['id']] ?? [$u['role']];
+                    $secRoles = normalizeUserRoles($allSecRoles[$u['id']] ?? [$u['role']]);
                     $extras = array_filter($secRoles, fn($r) => $r !== $u['role']);
                     foreach ($extras as $er):
                     ?>
@@ -227,7 +345,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Manage secondary roles">+</button>
                         <ul class="dropdown-menu dropdown-menu-end" style="min-width:180px;">
                             <li><span class="dropdown-item-text small text-muted">Add/Remove Secondary Role</span></li>
-                            <?php foreach (['admin','clerk','teacher','guardian'] as $r):
+                            <?php foreach ($roleOptions as $r):
                                 if ($r === $u['role']) continue;
                                 $hasIt = in_array($r, $secRoles, true);
                             ?>
@@ -263,10 +381,10 @@ require_once __DIR__ . '/../includes/header.php';
                             <i class="bi bi-<?= e($u['is_active'] ? 'pause-circle' : 'play-circle') ?>"></i>
                         </button>
                     </form>
-                    <form method="POST" action="?id=<?= (int)$u['id'] ?>" class="d-inline" onsubmit="return confirm('Reset password?')">
+                    <form method="POST" action="?id=<?= (int)$u['id'] ?>" class="d-inline" data-confirm="Reset this user's password? They will need the new password to sign in." data-confirm-variant="warning">
                         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
                         <input type="hidden" name="action" value="reset_password">
-                        <button class="btn btn-sm btn-outline-info" title="Reset Password"><i class="bi bi-key"></i></button>
+                        <button class="btn btn-sm btn-outline-info" title="Reset Password" aria-label="Reset password"><i class="bi bi-key"></i></button>
                     </form>
                 </td>
             </tr>

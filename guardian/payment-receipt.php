@@ -59,7 +59,7 @@ $receiptNo = 'RCPT-' . date('Ymd', strtotime($issuedAt)) . '-' . str_pad((string
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Receipt - <?= e($receiptNo) ?></title>
-    <link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg">
+    <link rel="icon" type="image/png" href="<?= APP_URL ?>/assets/images/branding/agape-logo.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -127,7 +127,7 @@ $receiptNo = 'RCPT-' . date('Ymd', strtotime($issuedAt)) . '-' . str_pad((string
 <div class="sheet">
     <div class="sheet-header">
         <div class="d-flex align-items-center gap-3">
-            <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.jpg" alt="School Logo" class="school-logo">
+            <img src="<?= APP_URL ?>/assets/images/branding/agape-logo.png" alt="School Logo" class="school-logo">
             <div>
                 <div class="fw-bold fs-5"><?= e(APP_NAME) ?></div>
                 <div class="small">Official Payment Receipt</div>
@@ -186,13 +186,13 @@ $receiptNo = 'RCPT-' . date('Ymd', strtotime($issuedAt)) . '-' . str_pad((string
 
         <?php if ($payment['status'] !== 'paid'): ?>
             <div class="alert alert-warning py-2 mt-3 mb-0">
-                This receipt is marked as <strong><?= e(ucfirst($payment['status'])) ?></strong>.
+                This receipt is marked as <strong><?= e(paymentStatusLabel($payment['status'])) ?></strong>.
                 Final posting may still be in progress.
             </div>
         <?php endif; ?>
 
         <div class="d-flex justify-content-end mt-4">
-            <div class="signature-line">Cashier / Authorized Signatory</div>
+            <div class="signature-line">Treasurer / Authorized Signatory</div>
         </div>
     </div>
 </div>

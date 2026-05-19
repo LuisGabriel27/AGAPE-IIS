@@ -58,11 +58,53 @@ function loadEnrollmentPayment(PDO $pdo, int $guardianId, int $enrollmentId): ?a
     return $row ?: null;
 }
 
+function loadGuardianLatestSentAssessment(PDO $pdo, int $enrollmentId): ?array
+{
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM enrollment_assessments
+        WHERE enrollment_id = :eid
+          AND status = 'sent_to_cashier'
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([':eid' => $enrollmentId]);
+    $assessment = $stmt->fetch();
+    if (!$assessment) {
+        return null;
+    }
+
+    $itemStmt = $pdo->prepare("
+        SELECT category, description, amount, sort_order
+        FROM enrollment_assessment_items
+        WHERE assessment_id = :aid
+        ORDER BY sort_order, id
+    ");
+    $itemStmt->execute([':aid' => (int)$assessment['id']]);
+
+    return [
+        'assessment' => $assessment,
+        'items' => $itemStmt->fetchAll(),
+    ];
+}
+
 $record = loadEnrollmentPayment($pdo, (int)$guardian['id'], $enrollmentId);
 if (!$record) {
     setFlash('danger', 'Enrollment record not found or access is not allowed.');
     redirect(APP_URL . '/guardian/enrollment/');
 }
+
+$assessmentDetails = loadGuardianLatestSentAssessment($pdo, $enrollmentId);
+$documentReviewSummary = loadEnrollmentDocumentReviewSummary($pdo, $enrollmentId);
+$documentsReadyForPayment = (bool)$documentReviewSummary['all_accepted'];
+$documentReviewBlockers = enrollmentDocumentReviewBlockerText($documentReviewSummary);
+$hasPaymentAssessment = $assessmentDetails !== null
+    && !empty($record['payment_id'])
+    && (float)($record['amount'] ?? 0) > 0;
+$canSubmitPayment = $documentsReadyForPayment
+    && canGuardianSubmitEnrollmentPayment($record['enrollment_status'])
+    && $hasPaymentAssessment
+    && (string)($record['payment_status'] ?? 'pending') !== 'paid';
 
 if (in_array($record['enrollment_status'], ['enrolled', 'archived'], true)) {
     setFlash('info', 'This enrollment has already been submitted by the Registrar.');
@@ -70,7 +112,7 @@ if (in_array($record['enrollment_status'], ['enrolled', 'archived'], true)) {
 }
 
 if (in_array($record['enrollment_status'], ['paid_for_registrar'], true)) {
-    setFlash('info', 'Cashier payment is already verified. The Registrar will review this enrollment shortly.');
+    setFlash('info', 'Payment is already verified. The Registrar will review this enrollment shortly.');
     redirect(APP_URL . '/guardian/dashboard.php');
 }
 
@@ -89,17 +131,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Reference number is required for online or bank payments.';
     }
 
+    if (!$documentsReadyForPayment) {
+        $errors[] = 'Payment cannot be submitted until all required documents are accepted by the Enrollment Clerk.'
+            . ($documentReviewBlockers !== '' ? ' ' . $documentReviewBlockers : '');
+    }
+
+    if (!canGuardianSubmitEnrollmentPayment($record['enrollment_status'])) {
+        $errors[] = 'Payment can only be submitted after the enrollment has been assessed for payment.';
+    }
+
+    if (!$hasPaymentAssessment) {
+        $errors[] = 'No payment assessment has been issued for this enrollment yet.';
+    }
+
+    if ((string)($record['payment_status'] ?? 'pending') === 'paid') {
+        $errors[] = 'This payment has already been verified.';
+    }
+
     if (empty($errors)) {
         try {
             $pdo->beginTransaction();
 
-            $description = 'Enrollment Fee';
+            $description = (string)($record['description'] ?? 'Enrollment Assessment');
             if ($notes !== '') {
-                $description .= ' - ' . substr($notes, 0, 120);
+                $description = 'Guardian payment reference - ' . substr($notes, 0, 120);
             }
 
             $paymentId = (int)($record['payment_id'] ?? 0);
-            if ($paymentId > 0) {
+            if ((string)($record['payment_status'] ?? '') === 'failed') {
+                $stmt = $pdo->prepare("
+                    INSERT INTO payments (enrollment_id, amount, method, reference_no, description, status)
+                    VALUES (:eid, :amount, :method, :reference_no, :description, 'pending')
+                ");
+                $stmt->execute([
+                    ':eid' => $enrollmentId,
+                    ':amount' => (float)$record['amount'],
+                    ':method' => $method,
+                    ':reference_no' => $referenceNo !== '' ? $referenceNo : null,
+                    ':description' => $description,
+                ]);
+            } else {
                 $stmt = $pdo->prepare("
                     UPDATE payments
                     SET method = :method,
@@ -108,6 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         status = 'pending',
                         paid_at = NULL
                     WHERE id = :id
+                      AND status::text <> 'paid'
                 ");
                 $stmt->execute([
                     ':method' => $method,
@@ -115,34 +187,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':description' => $description,
                     ':id' => $paymentId,
                 ]);
-            } else {
-                $stmt = $pdo->prepare("
-                    INSERT INTO payments (enrollment_id, amount, method, reference_no, description, status)
-                    VALUES (:eid, :amount, :method, :reference_no, :description, 'pending')
-                ");
-                $stmt->execute([
-                    ':eid' => $enrollmentId,
-                    ':amount' => 15000.00,
-                    ':method' => $method,
-                    ':reference_no' => $referenceNo !== '' ? $referenceNo : null,
-                    ':description' => $description,
-                ]);
+                if ($stmt->rowCount() !== 1) {
+                    throw new RuntimeException('Payment can no longer be updated.');
+                }
             }
 
-            // Move the enrollment forward to 'awaiting_payment' so the cashier
-            // can verify. Only step forward from earlier-stage statuses; once a
-            // record is already at 'paid_for_registrar' / 'enrolled' / 'archived'
-            // we leave it alone.
-            $advancingStatuses = [
-                'submitted',
-                'requirements_incomplete',
-                'documents_under_review',
-                'assessed_for_payment',
-                'awaiting_payment',
-                'returned',
-            ];
+            // Move the enrollment forward to payment verification.
+            $advancingStatuses = guardianPaymentSubmissionStatuses();
             $placeholders = implode(',', array_fill(0, count($advancingStatuses), '?'));
-            $remark = 'Payment reference submitted by guardian; awaiting cashier verification.';
+            $remark = 'Payment reference submitted by guardian; awaiting payment verification.';
             $stmt = $pdo->prepare("
                 UPDATE enrollments
                 SET payment_submitted_at = NOW(),
@@ -155,12 +208,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->commit();
 
-            auditLog('enrollment_sent_for_review', 'enrollments', $enrollmentId, null, [
+            auditLog('enrollment_payment_reference_submitted', 'enrollments', $enrollmentId, null, [
                 'payment_method' => $method,
                 'reference_no' => $referenceNo !== '' ? $referenceNo : null,
             ]);
 
-            setFlash('success', 'Payment reference submitted. Registrar can now review this enrollment for submission to teachers.');
+            setFlash('success', 'Payment reference submitted. Admin can now verify the payment.');
             redirect(APP_URL . '/guardian/dashboard.php');
         } catch (Exception $e) {
             $pdo->rollBack();
@@ -170,6 +223,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $record = loadEnrollmentPayment($pdo, (int)$guardian['id'], $enrollmentId);
+    $assessmentDetails = loadGuardianLatestSentAssessment($pdo, $enrollmentId);
+    $documentReviewSummary = loadEnrollmentDocumentReviewSummary($pdo, $enrollmentId);
+    $documentsReadyForPayment = (bool)$documentReviewSummary['all_accepted'];
+    $documentReviewBlockers = enrollmentDocumentReviewBlockerText($documentReviewSummary);
+    $hasPaymentAssessment = $assessmentDetails !== null
+        && !empty($record['payment_id'])
+        && (float)($record['amount'] ?? 0) > 0;
+    $canSubmitPayment = $documentsReadyForPayment
+        && canGuardianSubmitEnrollmentPayment($record['enrollment_status'])
+        && $hasPaymentAssessment
+        && (string)($record['payment_status'] ?? 'pending') !== 'paid';
 }
 
 $pageTitle = 'Enrollment Payment';
@@ -178,8 +242,8 @@ require_once __DIR__ . '/../../includes/header.php';
 
 <div class="row mb-4">
     <div class="col-md-8">
-        <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Cashier Payment Reference</h4>
-        <p class="text-muted mb-0">Record payment details after Registrar assessment and Cashier payment.</p>
+        <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Payment Reference</h4>
+        <p class="text-muted mb-0">Submit payment details after the Registrar issues the assessment.</p>
     </div>
     <div class="col-md-4 text-md-end mt-3 mt-md-0">
         <a class="btn btn-outline-secondary" href="<?= APP_URL ?>/guardian/enrollment/"><i class="bi bi-arrow-left me-1"></i>Back to Enrollment</a>
@@ -200,6 +264,26 @@ require_once __DIR__ . '/../../includes/header.php';
     </div>
 <?php endif; ?>
 
+<?php if ((string)($record['payment_status'] ?? '') === 'failed'): ?>
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        The latest payment reference was not verified. Please check the details and submit an updated reference.
+    </div>
+<?php endif; ?>
+
+<?php if (!$canSubmitPayment): ?>
+    <div class="alert alert-warning">
+        <i class="bi bi-shield-exclamation me-1"></i>
+        Payment submission is locked until required documents are accepted and a payment assessment has been issued.
+        <?php if ($documentReviewBlockers !== ''): ?>
+            <div class="small mt-1"><?= e($documentReviewBlockers) ?></div>
+        <?php endif; ?>
+        <?php if (!$hasPaymentAssessment): ?>
+            <div class="small mt-1">No assessed payment amount is available yet.</div>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+
 <div class="row g-4">
     <div class="col-lg-5">
         <div class="card h-100">
@@ -212,6 +296,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     <tr><th>School Year</th><td><?= e($record['school_year']) ?></td></tr>
                     <tr><th>Term</th><td><?= e($record['term']) ?></td></tr>
                     <tr><th>Enrollment Status</th><td><span class="badge <?= e(enrollmentStatusBadgeClass($record['enrollment_status'])) ?>"><?= e(enrollmentStatusLabel($record['enrollment_status'])) ?></span></td></tr>
+                    <tr><th>Payment Status</th><td><span class="badge <?= e(paymentStatusBadgeClass($record['payment_status'] ?? 'pending')) ?>"><?= e(paymentStatusLabel($record['payment_status'] ?? 'pending')) ?></span></td></tr>
                 </table>
             </div>
         </div>
@@ -223,13 +308,46 @@ require_once __DIR__ . '/../../includes/header.php';
             <div class="card-body">
                 <div class="card bg-light mb-3">
                     <div class="card-body py-3">
-                        <h6 class="fw-bold mb-2">Fee Breakdown</h6>
-                        <table class="table table-sm mb-0">
-                            <tr><td>Tuition Fee</td><td class="text-end">&#8369;12,000.00</td></tr>
-                            <tr><td>Miscellaneous Fee</td><td class="text-end">&#8369;2,000.00</td></tr>
-                            <tr><td>Lab Fee</td><td class="text-end">&#8369;1,000.00</td></tr>
-                            <tr class="fw-bold border-top"><td>Total</td><td class="text-end">&#8369;15,000.00</td></tr>
-                        </table>
+                        <h6 class="fw-bold mb-2">Assessment Breakdown</h6>
+                        <?php if ($assessmentDetails && !empty($assessmentDetails['items'])): ?>
+                            <?php $deductionCategories = assessmentDeductionCategories(); ?>
+                            <table class="table table-sm mb-0">
+                                <?php foreach ($assessmentDetails['items'] as $item):
+                                    $category = (string)($item['category'] ?? '');
+                                    $isDeduction = in_array($category, $deductionCategories, true);
+                                    $amount = (float)($item['amount'] ?? 0);
+                                ?>
+                                    <tr>
+                                        <td>
+                                            <?= e($item['description'] ?: assessmentItemCategoryLabel($category)) ?>
+                                            <div class="small text-muted"><?= e(assessmentItemCategoryLabel($category)) ?></div>
+                                        </td>
+                                        <td class="text-end">
+                                            <?= $isDeduction ? '-' : '' ?>&#8369;<?= e(number_format($amount, 2)) ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                <tr class="fw-bold border-top">
+                                    <td>Total</td>
+                                    <td class="text-end">&#8369;<?= e(number_format((float)$assessmentDetails['assessment']['total_amount'], 2)) ?></td>
+                                </tr>
+                            </table>
+                        <?php elseif ($hasPaymentAssessment): ?>
+                            <table class="table table-sm mb-0">
+                                <tr>
+                                    <td><?= e($record['description'] ?: 'Enrollment Assessment') ?></td>
+                                    <td class="text-end">&#8369;<?= e(number_format((float)$record['amount'], 2)) ?></td>
+                                </tr>
+                                <tr class="fw-bold border-top">
+                                    <td>Total</td>
+                                    <td class="text-end">&#8369;<?= e(number_format((float)$record['amount'], 2)) ?></td>
+                                </tr>
+                            </table>
+                        <?php else: ?>
+                            <div class="text-muted small">
+                                The registrar has not issued a payment assessment for this enrollment yet.
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -266,10 +384,10 @@ require_once __DIR__ . '/../../includes/header.php';
 
                     <div class="alert alert-info mb-3">
                         <i class="bi bi-shield-check me-1"></i>
-                        Submitting this reference marks the enrollment as ready for Registrar submission to teachers.
+                        Submitting this reference sends it for payment verification. Enrollment is not final until admin marks the payment as paid.
                     </div>
 
-                    <button type="submit" class="btn btn-success">
+                    <button type="submit" class="btn btn-success" <?= $canSubmitPayment ? '' : 'disabled' ?>>
                         <i class="bi bi-send-check me-1"></i>Submit Payment Reference
                     </button>
                 </form>

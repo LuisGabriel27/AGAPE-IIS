@@ -220,12 +220,12 @@ require_once __DIR__ . '/../includes/header.php';
                                 <span class="text-muted small"><i class="bi bi-lock-fill me-1"></i>Read-only</span>
                             <?php else: ?>
                                 <div class="d-flex gap-1 justify-content-center">
-                                    <a href="?action=edit&id=<?= (int)$ev['id'] ?>" class="btn btn-sm btn-outline-primary btn-icon" title="Edit">
+                                    <a href="?action=edit&id=<?= (int)$ev['id'] ?>" class="btn btn-sm btn-outline-primary btn-icon" title="Edit event" aria-label="Edit event">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-                                    <form method="POST" action="?action=delete&id=<?= (int)$ev['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this event?')">
+                                    <form method="POST" action="?action=delete&id=<?= (int)$ev['id'] ?>" class="d-inline" data-confirm="Delete this calendar event? This cannot be undone." data-confirm-variant="danger">
                                         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
-                                        <button class="btn btn-sm btn-outline-danger btn-icon" title="Delete">
+                                        <button class="btn btn-sm btn-outline-danger btn-icon" title="Delete event" aria-label="Delete event">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>

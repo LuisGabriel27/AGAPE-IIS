@@ -49,7 +49,7 @@ require_once __DIR__ . '/../includes/header.php';
 
                     if (empty($upcomingAll)):
                     ?>
-                        <tr><td colspan="5" class="text-center text-muted py-4">No upcoming events.</td></tr>
+                        <?= emptyStateRow(5, 'No upcoming events.', 'School events and holidays are published by the administrator. Check back later or contact the school office.', 'bi-calendar-event') ?>
                     <?php else: foreach ($upcomingAll as $ev):
                         $typeColorMap = [
                             'event'   => 'badge-status-enrolled',

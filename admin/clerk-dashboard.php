@@ -98,8 +98,8 @@ $pipelineStage = static function (array $row): array {
 </div>
 
 <!-- KPI Cards -->
-<div class="row g-3 mb-4">
-    <div class="col-xl col-md-4 col-6">
+<div class="row g-3 mb-4 row-cols-2 row-cols-md-3 row-cols-xl-4 kpi-row">
+    <div class="col">
         <a class="text-decoration-none" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=documents_under_review">
             <div class="kpi-card kpi-info">
                 <div class="kpi-icon-wrap"><i class="bi bi-clipboard-data-fill"></i></div>
@@ -110,7 +110,7 @@ $pipelineStage = static function (array $row): array {
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=requirements_incomplete">
             <div class="kpi-card kpi-danger">
                 <div class="kpi-icon-wrap"><i class="bi bi-exclamation-triangle-fill"></i></div>
@@ -121,29 +121,29 @@ $pipelineStage = static function (array $row): array {
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=documents_under_review">
             <div class="kpi-card kpi-warning">
                 <div class="kpi-icon-wrap"><i class="bi bi-cash-coin"></i></div>
                 <div>
-                    <div class="kpi-label">Ready for Payment Assessment</div>
+                    <div class="kpi-label">Documents Under Review</div>
                     <div class="kpi-value"><?= e(number_format($readyForAssessment)) ?></div>
                 </div>
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=awaiting_payment">
             <div class="kpi-card kpi-warning">
                 <div class="kpi-icon-wrap"><i class="bi bi-hourglass-split"></i></div>
                 <div>
-                    <div class="kpi-label">Awaiting Cashier Payment</div>
+                    <div class="kpi-label">Awaiting Payment Verification</div>
                     <div class="kpi-value"><?= e(number_format($awaitingCashier)) ?></div>
                 </div>
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=paid_for_registrar">
             <div class="kpi-card kpi-primary">
                 <div class="kpi-icon-wrap"><i class="bi bi-send-check-fill"></i></div>
@@ -154,7 +154,7 @@ $pipelineStage = static function (array $row): array {
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=returned">
             <div class="kpi-card kpi-danger">
                 <div class="kpi-icon-wrap"><i class="bi bi-arrow-counterclockwise"></i></div>
@@ -165,7 +165,7 @@ $pipelineStage = static function (array $row): array {
             </div>
         </a>
     </div>
-    <div class="col-xl col-md-4 col-6">
+    <div class="col">
         <a class="text-decoration-none" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=enrolled">
             <div class="kpi-card kpi-success">
                 <div class="kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
@@ -188,10 +188,7 @@ $pipelineStage = static function (array $row): array {
             </div>
             <div class="card-body p-0">
                 <?php if (empty($recentPending)): ?>
-                    <div class="empty-state">
-                        <i class="bi bi-inbox d-block"></i>
-                        <p>No pending applications.</p>
-                    </div>
+                    <?= emptyStateHtml('No pending enrollment applications.', 'New applications appear here when guardians submit enrollments from their portal. There is nothing waiting for clerk review right now.', 'bi-inbox') ?>
                 <?php else: ?>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0">
@@ -265,7 +262,7 @@ $pipelineStage = static function (array $row): array {
                     </div>
                     <div>
                         <div class="qa-text">Payment / Assessment Workflow</div>
-                        <div class="qa-sub"><?= e((string)$readyForAssessment) ?> ready, <?= e((string)$awaitingCashier) ?> at cashier</div>
+                        <div class="qa-sub"><?= e((string)$readyForAssessment) ?> under document review, <?= e((string)$awaitingCashier) ?> awaiting verification</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-enrollments.php?status=paid_for_registrar" class="quick-action">

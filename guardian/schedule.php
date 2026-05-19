@@ -280,13 +280,11 @@ require_once __DIR__ . '/../includes/header.php';
     <!-- Tab 1: Weekly Timetable -->
     <div class="tab-pane fade show active" id="weeklySchedule">
         <?php if (empty($students)): ?>
-            <div class="alert alert-info mb-0">No students are linked to your account yet.</div>
+            <?= emptyStateHtml('No students are linked to your account yet.', 'A school registrar or clerk links your child to your guardian account during enrollment. Please contact the school office if your child is missing.', 'bi-people') ?>
         <?php elseif ($sectionId <= 0): ?>
-            <div class="alert alert-info mb-0">The selected student has no assigned section yet.</div>
+            <?= emptyStateHtml('The selected student has no assigned section yet.', 'The registrar assigns a section once enrollment is finalized. The weekly schedule will appear here after that.', 'bi-diagram-3') ?>
         <?php elseif (empty($slots)): ?>
-            <div class="alert alert-info mb-0">
-                No class schedule found for the selected filters (<?= e($selectedYear) ?>, <?= e($selectedTerm) ?>).
-            </div>
+            <?= emptyStateHtml('No class schedule for ' . $selectedYear . ' (' . $selectedTerm . ').', 'Schedules are set up by the school administrator. If classes have started, please follow up with the school office.', 'bi-calendar-week') ?>
         <?php else: ?>
             <div class="table-responsive">
                 <table class="timetable table" id="timetable-grid">

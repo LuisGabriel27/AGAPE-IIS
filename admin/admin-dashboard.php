@@ -17,8 +17,8 @@ $enrolledThisTerm  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status 
 $totalStudentsForRate = max(1, $totalStudents);
 $enrollmentRate    = round(($enrolledThisTerm / $totalStudentsForRate) * 100, 1);
 
-// "For Registrar" = cashier has verified payment, registrar needs to submit to teachers.
-// "For Cashier"   = guardian has submitted payment proof, cashier needs to verify.
+// "For Registrar" = payment has been verified, registrar needs to submit to teachers.
+// "For Payment"   = assessment/payment reference still needs verification.
 $pendingEnroll  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'paid_for_registrar'")->fetchColumn();
 $pendingPayment = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status IN ('awaiting_payment', 'assessed_for_payment')")->fetchColumn();
 
@@ -154,7 +154,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     </div>
                     <div>
                         <div class="qa-text">Registrar Queue</div>
-                        <div class="qa-sub"><?= e((string)$pendingEnroll) ?> paid, <?= e((string)$pendingPayment) ?> for cashier</div>
+                        <div class="qa-sub"><?= e((string)$pendingEnroll) ?> paid, <?= e((string)$pendingPayment) ?> for payment</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-students.php" class="quick-action">
@@ -171,8 +171,8 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         <i class="bi bi-cash-stack"></i>
                     </div>
                     <div>
-                        <div class="qa-text">Cashier Payments</div>
-                        <div class="qa-sub">Record and review payments</div>
+                        <div class="qa-text">Payment Verification</div>
+                        <div class="qa-sub">Record and verify payments</div>
                     </div>
                 </a>
                 <a href="<?= APP_URL ?>/admin/admin-calendar.php" class="quick-action">

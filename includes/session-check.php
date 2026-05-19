@@ -11,13 +11,20 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/helpers.php';
 
-// Start session with secure cookie params
+// Start session with secure cookie params. Local XAMPP can keep HTTP cookies;
+// production/proxied HTTPS receives Secure cookies automatically.
 if (session_status() === PHP_SESSION_NONE) {
+    $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? '') === '443')
+        || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https')
+        || (stripos((string)APP_URL, 'https://') === 0);
+
+    ini_set('session.use_strict_mode', '1');
     session_set_cookie_params([
         'lifetime' => SESSION_LIFETIME,
         'path'     => '/',
         'domain'   => '',
-        'secure'   => false,   // set true in production with HTTPS
+        'secure'   => $isHttps,
         'httponly'  => true,
         'samesite'  => 'Strict',
     ]);

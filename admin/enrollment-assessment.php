@@ -3,7 +3,7 @@
  * Enrollment Payment Assessment
  *
  * Clerk builds a line-item breakdown (tuition, fees, discounts, scholarships)
- * for an enrollment, computes the total, and sends it to the cashier.
+ * for an enrollment, computes the total, and sends it for payment verification.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -39,6 +39,10 @@ if (!$enrollment) {
 
 $categories = assessmentItemCategories();
 $deductionCategories = assessmentDeductionCategories();
+$requiredDocuments = requiredEnrollmentDocuments();
+$documentReviewSummary = loadEnrollmentDocumentReviewSummary($pdo, $enrollmentId, $requiredDocuments);
+$documentsReadyForAssessment = (bool)$documentReviewSummary['all_accepted'];
+$documentReviewBlockers = enrollmentDocumentReviewBlockerText($documentReviewSummary);
 $errors = [];
 
 /**
@@ -71,7 +75,7 @@ $loadLatestAssessment = static function (PDO $pdo, int $enrollmentId): ?array {
     ];
 };
 
-// ── POST: save draft or send to cashier ─────────────────────
+// POST: save draft or send for payment verification.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
     $action = trim($_POST['action'] ?? '');
@@ -123,8 +127,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $total = max(0.0, $subtotal - $deductions);
 
     if ($action === 'send_to_cashier') {
+        if (!$documentsReadyForAssessment) {
+            $errors[] = 'Payment assessment cannot be sent until all required documents are accepted.'
+                . ($documentReviewBlockers !== '' ? ' ' . $documentReviewBlockers : '');
+        }
         if (empty($cleanItems)) {
-            $errors[] = 'Add at least one line item before sending to the cashier.';
+            $errors[] = 'Add at least one line item before sending for payment verification.';
         }
         if ($total <= 0) {
             $errors[] = 'Total assessed amount must be greater than zero before sending.';
@@ -132,6 +140,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (in_array($enrollment['status'], enrollmentTerminalStatuses(), true)) {
             $errors[] = 'This enrollment is already finalized; assessment cannot be sent.';
         }
+        if (!canSendEnrollmentAssessment($enrollment['status'])) {
+            $errors[] = 'Payment assessment can only be sent before guardian payment verification begins.';
+        }
+        $existingForValidation = $loadLatestAssessment($pdo, $enrollmentId);
+        if (
+            $existingForValidation
+            && (string)$existingForValidation['assessment']['status'] === 'sent_to_cashier'
+            && in_array((string)$enrollment['status'], ['assessed_for_payment', 'awaiting_payment'], true)
+        ) {
+            $errors[] = 'This assessment was already sent for payment. It cannot be edited after payment begins.';
+        }
+        $latestPaymentForValidation = latestPaymentForEnrollment($pdo, $enrollmentId);
+        if ($latestPaymentForValidation && (string)$latestPaymentForValidation['status'] === 'paid') {
+            $errors[] = 'This enrollment already has a verified payment. Assessment changes are not allowed.';
+        }
+    } elseif (!canSendEnrollmentAssessment($enrollment['status'])) {
+        $errors[] = 'Assessment drafts can only be edited before payment verification begins.';
     }
 
     if (empty($errors)) {
@@ -145,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $assessmentId = (int)$existing['assessment']['id'];
             } elseif ($existing && $existing['assessment']['status'] === 'sent_to_cashier' && $action === 'save_draft') {
                 // Don't allow editing a sent assessment; create a new draft instead.
-                $errors[] = 'Latest assessment was already sent to the cashier and cannot be edited. Create a new one if needed.';
+                $errors[] = 'Latest assessment was already sent for payment verification and cannot be edited. Create a new one if needed.';
             }
 
             if (empty($errors)) {
@@ -213,28 +238,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':id'  => $assessmentId,
                     ]);
 
-                    // Sync the existing pending payment row to the assessed total,
-                    // or create one if none exists.
-                    $payStmt = $pdo->prepare("
-                        SELECT id, status FROM payments
-                        WHERE enrollment_id = :eid
-                        ORDER BY id DESC
-                        LIMIT 1
-                    ");
-                    $payStmt->execute([':eid' => $enrollmentId]);
-                    $latestPayment = $payStmt->fetch();
-                    if ($latestPayment && $latestPayment['status'] !== 'paid') {
+                    // Sync the existing non-final payment row to the assessed
+                    // total, or create one if none exists.
+                    $latestPayment = latestPaymentForEnrollment($pdo, $enrollmentId);
+                    if ($latestPayment && (string)$latestPayment['status'] === 'paid') {
+                        throw new RuntimeException('Payment is already verified; assessment cannot be changed.');
+                    }
+                    if ($latestPayment) {
                         $pdo->prepare("
                             UPDATE payments
                             SET amount = :amt,
-                                description = :desc
+                                method = 'cash',
+                                reference_no = NULL,
+                                description = :desc,
+                                status = 'pending',
+                                paid_at = NULL
                             WHERE id = :id
                         ")->execute([
                             ':amt'  => $total,
                             ':desc' => 'Enrollment Assessment',
                             ':id'   => (int)$latestPayment['id'],
                         ]);
-                    } elseif (!$latestPayment) {
+                    } else {
                         $pdo->prepare("
                             INSERT INTO payments
                                 (enrollment_id, amount, method, description, status)
@@ -245,19 +270,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]);
                     }
 
-                    // Advance the enrollment to assessed_for_payment if it's
-                    // still in an earlier stage. Don't overwrite payment-stage
-                    // rows that have already moved past assessment.
-                    $pdo->prepare("
+                    // Advance the enrollment to assessed_for_payment only while
+                    // it is still before payment verification.
+                    $assessmentStatuses = enrollmentAssessmentEditableStatuses();
+                    $assessmentParams = [];
+                    $assessmentPlaceholders = [];
+                    foreach ($assessmentStatuses as $idx => $stageStatus) {
+                        $param = ':stage_status_' . $idx;
+                        $assessmentPlaceholders[] = $param;
+                        $assessmentParams[$param] = $stageStatus;
+                    }
+                    $assessmentPlaceholdersSql = implode(',', $assessmentPlaceholders);
+                    $stmt = $pdo->prepare("
                         UPDATE enrollments
                         SET status = 'assessed_for_payment',
-                            remarks = 'Payment assessment sent to cashier (₱' || to_char(:total, 'FM999,999,999.00') || ').'
+                            remarks = 'Payment assessment issued (PHP ' || to_char(:total, 'FM999,999,999.00') || ').'
                         WHERE id = :id
-                          AND status::text IN ('submitted', 'requirements_incomplete', 'documents_under_review', 'returned')
-                    ")->execute([
+                          AND status::text IN ({$assessmentPlaceholdersSql})
+                    ");
+                    $stmt->execute(array_merge([
                         ':total' => $total,
                         ':id'    => $enrollmentId,
-                    ]);
+                    ], $assessmentParams));
                 }
             }
 
@@ -271,7 +305,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ['enrollment_id' => $enrollmentId, 'total' => $total]
                 );
                 setFlash('success', $action === 'send_to_cashier'
-                    ? 'Assessment sent to the cashier. The cashier can now record payment.'
+                    ? 'Assessment sent for payment verification. Guardian can now submit payment details.'
                     : 'Assessment draft saved.');
 
                 if ($action === 'send_to_cashier') {
@@ -352,10 +386,25 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 <?php endif; ?>
 
+<?php if (!$documentsReadyForAssessment): ?>
+    <div class="alert alert-warning">
+        <i class="bi bi-shield-exclamation me-1"></i>
+        Payment assessment is locked until the clerk accepts every required document.
+        <?php if ($documentReviewBlockers !== ''): ?>
+            <div class="small mt-1"><?= e($documentReviewBlockers) ?></div>
+        <?php endif; ?>
+        <div class="mt-2">
+            <a class="btn btn-sm btn-outline-primary" href="<?= APP_URL ?>/admin/admin-enrollments.php?status=documents_under_review">
+                Review documents
+            </a>
+        </div>
+    </div>
+<?php endif; ?>
+
 <?php if ($isLocked): ?>
     <div class="alert alert-info">
         <i class="bi bi-lock me-1"></i>
-        This assessment was sent to the cashier on <?= e($assessmentSentAt ? date('M d, Y h:i A', strtotime((string)$assessmentSentAt)) : 'an earlier date') ?>. It can be viewed but not edited.
+        This assessment was sent for payment verification on <?= e($assessmentSentAt ? date('M d, Y h:i A', strtotime((string)$assessmentSentAt)) : 'an earlier date') ?>. It can be viewed but not edited.
     </div>
 <?php endif; ?>
 
@@ -406,7 +455,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 </td>
                                 <?php if (!$isLocked): ?>
                                 <td class="text-end">
-                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="Remove line">
+                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="Remove line" aria-label="Remove assessment line">
                                         <i class="bi bi-x-lg"></i>
                                     </button>
                                 </td>
@@ -439,7 +488,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="card mb-3">
         <div class="card-header"><i class="bi bi-chat-left-text me-1"></i>Clerk Notes</div>
         <div class="card-body">
-            <textarea class="form-control" name="notes" rows="3" placeholder="Optional notes to the cashier or guardian." <?= $isLocked ? 'readonly' : '' ?>><?= e($displayNotes) ?></textarea>
+            <textarea class="form-control" name="notes" rows="3" placeholder="Optional notes to admin or guardian." <?= $isLocked ? 'readonly' : '' ?>><?= e($displayNotes) ?></textarea>
         </div>
     </div>
 
@@ -448,8 +497,8 @@ require_once __DIR__ . '/../includes/header.php';
         <button type="submit" name="action" value="save_draft" class="btn btn-outline-primary">
             <i class="bi bi-save me-1"></i>Save Draft
         </button>
-        <button type="submit" name="action" value="send_to_cashier" class="btn btn-success" id="btn-send-cashier">
-            <i class="bi bi-send-check me-1"></i>Send to Cashier
+        <button type="submit" name="action" value="send_to_cashier" class="btn btn-success" id="btn-send-cashier" <?= $documentsReadyForAssessment ? '' : 'disabled' ?>>
+            <i class="bi bi-send-check me-1"></i>Send for Payment
         </button>
     </div>
     <?php endif; ?>
@@ -501,7 +550,7 @@ require_once __DIR__ . '/../includes/header.php';
             <td><input type="text" class="form-control form-control-sm" name="items[${idx}][description]" placeholder="Description"></td>
             <td><input type="number" step="0.01" min="0" class="form-control form-control-sm item-amount" name="items[${idx}][amount]" placeholder="0.00"></td>
             <td class="text-end">
-                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="Remove line">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="Remove line" aria-label="Remove assessment line">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </td>

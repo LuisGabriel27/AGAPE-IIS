@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Shared Calendar Widget
  * Renders a visual monthly calendar grid with event badges.

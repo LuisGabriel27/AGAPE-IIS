@@ -18,10 +18,10 @@ function getDB(): PDO
 {
     static $pdo = null;
     if ($pdo === null) {
-        // Port 6543 = Supabase Transaction Pooler (much faster for web apps).
-        // Port 5432 = Session Pooler (used only if you need SET/advisory locks).
-        $dsn = 'pgsql:host=' . DB_HOST . ';port=6543;dbname=' . DB_NAME
-             . ';sslmode=require;connect_timeout=10';
+        $port = defined('DB_PORT') ? DB_PORT : '6543';
+        $sslMode = defined('DB_SSLMODE') ? DB_SSLMODE : 'require';
+        $dsn = 'pgsql:host=' . DB_HOST . ';port=' . $port . ';dbname=' . DB_NAME
+             . ';sslmode=' . $sslMode . ';connect_timeout=10';
         $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,

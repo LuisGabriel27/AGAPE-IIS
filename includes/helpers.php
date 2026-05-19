@@ -44,6 +44,326 @@ function auditLog(string $action, ?string $table = null, ?int $recordId = null, 
 }
 
 /**
+ * Normalize login/account emails before validation and storage.
+ */
+function normalizeEmailAddress(string $email): string
+{
+    return strtolower(trim($email));
+}
+
+function nullIfBlank(?string $value): ?string
+{
+    $value = trim((string)$value);
+    return $value === '' ? null : $value;
+}
+
+/**
+ * Find an existing student with the same LRN or exact full name.
+ */
+function findDuplicateStudent(PDO $pdo, string $firstName, string $lastName, string $lrn = '', int $excludeStudentId = 0): ?array
+{
+    $excludeSql = $excludeStudentId > 0 ? ' AND id <> :exclude_id' : '';
+
+    $lrn = trim($lrn);
+    if ($lrn !== '') {
+        $params = [':lrn' => $lrn];
+        if ($excludeStudentId > 0) {
+            $params[':exclude_id'] = $excludeStudentId;
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT id, first_name, last_name, lrn
+            FROM students
+            WHERE lrn = :lrn{$excludeSql}
+            LIMIT 1
+        ");
+        $stmt->execute($params);
+        $student = $stmt->fetch();
+        if ($student) {
+            $student['duplicate_type'] = 'lrn';
+            return $student;
+        }
+    }
+
+    $firstName = trim($firstName);
+    $lastName = trim($lastName);
+    if ($firstName !== '' && $lastName !== '') {
+        $params = [
+            ':first_name' => $firstName,
+            ':last_name'  => $lastName,
+        ];
+        if ($excludeStudentId > 0) {
+            $params[':exclude_id'] = $excludeStudentId;
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT id, first_name, last_name, lrn
+            FROM students
+            WHERE LOWER(TRIM(COALESCE(first_name, ''))) = LOWER(TRIM(:first_name))
+              AND LOWER(TRIM(COALESCE(last_name, ''))) = LOWER(TRIM(:last_name))
+              {$excludeSql}
+            LIMIT 1
+        ");
+        $stmt->execute($params);
+        $student = $stmt->fetch();
+        if ($student) {
+            $student['duplicate_type'] = 'name';
+            return $student;
+        }
+    }
+
+    return null;
+}
+
+function findUserByEmail(PDO $pdo, string $email): ?array
+{
+    $email = normalizeEmailAddress($email);
+    if ($email === '') {
+        return null;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM users
+        WHERE LOWER(TRIM(email)) = :email
+        LIMIT 1
+    ");
+    $stmt->execute([':email' => $email]);
+    $user = $stmt->fetch();
+
+    return $user ?: null;
+}
+
+function findTeacherProfileByUserId(PDO $pdo, int $userId): ?array
+{
+    $stmt = $pdo->prepare("
+        SELECT t.*, u.email
+        FROM teachers t
+        INNER JOIN users u ON u.id = t.user_id
+        WHERE t.user_id = :uid
+        LIMIT 1
+    ");
+    $stmt->execute([':uid' => $userId]);
+    $teacher = $stmt->fetch();
+
+    return $teacher ?: null;
+}
+
+function findGuardianProfileByUserId(PDO $pdo, int $userId): ?array
+{
+    $stmt = $pdo->prepare("
+        SELECT g.*, u.email
+        FROM guardians g
+        INNER JOIN users u ON u.id = g.user_id
+        WHERE g.user_id = :uid
+        LIMIT 1
+    ");
+    $stmt->execute([':uid' => $userId]);
+    $guardian = $stmt->fetch();
+
+    return $guardian ?: null;
+}
+
+/**
+ * Find a likely duplicate teacher by identity details.
+ * Same name alone is not enough; same contact or same linked email is.
+ */
+function findDuplicateTeacherProfile(
+    PDO $pdo,
+    string $firstName,
+    string $lastName,
+    string $contact = '',
+    string $email = '',
+    int $excludeTeacherId = 0
+): ?array {
+    $firstName = trim($firstName);
+    $lastName = trim($lastName);
+    $contact = trim($contact);
+    $email = normalizeEmailAddress($email);
+
+    if ($lastName === '') {
+        return null;
+    }
+
+    $params = [
+        ':first_name' => $firstName,
+        ':last_name' => $lastName,
+        ':contact' => $contact,
+        ':email' => $email,
+    ];
+    $excludeSql = '';
+    if ($excludeTeacherId > 0) {
+        $excludeSql = ' AND t.id <> :exclude_id';
+        $params[':exclude_id'] = $excludeTeacherId;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT t.*, u.email
+        FROM teachers t
+        INNER JOIN users u ON u.id = t.user_id
+        WHERE LOWER(TRIM(COALESCE(t.first_name, ''))) = LOWER(TRIM(:first_name))
+          AND LOWER(TRIM(COALESCE(t.last_name, ''))) = LOWER(TRIM(:last_name))
+          AND (
+              (:contact <> '' AND LOWER(TRIM(COALESCE(t.contact_number, ''))) = LOWER(TRIM(:contact)))
+              OR (:email <> '' AND LOWER(TRIM(u.email)) = :email)
+          )
+          {$excludeSql}
+        LIMIT 1
+    ");
+    $stmt->execute($params);
+    $teacher = $stmt->fetch();
+
+    return $teacher ?: null;
+}
+
+/**
+ * Find a likely duplicate guardian by identity details.
+ * Same name alone is not enough; same contact or same linked email is.
+ */
+function findDuplicateGuardianProfile(
+    PDO $pdo,
+    string $firstName,
+    string $lastName,
+    string $contact = '',
+    string $email = '',
+    int $excludeGuardianId = 0
+): ?array {
+    $firstName = trim($firstName);
+    $lastName = trim($lastName);
+    $contact = trim($contact);
+    $email = normalizeEmailAddress($email);
+
+    if ($lastName === '') {
+        return null;
+    }
+
+    $params = [
+        ':first_name' => $firstName,
+        ':last_name' => $lastName,
+        ':contact' => $contact,
+        ':email' => $email,
+    ];
+    $excludeSql = '';
+    if ($excludeGuardianId > 0) {
+        $excludeSql = ' AND g.id <> :exclude_id';
+        $params[':exclude_id'] = $excludeGuardianId;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT g.*, u.email
+        FROM guardians g
+        INNER JOIN users u ON u.id = g.user_id
+        WHERE LOWER(TRIM(COALESCE(g.first_name, ''))) = LOWER(TRIM(:first_name))
+          AND LOWER(TRIM(COALESCE(g.last_name, ''))) = LOWER(TRIM(:last_name))
+          AND (
+              (:contact <> '' AND LOWER(TRIM(COALESCE(g.contact_number, ''))) = LOWER(TRIM(:contact)))
+              OR (:email <> '' AND LOWER(TRIM(u.email)) = :email)
+          )
+          {$excludeSql}
+        LIMIT 1
+    ");
+    $stmt->execute($params);
+    $guardian = $stmt->fetch();
+
+    return $guardian ?: null;
+}
+
+/**
+ * Roles supported by the application.
+ *
+ * @return array<int, string>
+ */
+function validUserRoles(): array
+{
+    return ['admin', 'clerk', 'teacher', 'guardian'];
+}
+
+function isValidUserRole(string $role): bool
+{
+    return in_array($role, validUserRoles(), true);
+}
+
+/**
+ * Normalize role values and keep a predictable display order.
+ *
+ * @param array<int, mixed> $roles
+ * @return array<int, string>
+ */
+function normalizeUserRoles(array $roles): array
+{
+    $seen = [];
+    foreach ($roles as $role) {
+        $role = (string)$role;
+        if (isValidUserRole($role)) {
+            $seen[$role] = true;
+        }
+    }
+
+    return array_values(array_filter(validUserRoles(), static fn(string $role): bool => isset($seen[$role])));
+}
+
+/**
+ * Read a user's roles from user_roles. Falls back to users.role only for
+ * legacy rows that have not been seeded into user_roles yet.
+ *
+ * @return array<int, string>
+ */
+function getUserRolesForUser(PDO $pdo, int $userId, ?string $fallbackRole = null, bool $repairMissingFallback = false): array
+{
+    $stmt = $pdo->prepare("SELECT role FROM user_roles WHERE user_id = :uid ORDER BY role");
+    $stmt->execute([':uid' => $userId]);
+    $roles = normalizeUserRoles($stmt->fetchAll(PDO::FETCH_COLUMN));
+
+    if (empty($roles) && $fallbackRole !== null && isValidUserRole($fallbackRole)) {
+        if ($repairMissingFallback) {
+            ensureUserRole($pdo, $userId, $fallbackRole);
+        }
+        return [$fallbackRole];
+    }
+
+    return $roles;
+}
+
+function ensureUserRole(PDO $pdo, int $userId, string $role): void
+{
+    if (!isValidUserRole($role)) {
+        throw new InvalidArgumentException('Invalid user role.');
+    }
+
+    $stmt = $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (:uid, :role) ON CONFLICT DO NOTHING");
+    $stmt->execute([':uid' => $userId, ':role' => $role]);
+}
+
+function syncPrimaryUserRole(PDO $pdo, int $userId, string $role): void
+{
+    if (!isValidUserRole($role)) {
+        throw new InvalidArgumentException('Invalid user role.');
+    }
+
+    $stmt = $pdo->prepare("UPDATE users SET role = :role WHERE id = :uid");
+    $stmt->execute([':role' => $role, ':uid' => $userId]);
+    ensureUserRole($pdo, $userId, $role);
+}
+
+function removeSecondaryUserRole(PDO $pdo, int $userId, string $role): bool
+{
+    if (!isValidUserRole($role)) {
+        throw new InvalidArgumentException('Invalid user role.');
+    }
+
+    $stmt = $pdo->prepare("SELECT role FROM users WHERE id = :uid LIMIT 1");
+    $stmt->execute([':uid' => $userId]);
+    $primaryRole = (string)$stmt->fetchColumn();
+    if ($role === $primaryRole) {
+        return false;
+    }
+
+    $stmt = $pdo->prepare("DELETE FROM user_roles WHERE user_id = :uid AND role = :role");
+    $stmt->execute([':uid' => $userId, ':role' => $role]);
+    return true;
+}
+
+/**
  * Simple pagination helper. Returns [offset, limit, currentPage, totalPages].
  */
 function paginate(int $totalRecords, int $perPage = 10, string $pageParam = 'page'): array
@@ -96,9 +416,58 @@ function displayFlash(): string
     if (empty($_SESSION['flash'])) return '';
     $f = $_SESSION['flash'];
     unset($_SESSION['flash']);
-    return '<div class="alert alert-' . e($f['type']) . ' alert-dismissible fade show" role="alert">'
-         . e($f['message'])
-         . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+
+    $icons = [
+        'success' => 'bi-check-circle-fill',
+        'danger'  => 'bi-exclamation-triangle-fill',
+        'warning' => 'bi-exclamation-circle-fill',
+        'info'    => 'bi-info-circle-fill',
+    ];
+    $type = (string)($f['type'] ?? 'info');
+    if (!isset($icons[$type])) {
+        $type = 'info';
+    }
+    $role = in_array($type, ['danger', 'warning'], true) ? 'alert' : 'status';
+
+    return '<div class="app-toast-zone">'
+         . '<div class="app-toast app-toast-' . e($type) . '" role="' . $role . '" aria-live="polite">'
+         . '<span class="app-toast-icon"><i class="bi ' . $icons[$type] . '"></i></span>'
+         . '<div class="app-toast-message">' . e($f['message']) . '</div>'
+         . '<button type="button" class="app-toast-close" aria-label="Dismiss notification">&times;</button>'
+         . '</div>'
+         . '</div>';
+}
+
+/**
+ * Render a consistent, friendly empty-state block: an icon, a primary
+ * message, and an optional plain-language hint telling the user who can
+ * resolve the missing data (no technical details).
+ *
+ * @param string $message Primary line, e.g. "No grades to show yet".
+ * @param string $hint    Who can fix it, e.g. "Grades appear once the teacher publishes them."
+ * @param string $icon    Bootstrap icon class, e.g. "bi-card-checklist".
+ */
+function emptyStateHtml(string $message, string $hint = '', string $icon = 'bi-inbox'): string
+{
+    $html  = '<div class="empty-state">';
+    $html .= '<i class="bi ' . e($icon) . ' d-block"></i>';
+    $html .= '<p>' . e($message) . '</p>';
+    if ($hint !== '') {
+        $html .= '<p class="empty-state-hint">' . e($hint) . '</p>';
+    }
+    $html .= '</div>';
+    return $html;
+}
+
+/**
+ * emptyStateHtml() wrapped in a full-width table row so it can drop straight
+ * into a <tbody> without breaking the column layout.
+ */
+function emptyStateRow(int $colspan, string $message, string $hint = '', string $icon = 'bi-inbox'): string
+{
+    return '<tr><td colspan="' . max(1, $colspan) . '">'
+        . emptyStateHtml($message, $hint, $icon)
+        . '</td></tr>';
 }
 
 /**
@@ -212,7 +581,7 @@ function enrollmentStatuses(): array
         'requirements_incomplete'  => 'Requirements Incomplete',
         'documents_under_review'   => 'Documents Under Review',
         'assessed_for_payment'     => 'Assessed for Payment',
-        'awaiting_payment'         => 'Awaiting Cashier Payment',
+        'awaiting_payment'         => 'Awaiting Payment Verification',
         'paid_for_registrar'       => 'Paid - For Registrar',
         'enrolled'                 => 'Enrolled',
         'returned'                 => 'Returned',
@@ -260,7 +629,7 @@ function enrollmentStatusBadgeClass(?string $status): string
 
 /**
  * Statuses that mean the enrollment can no longer be edited by the guardian
- * (already submitted to teachers, archived, or in cashier's hands).
+ * (already submitted to teachers, archived, or in payment verification).
  *
  * @return list<string>
  */
@@ -334,7 +703,7 @@ function assessmentStatusLabel(?string $status): string
 {
     return match ((string)$status) {
         'draft'           => 'Draft',
-        'sent_to_cashier' => 'Sent to Cashier',
+        'sent_to_cashier' => 'Sent for Payment',
         'cancelled'       => 'Cancelled',
         default           => 'No Assessment',
     };
@@ -348,6 +717,120 @@ function assessmentStatusBadgeClass(?string $status): string
         'cancelled'       => 'badge-status-archived',
         default           => 'badge-doc-review-missing',
     };
+}
+
+/**
+ * Payment methods allowed by the current Supabase enum.
+ *
+ * @return array<string, string>
+ */
+function paymentMethods(): array
+{
+    return [
+        'cash'   => 'Cash',
+        'online' => 'Online Payment',
+        'bank'   => 'Bank Transfer',
+    ];
+}
+
+/**
+ * Payment statuses allowed by the current Supabase enum.
+ *
+ * @return array<string, string>
+ */
+function paymentStatuses(): array
+{
+    return [
+        'pending' => 'Pending',
+        'paid'    => 'Paid',
+        'failed'  => 'Failed',
+    ];
+}
+
+function paymentStatusLabel(?string $status): string
+{
+    $labels = paymentStatuses();
+    return $labels[(string)$status] ?? ucfirst(str_replace('_', ' ', (string)$status));
+}
+
+function paymentStatusBadgeClass(?string $status): string
+{
+    return match ((string)$status) {
+        'paid'    => 'badge-status-active',
+        'failed'  => 'badge-status-returned',
+        'pending' => 'badge-status-awaiting-payment',
+        default   => 'badge-status-inactive',
+    };
+}
+
+/**
+ * Enrollment statuses that can still receive or update a payment assessment.
+ *
+ * @return list<string>
+ */
+function enrollmentAssessmentEditableStatuses(): array
+{
+    return [
+        'submitted',
+        'requirements_incomplete',
+        'documents_under_review',
+        'returned',
+        'assessed_for_payment',
+    ];
+}
+
+function canSendEnrollmentAssessment(?string $status): bool
+{
+    return in_array((string)$status, enrollmentAssessmentEditableStatuses(), true);
+}
+
+/**
+ * Enrollment statuses where a guardian can submit or resubmit payment proof.
+ *
+ * @return list<string>
+ */
+function guardianPaymentSubmissionStatuses(): array
+{
+    return ['assessed_for_payment', 'awaiting_payment'];
+}
+
+function canGuardianSubmitEnrollmentPayment(?string $status): bool
+{
+    return in_array((string)$status, guardianPaymentSubmissionStatuses(), true);
+}
+
+/**
+ * Enrollment statuses where admin/treasurer can verify a payment.
+ *
+ * @return list<string>
+ */
+function paymentVerificationStatuses(): array
+{
+    return ['assessed_for_payment', 'awaiting_payment'];
+}
+
+function canVerifyEnrollmentPayment(?string $status): bool
+{
+    return in_array((string)$status, paymentVerificationStatuses(), true);
+}
+
+/**
+ * Fetch the latest payment row for one enrollment.
+ *
+ * @return array<string, mixed>|null
+ */
+function latestPaymentForEnrollment(PDO $pdo, int $enrollmentId): ?array
+{
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM payments
+        WHERE enrollment_id = :eid
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([':eid' => $enrollmentId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
 }
 
 /**
@@ -386,6 +869,145 @@ function documentReviewStatusBadgeClass(?string $status): string
         'pending'           => 'badge-doc-review-pending',
         default             => 'badge-doc-review-pending',
     };
+}
+
+/**
+ * Canonical required enrollment documents.
+ *
+ * @return array<string, string>
+ */
+function requiredEnrollmentDocuments(): array
+{
+    return [
+        'psa'             => 'PSA Birth Certificate',
+        'medical'         => 'Medical Records',
+        'previous_school' => 'Previous School Records',
+        'parent_data'     => 'Parent / Guardian Data',
+    ];
+}
+
+/**
+ * Load enrollment documents keyed by document_type.
+ *
+ * @return array<string, array>
+ */
+function loadEnrollmentDocumentsByType(PDO $pdo, int $enrollmentId): array
+{
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM enrollment_documents
+        WHERE enrollment_id = :id
+        ORDER BY document_type
+    ");
+    $stmt->execute([':id' => $enrollmentId]);
+
+    $documents = [];
+    foreach ($stmt->fetchAll() as $doc) {
+        $documents[(string)$doc['document_type']] = $doc;
+    }
+    return $documents;
+}
+
+/**
+ * Summarize whether required enrollment documents are uploaded and accepted.
+ *
+ * @param array<string, array> $documentsByType
+ * @param array<string, string>|null $requiredDocuments
+ * @return array<string, mixed>
+ */
+function summarizeEnrollmentDocumentsByType(array $documentsByType, ?array $requiredDocuments = null): array
+{
+    $requiredDocuments = $requiredDocuments ?? requiredEnrollmentDocuments();
+    $counts = [
+        'accepted' => 0,
+        'needs_replacement' => 0,
+        'pending' => 0,
+        'missing' => 0,
+    ];
+    $labelsByStatus = [
+        'accepted' => [],
+        'needs_replacement' => [],
+        'pending' => [],
+        'missing' => [],
+    ];
+    $uploadedCount = 0;
+
+    foreach ($requiredDocuments as $docKey => $docLabel) {
+        $doc = $documentsByType[$docKey] ?? null;
+        if (!$doc) {
+            $counts['missing']++;
+            $labelsByStatus['missing'][] = $docLabel;
+            continue;
+        }
+
+        $uploadedCount++;
+        $status = (string)($doc['review_status'] ?? 'pending');
+        if (!array_key_exists($status, $counts) || $status === 'missing') {
+            $status = 'pending';
+        }
+
+        $counts[$status]++;
+        $labelsByStatus[$status][] = $docLabel;
+    }
+
+    return [
+        'required_count' => count($requiredDocuments),
+        'uploaded_count' => $uploadedCount,
+        'counts' => $counts,
+        'labels_by_status' => $labelsByStatus,
+        'missing_labels' => $labelsByStatus['missing'],
+        'pending_labels' => $labelsByStatus['pending'],
+        'needs_replacement_labels' => $labelsByStatus['needs_replacement'],
+        'all_uploaded' => $uploadedCount === count($requiredDocuments),
+        'all_accepted' => $uploadedCount === count($requiredDocuments)
+            && $counts['accepted'] === count($requiredDocuments),
+    ];
+}
+
+/**
+ * Load and summarize required enrollment document review state.
+ *
+ * @param array<string, string>|null $requiredDocuments
+ * @return array<string, mixed>
+ */
+function loadEnrollmentDocumentReviewSummary(PDO $pdo, int $enrollmentId, ?array $requiredDocuments = null): array
+{
+    return summarizeEnrollmentDocumentsByType(
+        loadEnrollmentDocumentsByType($pdo, $enrollmentId),
+        $requiredDocuments
+    );
+}
+
+/**
+ * Human-readable reason an enrollment is not ready for payment assessment.
+ */
+function enrollmentDocumentReviewBlockerText(array $summary): string
+{
+    $parts = [];
+    if (!empty($summary['missing_labels'])) {
+        $parts[] = 'Missing: ' . implode(', ', $summary['missing_labels']);
+    }
+    if (!empty($summary['pending_labels'])) {
+        $parts[] = 'Pending review: ' . implode(', ', $summary['pending_labels']);
+    }
+    if (!empty($summary['needs_replacement_labels'])) {
+        $parts[] = 'Needs replacement: ' . implode(', ', $summary['needs_replacement_labels']);
+    }
+
+    return implode('; ', $parts);
+}
+
+/**
+ * Build the protected URL for an enrollment document.
+ */
+function enrollmentDocumentUrl(array $document, bool $download = false): string
+{
+    $id = (int)($document['id'] ?? 0);
+    $query = ['id' => $id];
+    if ($download) {
+        $query['download'] = '1';
+    }
+    return APP_URL . '/enrollment-document.php?' . http_build_query($query);
 }
 
 /**

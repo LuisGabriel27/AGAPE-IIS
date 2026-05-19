@@ -125,17 +125,17 @@ require_once __DIR__ . '/../includes/header.php';
         <thead><tr><th>Grade Level</th><th>Code</th><th>Subject Name</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($subjects)): ?>
-                <tr><td colspan="4" class="text-center text-muted py-3">No subjects found.</td></tr>
+                <?= emptyStateRow(4, 'No subjects created yet.', 'Use the form above to add subjects for each grade level before building schedules or encoding grades.', 'bi-journal-bookmark') ?>
             <?php else: foreach ($subjects as $s): ?>
             <tr>
                 <td><?= e(formatGradeLevel($s['grade_level'] ?? '')) ?></td>
                 <td><span class="badge bg-secondary"><?= e($s['code']) ?></span></td>
                 <td class="fw-bold"><?= e($s['name']) ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete this subject?')">
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit subject" aria-label="Edit subject"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" data-confirm="Delete this subject? This cannot be undone." data-confirm-variant="danger">
                         <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
-                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" title="Delete subject" aria-label="Delete subject"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>
             </tr>

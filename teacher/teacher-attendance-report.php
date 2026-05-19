@@ -274,7 +274,7 @@ if (!$isPrint) {
             <td class="<?= $isPrint ? ($isWkd ? 'weekend ' : '') . $cls : '' ?>"
                 <?= !$isPrint && $isWkd ? 'style="background:#f8f9fa;"' : '' ?>>
                 <?php if ($status && !$isPrint): ?>
-                    <span class="badge <?= $status === 'present' ? 'bg-success' : ($status === 'late' ? 'bg-warning text-dark' : 'bg-danger') ?> badge-sm p-1"><?= $symbol ?></span>
+                    <span class="badge <?= $status === 'present' ? 'bg-success' : ($status === 'late' ? 'bg-warning text-dark' : 'bg-danger') ?> badge-sm p-1" title="<?= e(ucfirst($cls)) ?>" aria-label="<?= e(ucfirst($cls)) ?>"><?= $symbol ?></span>
                 <?php else: ?>
                     <?= $symbol ?>
                 <?php endif; ?>
@@ -302,7 +302,7 @@ if (!$isPrint) {
 <?php endif; ?>
 
 <?php elseif ($currentSection): ?>
-    <div class="alert alert-info">No students found in this section.</div>
+    <?= emptyStateHtml('No students are enrolled in this section yet.', 'Students appear here once the registrar enrolls and assigns them to this section. Please coordinate with the registrar if you expect students.', 'bi-people') ?>
 <?php elseif (empty($sections)): ?>
     <div class="alert alert-warning">No sections have been assigned to you yet. Contact an administrator.</div>
 <?php else: ?>
