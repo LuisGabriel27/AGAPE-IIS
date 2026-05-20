@@ -15,12 +15,10 @@ require_once __DIR__ . '/../../includes/helpers.php';
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
 
-$stmt = $pdo->prepare("SELECT * FROM guardians WHERE user_id = :uid LIMIT 1");
-$stmt->execute([':uid' => $userId]);
-$guardian = $stmt->fetch();
+$guardian = getOrCreateGuardianProfile($pdo, (int)$userId);
 
 if (!$guardian) {
-    setFlash('danger', 'Guardian profile not found. Please complete your profile first.');
+    setFlash('danger', 'Guardian profile could not be loaded. Please complete your profile first.');
     redirect(APP_URL . '/guardian/complete-profile.php');
 }
 
@@ -134,7 +132,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gFirstName   = trim($_POST['g_first_name'] ?? '');
         $gMiddleName  = trim($_POST['g_middle_name'] ?? '');
         $gLastName    = trim($_POST['g_last_name'] ?? '');
-        $gContact     = trim($_POST['g_contact'] ?? '');
+        $gExtension   = normalizeNameExtension($_POST['g_extension_name'] ?? '');
+        $gContact     = normalizePhoneNumber11($_POST['g_contact'] ?? '');
         $gAddress     = trim($_POST['g_address'] ?? '');
         $gRel         = trim($_POST['g_relationship'] ?? '');
         $gOccupation  = trim($_POST['g_occupation'] ?? '');
@@ -142,16 +141,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gNationality = trim($_POST['g_nationality'] ?? 'Filipino');
         $gReligion    = trim($_POST['g_religion'] ?? '');
         $gEmergName   = trim($_POST['g_emergency_name'] ?? '');
-        $gEmergNum    = trim($_POST['g_emergency_number'] ?? '');
+        $gEmergNum    = normalizePhoneNumber11($_POST['g_emergency_number'] ?? '');
 
         if (empty($gLastName))  $errors[] = 'Your last name is required.';
         if (empty($gContact))   $errors[] = 'Contact number is required.';
         if (empty($gRel))       $errors[] = 'Relationship to student is required.';
+        if (!isValidNameExtension($gExtension)) $errors[] = nameExtensionErrorMessage();
+        if (!isValidPhoneNumber11($gContact, true)) $errors[] = phoneNumberErrorMessage('Contact number');
+        if (!isValidPhoneNumber11($gEmergNum)) $errors[] = phoneNumberErrorMessage('Emergency contact number');
 
         if (empty($errors)) {
             $pdo->prepare("
                 UPDATE guardians
-                SET first_name = :fn, middle_name = :mn, last_name = :ln, contact_number = :contact, address = :addr,
+                SET first_name = :fn, middle_name = :mn, last_name = :ln, extension_name = :ext,
+                    contact_number = :contact, address = :addr,
                     relationship_to_student = :rel, occupation = :occ,
                     civil_status = :cs, nationality = :nat, religion = :rel2,
                     emergency_contact_name = :en, emergency_contact_number = :ec,
@@ -162,6 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':fn'      => $gFirstName,
                 ':mn'      => $gMiddleName,
                 ':ln'      => $gLastName,
+                ':ext'     => nullIfBlank($gExtension),
                 ':contact' => $gContact,
                 ':addr'    => $gAddress ?: null,
                 ':rel'     => $gRel,
@@ -199,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'first_name'                  => trim($_POST['first_name'] ?? ''),
             'middle_name'                 => trim($_POST['middle_name'] ?? ''),
             'last_name'                   => trim($_POST['last_name'] ?? ''),
-            'extension_name'              => trim($_POST['extension_name'] ?? ''),
+            'extension_name'              => normalizeNameExtension($_POST['extension_name'] ?? ''),
             'birthdate'                   => trim($_POST['birthdate'] ?? ''),
             'gender'                      => trim($_POST['gender'] ?? ''),
             'lrn'                         => trim($_POST['lrn'] ?? ''),
@@ -223,11 +227,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'father_first_name'           => trim($_POST['father_first_name'] ?? ''),
             'father_middle_name'          => trim($_POST['father_middle_name'] ?? ''),
             'father_last_name'            => trim($_POST['father_last_name'] ?? ''),
-            'father_contact_number'       => trim($_POST['father_contact_number'] ?? ''),
+            'father_contact_number'       => normalizePhoneNumber11($_POST['father_contact_number'] ?? ''),
             'mother_first_name'           => trim($_POST['mother_first_name'] ?? ''),
             'mother_middle_name'          => trim($_POST['mother_middle_name'] ?? ''),
             'mother_maiden_last_name'     => trim($_POST['mother_maiden_last_name'] ?? ''),
-            'mother_contact_number'       => trim($_POST['mother_contact_number'] ?? ''),
+            'mother_contact_number'       => normalizePhoneNumber11($_POST['mother_contact_number'] ?? ''),
             'is_ip_community'             => $readPostedBool('is_ip_community'),
             'ip_group'                    => trim($_POST['ip_group'] ?? ''),
             'is_4ps_beneficiary'          => $readPostedBool('is_4ps_beneficiary'),
@@ -265,6 +269,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($_SESSION['enroll']['lrn'] !== '' && !preg_match('/^\d{12}$/', $_SESSION['enroll']['lrn'])) {
             $errors[] = 'LRN must be exactly 12 digits.';
             $step = 2;
+        }
+
+        if (!isValidNameExtension($_SESSION['enroll']['extension_name'])) {
+            $errors[] = nameExtensionErrorMessage();
+            $step = 2;
+        }
+
+        foreach ([
+            'father_contact_number' => 'Father contact number',
+            'mother_contact_number' => 'Mother contact number',
+        ] as $field => $label) {
+            if (!isValidPhoneNumber11($_SESSION['enroll'][$field] ?? '')) {
+                $errors[] = phoneNumberErrorMessage($label);
+                $step = 2;
+            }
         }
 
         if (empty($errors)) {
@@ -631,9 +650,17 @@ $stepKeys = array_keys($stepLabels);
                        value="<?= e($guardian['middle_name'] ?? '') ?>">
             </div>
             <div class="col-md-3 mb-3">
+                <label class="form-label">Extension</label>
+                <select class="form-select" name="g_extension_name">
+                    <?php foreach (nameExtensionOptions() as $value => $label): ?>
+                        <option value="<?= e($value) ?>" <?= e(normalizeNameExtension($guardian['extension_name'] ?? '') === $value ? 'selected' : '') ?>><?= e($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-3 mb-3">
                 <label class="form-label">Contact Number <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="g_contact"
-                       value="<?= e($guardian['contact_number'] ?? '') ?>" required>
+                <input class="form-control" name="g_contact"
+                       value="<?= e($guardian['contact_number'] ?? '') ?>" <?= phoneInputAttributes(true) ?>>
             </div>
             <div class="col-12 mb-3">
                 <label class="form-label">Home Address</label>
@@ -683,8 +710,8 @@ $stepKeys = array_keys($stepLabels);
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Emergency Contact Number</label>
-                <input type="text" class="form-control" name="g_emergency_number"
-                       value="<?= e($guardian['emergency_contact_number'] ?? '') ?>">
+                <input class="form-control" name="g_emergency_number"
+                       value="<?= e($guardian['emergency_contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
             </div>
         </div>
 
@@ -740,8 +767,11 @@ $stepKeys = array_keys($stepLabels);
             </div>
             <div class="col-md-3 mb-3">
                 <label class="form-label">Extension</label>
-                <input type="text" class="form-control" name="extension_name"
-                       value="<?= e($enrollData['extension_name'] ?? '') ?>" placeholder="Jr., III">
+                <select class="form-select" name="extension_name">
+                    <?php foreach (nameExtensionOptions() as $value => $label): ?>
+                        <option value="<?= e($value) ?>" <?= e(normalizeNameExtension($enrollData['extension_name'] ?? '') === $value ? 'selected' : '') ?>><?= e($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Birthdate</label>
@@ -876,8 +906,8 @@ $stepKeys = array_keys($stepLabels);
             </div>
             <div class="col-md-3 mb-3">
                 <label class="form-label">Father Contact</label>
-                <input type="text" class="form-control" name="father_contact_number"
-                       value="<?= e($enrollData['father_contact_number'] ?? '') ?>">
+                <input class="form-control" name="father_contact_number"
+                       value="<?= e($enrollData['father_contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
             </div>
             <div class="col-md-3 mb-3">
                 <label class="form-label">Mother Maiden Last Name</label>
@@ -896,8 +926,8 @@ $stepKeys = array_keys($stepLabels);
             </div>
             <div class="col-md-3 mb-3">
                 <label class="form-label">Mother Contact</label>
-                <input type="text" class="form-control" name="mother_contact_number"
-                       value="<?= e($enrollData['mother_contact_number'] ?? '') ?>">
+                <input class="form-control" name="mother_contact_number"
+                       value="<?= e($enrollData['mother_contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
             </div>
         </div>
 

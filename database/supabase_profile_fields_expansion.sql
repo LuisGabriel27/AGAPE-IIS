@@ -80,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_students_birth_profile
 
 ALTER TABLE guardians
     ADD COLUMN IF NOT EXISTS middle_name VARCHAR(100) DEFAULT '',
+    ADD COLUMN IF NOT EXISTS extension_name VARCHAR(30) DEFAULT NULL,
     ADD COLUMN IF NOT EXISTS occupation VARCHAR(100) DEFAULT NULL,
     ADD COLUMN IF NOT EXISTS civil_status civil_status_type DEFAULT NULL,
     ADD COLUMN IF NOT EXISTS nationality VARCHAR(100) DEFAULT 'Filipino',

@@ -51,6 +51,7 @@ services:
       - ./database/supabase_profile_fields_expansion.sql:/docker-entrypoint-initdb.d/04_profile_fields.sql:ro
       - ./database/supabase_production_readiness_hardening.sql:/docker-entrypoint-initdb.d/05_hardening.sql:ro
       - ./database/supabase_email_case_hardening.sql:/docker-entrypoint-initdb.d/06_email_case.sql:ro
+      - ./database/supabase_guardian_profile_repair.sql:/docker-entrypoint-initdb.d/07_guardian_profile_repair.sql:ro
       - ./docker/postgres/init/90_local_seed.sql:/docker-entrypoint-initdb.d/90_local_seed.sql:ro
       - ./database/offline_sync_foundation.sql:/docker-entrypoint-initdb.d/99_offline_sync.sql:ro
     restart: unless-stopped

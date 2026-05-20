@@ -108,11 +108,7 @@ $validName = static function (string $value): bool {
     return preg_match("/^[\\p{L}\\p{M} .'-]+$/u", $value) === 1;
 };
 $validContact = static function (string $value): bool {
-    if ($value === '') {
-        return true;
-    }
-
-    return preg_match('/^[0-9+()\\-\\s]{7,20}$/', $value) === 1;
+    return isValidPhoneNumber11($value);
 };
 
 // ── Handle Delete ────────────────────────────────────────
@@ -177,6 +173,9 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
         'last_school_attended'          => trim($_POST['last_school_attended'] ?? ''),
         'previous_school_id'            => trim($_POST['previous_school_id'] ?? ''),
     ];
+    foreach (['father_contact_number', 'mother_contact_number'] as $phoneField) {
+        $data[$phoneField] = normalizePhoneNumber11($data[$phoneField] ?? '');
+    }
 
     // Guardian mode: 'existing' | 'new' | 'none'
     $guardianMode    = trim($_POST['guardian_mode'] ?? 'none');
@@ -185,7 +184,7 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
     $newGMiddleName  = trim($_POST['new_g_middle_name'] ?? '');
     $newGLastName    = trim($_POST['new_g_last_name'] ?? '');
     $newGEmail       = normalizeEmailAddress($_POST['new_g_email'] ?? '');
-    $newGContact     = trim($_POST['new_g_contact'] ?? '');
+    $newGContact     = normalizePhoneNumber11($_POST['new_g_contact'] ?? '');
     $newGAddress     = trim($_POST['new_g_address'] ?? '');
     $newGRel         = trim($_POST['new_g_relationship'] ?? '');
     $newGOccupation  = trim($_POST['new_g_occupation'] ?? '');
@@ -193,7 +192,7 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
     $newGNationality = trim($_POST['new_g_nationality'] ?? 'Filipino') ?: 'Filipino';
     $newGReligion    = trim($_POST['new_g_religion'] ?? '');
     $newGEmergName   = trim($_POST['new_g_emergency_name'] ?? '');
-    $newGEmergNumber = trim($_POST['new_g_emergency_number'] ?? '');
+    $newGEmergNumber = normalizePhoneNumber11($_POST['new_g_emergency_number'] ?? '');
 
     $validGuardianModes = ['existing', 'new', 'none'];
     if (!in_array($guardianMode, $validGuardianModes, true)) {
@@ -327,9 +326,10 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
     }
 
     if ($data['extension_name'] !== '') {
-        $allowedExtensions = ['jr', 'jr.', 'sr', 'sr.', 'ii', 'iii', 'iv', 'v', 'vi'];
-        if (!in_array(strtolower($data['extension_name']), $allowedExtensions, true)) {
-            $addFieldError('extension_name', 'Use a valid extension such as Jr., Sr., II, III, IV, V, or leave it blank.');
+        if (!isValidNameExtension($data['extension_name'])) {
+            $addFieldError('extension_name', nameExtensionErrorMessage());
+        } else {
+            $data['extension_name'] = normalizeNameExtension($data['extension_name']);
         }
     }
 
@@ -338,7 +338,7 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
         'mother_contact_number' => 'Mother contact number',
     ] as $field => $label) {
         if (($data[$field] ?? '') !== '' && !$containsMarkup($data[$field]) && !$validContact($data[$field])) {
-            $addFieldError($field, $label . ' should be 7 to 20 characters and use only numbers, spaces, +, -, or parentheses.');
+            $addFieldError($field, phoneNumberErrorMessage($label));
         }
     }
 
@@ -378,7 +378,7 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
             'new_g_emergency_number' => [$newGEmergNumber, 'Emergency contact number'],
         ] as $field => [$value, $label]) {
             if ($value !== '' && !$containsMarkup($value) && !$validContact($value)) {
-                $addFieldError($field, $label . ' should be 7 to 20 characters and use only numbers, spaces, +, -, or parentheses.');
+                $addFieldError($field, phoneNumberErrorMessage($label));
             }
         }
     }
@@ -845,8 +845,11 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Extension</label>
-                    <input type="text" class="form-control<?= $fieldInvalidClass('extension_name') ?>" name="extension_name"
-                           value="<?= e($editStudent['extension_name'] ?? '') ?>" placeholder="Jr., III">
+                    <select class="form-select<?= $fieldInvalidClass('extension_name') ?>" name="extension_name">
+                        <?php foreach (nameExtensionOptions() as $value => $label): ?>
+                            <option value="<?= e($value) ?>" <?= e(normalizeNameExtension($editStudent['extension_name'] ?? '') === $value ? 'selected' : '') ?>><?= e($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
                     <?= $fieldErrorHtml('extension_name') ?>
                 </div>
                 <div class="col-md-3 mb-3">
@@ -1029,8 +1032,8 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Father Contact</label>
-                    <input type="text" class="form-control<?= $fieldInvalidClass('father_contact_number') ?>" name="father_contact_number"
-                           value="<?= e($editStudent['father_contact_number'] ?? '') ?>">
+                    <input class="form-control<?= $fieldInvalidClass('father_contact_number') ?>" name="father_contact_number"
+                           value="<?= e($editStudent['father_contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
                     <?= $fieldErrorHtml('father_contact_number') ?>
                 </div>
                 <div class="col-md-3 mb-3">
@@ -1053,8 +1056,8 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Mother Contact</label>
-                    <input type="text" class="form-control<?= $fieldInvalidClass('mother_contact_number') ?>" name="mother_contact_number"
-                           value="<?= e($editStudent['mother_contact_number'] ?? '') ?>">
+                    <input class="form-control<?= $fieldInvalidClass('mother_contact_number') ?>" name="mother_contact_number"
+                           value="<?= e($editStudent['mother_contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
                     <?= $fieldErrorHtml('mother_contact_number') ?>
                 </div>
             </div>
@@ -1245,9 +1248,9 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                     <div class="col-md-3 mb-3">
                         <label class="form-label">Contact Number <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control<?= $fieldInvalidClass('new_g_contact') ?>" name="new_g_contact"
+                        <input class="form-control<?= $fieldInvalidClass('new_g_contact') ?>" name="new_g_contact"
                                value="<?= e($editStudent['g_contact'] ?? '') ?>"
-                               data-required-when="new">
+                               data-required-when="new" <?= phoneInputAttributes() ?>>
                         <?= $fieldErrorHtml('new_g_contact') ?>
                     </div>
                     <div class="col-md-3 mb-3">
@@ -1301,8 +1304,8 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                     <div class="col-md-3 mb-3">
                         <label class="form-label">Emergency Contact Number</label>
-                        <input type="text" class="form-control<?= $fieldInvalidClass('new_g_emergency_number') ?>" name="new_g_emergency_number"
-                               value="<?= e($editStudent['g_emergency_number'] ?? '') ?>">
+                        <input class="form-control<?= $fieldInvalidClass('new_g_emergency_number') ?>" name="new_g_emergency_number"
+                               value="<?= e($editStudent['g_emergency_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
                         <?= $fieldErrorHtml('new_g_emergency_number') ?>
                     </div>
                 </div>

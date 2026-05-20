@@ -138,6 +138,31 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <script>
+// Phone/contact fields: keep only digits and cap at 11 characters.
+(function () {
+    function normalizePhoneInput(input) {
+        let cleaned = input.value.replace(/\D+/g, '');
+        if (cleaned.length === 12 && cleaned.startsWith('63')) {
+            cleaned = '0' + cleaned.slice(2);
+        }
+        cleaned = cleaned.slice(0, 11);
+        if (input.value !== cleaned) input.value = cleaned;
+    }
+
+    document.addEventListener('input', function (e) {
+        const input = e.target;
+        if (input instanceof HTMLInputElement && input.matches('[data-phone-field]')) {
+            normalizePhoneInput(input);
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('input[data-phone-field]').forEach(normalizePhoneInput);
+    });
+})();
+</script>
+
+<script>
 // Flash toast: slide in, auto-dismiss, and manual close.
 (function () {
     function dismiss(toast) {

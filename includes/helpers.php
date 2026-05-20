@@ -58,6 +58,89 @@ function nullIfBlank(?string $value): ?string
 }
 
 /**
+ * Name suffixes allowed by the school forms. Keeping this list shared avoids
+ * free-text variants such as "third" or malformed suffixes in different pages.
+ *
+ * @return array<string, string>
+ */
+function nameExtensionOptions(): array
+{
+    return [
+        '' => 'None',
+        'Jr.' => 'Jr.',
+        'Sr.' => 'Sr.',
+        'II' => 'II',
+        'III' => 'III',
+        'IV' => 'IV',
+        'V' => 'V',
+        'VI' => 'VI',
+    ];
+}
+
+function normalizeNameExtension(?string $value): string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+
+    $normalized = strtolower(rtrim($value, '.'));
+    return match ($normalized) {
+        'jr' => 'Jr.',
+        'sr' => 'Sr.',
+        'ii' => 'II',
+        'iii' => 'III',
+        'iv' => 'IV',
+        'v' => 'V',
+        'vi' => 'VI',
+        default => $value,
+    };
+}
+
+function isValidNameExtension(?string $value): bool
+{
+    $value = normalizeNameExtension($value);
+    return array_key_exists($value, nameExtensionOptions());
+}
+
+function nameExtensionErrorMessage(): string
+{
+    return 'Choose a valid extension from the list or leave it as None.';
+}
+
+function normalizePhoneNumber11(?string $value): string
+{
+    $digits = preg_replace('/\D+/', '', (string)$value) ?? '';
+    if (strlen($digits) === 12 && str_starts_with($digits, '63')) {
+        return '0' . substr($digits, 2);
+    }
+
+    return $digits;
+}
+
+function isValidPhoneNumber11(?string $value, bool $required = false): bool
+{
+    $digits = normalizePhoneNumber11($value);
+    if ($digits === '') {
+        return !$required;
+    }
+
+    return preg_match('/^\d{11}$/', $digits) === 1;
+}
+
+function phoneNumberErrorMessage(string $label): string
+{
+    return $label . ' must contain exactly 11 numbers.';
+}
+
+function phoneInputAttributes(bool $required = false): string
+{
+    return 'type="tel" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" '
+        . 'autocomplete="tel" data-phone-field placeholder="09XXXXXXXXX"'
+        . ($required ? ' required' : '');
+}
+
+/**
  * Find an existing student with the same LRN or exact full name.
  */
 function findDuplicateStudent(PDO $pdo, string $firstName, string $lastName, string $lrn = '', int $excludeStudentId = 0): ?array
@@ -161,6 +244,69 @@ function findGuardianProfileByUserId(PDO $pdo, int $userId): ?array
     $stmt->execute([':uid' => $userId]);
     $guardian = $stmt->fetch();
 
+    return $guardian ?: null;
+}
+
+function getOrCreateGuardianProfile(PDO $pdo, int $userId): ?array
+{
+    $stmt = $pdo->prepare("SELECT * FROM guardians WHERE user_id = :uid LIMIT 1");
+    $stmt->execute([':uid' => $userId]);
+    $guardian = $stmt->fetch();
+    if ($guardian) {
+        return $guardian;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT u.email,
+               up.first_name,
+               up.middle_name,
+               up.last_name,
+               up.extension_name,
+               up.contact_number,
+               up.address,
+               up.emergency_contact_name,
+               up.emergency_contact_number
+        FROM users u
+        LEFT JOIN user_profiles up ON up.user_id = u.id
+        WHERE u.id = :uid
+        LIMIT 1
+    ");
+    $stmt->execute([':uid' => $userId]);
+    $profile = $stmt->fetch();
+    if (!$profile) {
+        return null;
+    }
+
+    $emailName = trim((string)strtok((string)$profile['email'], '@'));
+    $emailName = $emailName !== '' ? ucwords(str_replace(['.', '_', '-'], ' ', $emailName)) : 'Guardian';
+    $lastName = trim((string)($profile['last_name'] ?? ''));
+    if ($lastName === '') {
+        $lastName = $emailName;
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO guardians
+            (user_id, first_name, middle_name, last_name, extension_name, contact_number, address,
+             relationship_to_student, occupation, civil_status, nationality, religion,
+             emergency_contact_name, emergency_contact_number, data_privacy_consent, data_privacy_consented_at)
+        VALUES
+            (:user_id, :first_name, :middle_name, :last_name, :extension_name, :contact_number, :address,
+             NULL, NULL, NULL, 'Filipino', NULL, :emergency_contact_name, :emergency_contact_number, FALSE, NULL)
+        RETURNING *
+    ");
+    $stmt->execute([
+        ':user_id' => $userId,
+        ':first_name' => trim((string)($profile['first_name'] ?? '')),
+        ':middle_name' => trim((string)($profile['middle_name'] ?? '')),
+        ':last_name' => $lastName,
+        ':extension_name' => nullIfBlank(normalizeNameExtension($profile['extension_name'] ?? '')),
+        ':contact_number' => nullIfBlank(normalizePhoneNumber11($profile['contact_number'] ?? '')),
+        ':address' => nullIfBlank($profile['address'] ?? ''),
+        ':emergency_contact_name' => nullIfBlank($profile['emergency_contact_name'] ?? ''),
+        ':emergency_contact_number' => nullIfBlank(normalizePhoneNumber11($profile['emergency_contact_number'] ?? '')),
+    ]);
+
+    $guardian = $stmt->fetch();
     return $guardian ?: null;
 }
 

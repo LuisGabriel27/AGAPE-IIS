@@ -16,33 +16,47 @@ $stmt = $pdo->prepare("SELECT * FROM users WHERE id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
 $user = $stmt->fetch();
 
-$stmt = $pdo->prepare("SELECT * FROM guardians WHERE user_id = :uid LIMIT 1");
-$stmt->execute([':uid' => $userId]);
-$guardian = $stmt->fetch();
+$guardian = getOrCreateGuardianProfile($pdo, (int)$userId);
+if (!$guardian) {
+    setFlash('danger', 'Guardian profile could not be loaded. Please contact the administrator.');
+    redirect(APP_URL . '/guardian/dashboard.php');
+}
 
 $hasPassword = !empty($user['password_hash']);
 $errors      = [];
+$g = $guardian;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
-    $firstName       = trim($_POST['first_name'] ?? '');
-    $middleName      = trim($_POST['middle_name'] ?? '');
-    $lastName        = trim($_POST['last_name'] ?? '');
-    $contact         = trim($_POST['contact'] ?? '');
-    $address         = trim($_POST['address'] ?? '');
-    $relationship    = trim($_POST['relationship'] ?? '');
-    $occupation      = trim($_POST['occupation'] ?? '');
-    $civilStatus     = trim($_POST['civil_status'] ?? '');
-    $nationality     = trim($_POST['nationality'] ?? 'Filipino');
-    $religion        = trim($_POST['religion'] ?? '');
-    $emergName       = trim($_POST['emergency_name'] ?? '');
-    $emergNumber     = trim($_POST['emergency_number'] ?? '');
-    $currentPass     = $_POST['current_password'] ?? '';
-    $newPassword     = $_POST['new_password'] ?? '';
+    $g = [
+        'id' => $guardian['id'],
+        'user_id' => $guardian['user_id'],
+        'first_name' => trim($_POST['first_name'] ?? ''),
+        'middle_name' => trim($_POST['middle_name'] ?? ''),
+        'last_name' => trim($_POST['last_name'] ?? ''),
+        'extension_name' => normalizeNameExtension($_POST['extension_name'] ?? ''),
+        'contact_number' => normalizePhoneNumber11($_POST['contact'] ?? ''),
+        'address' => trim($_POST['address'] ?? ''),
+        'relationship_to_student' => trim($_POST['relationship'] ?? ''),
+        'occupation' => trim($_POST['occupation'] ?? ''),
+        'civil_status' => trim($_POST['civil_status'] ?? ''),
+        'nationality' => trim($_POST['nationality'] ?? 'Filipino') ?: 'Filipino',
+        'religion' => trim($_POST['religion'] ?? ''),
+        'emergency_contact_name' => trim($_POST['emergency_name'] ?? ''),
+        'emergency_contact_number' => normalizePhoneNumber11($_POST['emergency_number'] ?? ''),
+    ];
+    $extensionInput = trim($_POST['extension_name'] ?? '');
+    $currentPass = $_POST['current_password'] ?? '';
+    $newPassword = $_POST['new_password'] ?? '';
+    $confirmPassword = $_POST['confirm_new_password'] ?? '';
 
-    if (empty($lastName)) $errors[] = 'Last name is required.';
-    if (empty($contact))  $errors[] = 'Contact number is required.';
+    if (empty($g['last_name'])) $errors[] = 'Last name is required.';
+    if (empty($g['contact_number'])) $errors[] = 'Contact number is required.';
+    if (empty($g['relationship_to_student'])) $errors[] = 'Relationship to student is required.';
+    if (!isValidNameExtension($extensionInput)) $errors[] = nameExtensionErrorMessage();
+    if (!isValidPhoneNumber11($g['contact_number'], true)) $errors[] = phoneNumberErrorMessage('Contact number');
+    if (!isValidPhoneNumber11($g['emergency_contact_number'])) $errors[] = phoneNumberErrorMessage('Emergency contact number');
 
     if ($hasPassword && empty($currentPass)) {
         $errors[] = 'Current password is required to save changes.';
@@ -50,66 +64,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Current password is incorrect.';
     }
 
+    if ($newPassword !== '' || $confirmPassword !== '') {
+        if (strlen($newPassword) < 8) {
+            $errors[] = 'New password must be at least 8 characters.';
+        }
+        if ($newPassword !== $confirmPassword) {
+            $errors[] = 'Confirm new password must match the new password.';
+        }
+    }
+
     if (empty($errors)) {
         $oldData = [
             'first_name'  => $guardian['first_name'],
             'middle_name' => $guardian['middle_name'] ?? '',
             'last_name'   => $guardian['last_name'],
+            'extension_name' => $guardian['extension_name'] ?? '',
             'contact'     => $guardian['contact_number'],
             'address'     => $guardian['address'],
         ];
 
-        $pdo->prepare("
-            UPDATE guardians
-            SET first_name = :fn,
-                middle_name = :mn,
-                last_name = :ln,
-                contact_number = :contact,
-                address = :addr,
-                relationship_to_student = :rel,
-                occupation = :occ,
-                civil_status = :cs,
-                nationality = :nat,
-                religion = :religion,
-                emergency_contact_name = :en,
-                emergency_contact_number = :ec
-            WHERE user_id = :uid
-        ")->execute([
-            ':fn'       => $firstName,
-            ':mn'       => $middleName,
-            ':ln'       => $lastName,
-            ':contact'  => $contact,
-            ':addr'     => $address ?: null,
-            ':rel'      => $relationship ?: null,
-            ':occ'      => $occupation ?: null,
-            ':cs'       => $civilStatus ?: null,
-            ':nat'      => $nationality,
-            ':religion' => $religion ?: null,
-            ':en'       => $emergName ?: null,
-            ':ec'       => $emergNumber ?: null,
-            ':uid'      => $userId,
-        ]);
+        try {
+            $pdo->beginTransaction();
+            $pdo->prepare("
+                UPDATE guardians
+                SET first_name = :fn,
+                    middle_name = :mn,
+                    last_name = :ln,
+                    extension_name = :ext,
+                    contact_number = :contact,
+                    address = :addr,
+                    relationship_to_student = :rel,
+                    occupation = :occ,
+                    civil_status = :cs,
+                    nationality = :nat,
+                    religion = :religion,
+                    emergency_contact_name = :en,
+                    emergency_contact_number = :ec
+                WHERE user_id = :uid
+            ")->execute([
+                ':fn'       => $g['first_name'],
+                ':mn'       => $g['middle_name'],
+                ':ln'       => $g['last_name'],
+                ':ext'      => nullIfBlank($g['extension_name']),
+                ':contact'  => $g['contact_number'],
+                ':addr'     => nullIfBlank($g['address']),
+                ':rel'      => $g['relationship_to_student'],
+                ':occ'      => nullIfBlank($g['occupation']),
+                ':cs'       => nullIfBlank($g['civil_status']),
+                ':nat'      => $g['nationality'],
+                ':religion' => nullIfBlank($g['religion']),
+                ':en'       => nullIfBlank($g['emergency_contact_name']),
+                ':ec'       => nullIfBlank($g['emergency_contact_number']),
+                ':uid'      => $userId,
+            ]);
 
-        if (!empty($newPassword)) {
-            if (strlen($newPassword) < 8) {
-                $errors[] = 'New password must be at least 8 characters.';
-            } else {
+            if ($newPassword !== '') {
                 $hash = password_hash($newPassword, PASSWORD_BCRYPT);
                 $pdo->prepare("UPDATE users SET password_hash = :hash WHERE id = :uid")
                     ->execute([':hash' => $hash, ':uid' => $userId]);
             }
-        }
 
-        if (empty($errors)) {
-            $newData = ['first_name' => $firstName, 'middle_name' => $middleName, 'last_name' => $lastName, 'contact' => $contact, 'address' => $address];
+            $newData = [
+                'first_name' => $g['first_name'],
+                'middle_name' => $g['middle_name'],
+                'last_name' => $g['last_name'],
+                'extension_name' => $g['extension_name'],
+                'contact' => $g['contact_number'],
+                'address' => $g['address'],
+            ];
             auditLog('profile_update', 'guardians', $guardian['id'], $oldData, $newData);
+            $pdo->commit();
             setFlash('success', 'Profile updated successfully.');
             redirect(APP_URL . '/guardian/profile-view.php');
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('Guardian profile update failed: ' . $e->getMessage());
+            $errors[] = 'Profile could not be saved. Please review the form and try again.';
         }
     }
 }
 
-$g = $guardian; // shorthand
 $pageTitle = 'Edit Profile';
 require_once __DIR__ . '/../includes/header.php';
 ?>
@@ -152,18 +188,26 @@ require_once __DIR__ . '/../includes/header.php';
                        value="<?= e($g['middle_name'] ?? '') ?>">
             </div>
             <div class="col-md-3 mb-3">
+                <label class="form-label">Extension</label>
+                <select class="form-select" name="extension_name">
+                    <?php foreach (nameExtensionOptions() as $value => $label): ?>
+                        <option value="<?= e($value) ?>" <?= e(normalizeNameExtension($g['extension_name'] ?? '') === $value ? 'selected' : '') ?>><?= e($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-3 mb-3">
                 <label class="form-label">Email Address</label>
                 <input type="email" class="form-control" value="<?= e($user['email']) ?>" disabled>
                 <div class="form-text">Email cannot be changed.</div>
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Contact Number <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="contact"
-                       value="<?= e($g['contact_number'] ?? '') ?>" required>
+                <input class="form-control" name="contact"
+                       value="<?= e($g['contact_number'] ?? '') ?>" <?= phoneInputAttributes(true) ?>>
             </div>
             <div class="col-md-6 mb-3">
-                <label class="form-label">Relationship to Student</label>
-                <select class="form-select" name="relationship">
+                <label class="form-label">Relationship to Student <span class="text-danger">*</span></label>
+                <select class="form-select" name="relationship" required>
                     <option value="">Select...</option>
                     <?php foreach (['Parent','Guardian','Sibling','Grandparent','Aunt/Uncle','Other'] as $r): ?>
                         <option value="<?= e($r) ?>" <?= e(($g['relationship_to_student'] ?? '') === $r ? 'selected' : '') ?>><?= e($r) ?></option>
@@ -213,8 +257,8 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Emergency Contact Number</label>
-                <input type="text" class="form-control" name="emergency_number"
-                       value="<?= e($g['emergency_contact_number'] ?? '') ?>">
+                <input class="form-control" name="emergency_number"
+                       value="<?= e($g['emergency_contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
             </div>
         </div>
 
@@ -232,6 +276,10 @@ require_once __DIR__ . '/../includes/header.php';
             <label class="form-label">New Password <small class="text-muted">(optional)</small></label>
             <input type="password" class="form-control" name="new_password" minlength="8">
             <div class="form-text">Leave blank to keep current password. Min 8 characters.</div>
+        </div>
+        <div class="mb-4">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" class="form-control" name="confirm_new_password" minlength="8">
         </div>
 
         <div class="d-flex justify-content-between">

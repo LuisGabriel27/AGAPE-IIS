@@ -13,6 +13,13 @@ if (empty($_SESSION['needs_profile_completion'])) {
     redirect(APP_URL . '/guardian/dashboard.php');
 }
 
+$pdo = getDB();
+$guardian = getOrCreateGuardianProfile($pdo, (int)($_SESSION['user_id'] ?? 0));
+if (!$guardian) {
+    setFlash('danger', 'Guardian profile could not be prepared. Please contact the administrator.');
+    redirect(APP_URL . '/guardian/dashboard.php');
+}
+
 $errors   = [];
 $formData = [
     'middle_name'      => '',
@@ -33,14 +40,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach ($formData as $k => $_) {
         $formData[$k] = trim($_POST[$k] ?? '');
     }
+    $formData['contact'] = normalizePhoneNumber11($formData['contact']);
+    $formData['emergency_number'] = normalizePhoneNumber11($formData['emergency_number']);
     $formData['nationality'] = $formData['nationality'] ?: 'Filipino';
 
     if (empty($formData['contact']))      $errors[] = 'Contact number is required.';
     if (empty($formData['address']))      $errors[] = 'Address is required.';
     if (empty($formData['relationship'])) $errors[] = 'Relationship to student is required.';
+    if (!isValidPhoneNumber11($formData['contact'], true)) $errors[] = phoneNumberErrorMessage('Contact number');
+    if (!isValidPhoneNumber11($formData['emergency_number'])) $errors[] = phoneNumberErrorMessage('Emergency contact number');
 
     if (empty($errors)) {
-        $pdo  = getDB();
         $pdo->prepare("
             UPDATE guardians
             SET middle_name = :mn, contact_number = :contact, address = :addr,
@@ -106,7 +116,7 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Contact Number <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="contact" value="<?= e($formData['contact']) ?>" required>
+                <input class="form-control" name="contact" value="<?= e($formData['contact']) ?>" <?= phoneInputAttributes(true) ?>>
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Relationship to Student <span class="text-danger">*</span></label>
@@ -156,7 +166,7 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Emergency Contact Number</label>
-                <input type="text" class="form-control" name="emergency_number" value="<?= e($formData['emergency_number']) ?>">
+                <input class="form-control" name="emergency_number" value="<?= e($formData['emergency_number']) ?>" <?= phoneInputAttributes() ?>>
             </div>
         </div>
 

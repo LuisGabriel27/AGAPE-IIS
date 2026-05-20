@@ -16,10 +16,8 @@ $stmt = $pdo->prepare("SELECT * FROM users WHERE id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
 $user = $stmt->fetch();
 
-// Get guardian profile
-$stmt = $pdo->prepare("SELECT * FROM guardians WHERE user_id = :uid LIMIT 1");
-$stmt->execute([':uid' => $userId]);
-$guardian = $stmt->fetch();
+// Get or repair guardian profile
+$guardian = getOrCreateGuardianProfile($pdo, (int)$userId);
 
 // Get students
 $students = [];
@@ -88,7 +86,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card-header bg-white"><i class="bi bi-person-vcard me-2"></i>Personal Information</div>
             <div class="card-body">
                 <table class="table table-sm">
-                    <tr><th width="40%">Full Name</th><td><?= e(trim(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? '') . ' ' . ($guardian['middle_name'] ?? ''))) ?></td></tr>
+                    <tr><th width="40%">Full Name</th><td><?= e(trim(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? '') . ' ' . ($guardian['middle_name'] ?? '') . ' ' . ($guardian['extension_name'] ?? ''))) ?></td></tr>
                     <tr><th>Contact Number</th><td><?= e($guardian['contact_number'] ?? 'N/A') ?></td></tr>
                     <tr><th>Address</th><td><?= e($guardian['address'] ?? 'N/A') ?></td></tr>
                     <tr><th>Relationship</th><td><?= e($guardian['relationship_to_student'] ?? 'N/A') ?></td></tr>

@@ -14,6 +14,7 @@ $search = trim($_GET['search'] ?? '');
 $action = $_GET['action'] ?? '';
 $id     = (int)($_GET['id'] ?? 0);
 $errors = [];
+$postedTeacherData = null;
 
 if ($action === 'delete' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -27,16 +28,17 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
     validateCsrf();
     $genderOptions = ['male', 'female', 'other'];
     $civilStatusOptions = ['single', 'married', 'widowed', 'separated', 'others'];
+    $extensionInput = trim($_POST['extension_name'] ?? '');
     $teacherData = [
         'first_name'               => trim($_POST['first_name'] ?? ''),
         'middle_name'              => trim($_POST['middle_name'] ?? ''),
         'last_name'                => trim($_POST['last_name'] ?? ''),
-        'extension_name'           => trim($_POST['extension_name'] ?? ''),
+        'extension_name'           => normalizeNameExtension($extensionInput),
         'employee_number'          => trim($_POST['employee_number'] ?? ''),
         'gender'                   => trim($_POST['gender'] ?? ''),
         'birthdate'                => trim($_POST['birthdate'] ?? ''),
         'civil_status'             => trim($_POST['civil_status'] ?? ''),
-        'contact_number'           => trim($_POST['contact'] ?? ''),
+        'contact_number'           => normalizePhoneNumber11($_POST['contact'] ?? ''),
         'address'                  => trim($_POST['address'] ?? ''),
         'department'               => trim($_POST['department'] ?? ''),
         'position_title'           => trim($_POST['position_title'] ?? ''),
@@ -46,13 +48,17 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
         'prc_license_expiry'       => trim($_POST['prc_license_expiry'] ?? ''),
         'specialization'           => trim($_POST['specialization'] ?? ''),
         'emergency_contact_name'   => trim($_POST['emergency_contact_name'] ?? ''),
-        'emergency_contact_number' => trim($_POST['emergency_contact_number'] ?? ''),
+        'emergency_contact_number' => normalizePhoneNumber11($_POST['emergency_contact_number'] ?? ''),
     ];
     $userEmail = normalizeEmailAddress($_POST['user_email'] ?? '');
+    $postedTeacherData = $teacherData + ['email' => $userEmail];
 
     if (empty($teacherData['last_name'])) $errors[] = 'Last name is required.';
+    if (!isValidNameExtension($extensionInput)) $errors[] = nameExtensionErrorMessage();
     if ($teacherData['gender'] !== '' && !in_array($teacherData['gender'], $genderOptions, true)) $errors[] = 'Invalid gender value.';
     if ($teacherData['civil_status'] !== '' && !in_array($teacherData['civil_status'], $civilStatusOptions, true)) $errors[] = 'Invalid civil status value.';
+    if (!isValidPhoneNumber11($teacherData['contact_number'])) $errors[] = phoneNumberErrorMessage('Contact number');
+    if (!isValidPhoneNumber11($teacherData['emergency_contact_number'])) $errors[] = phoneNumberErrorMessage('Emergency contact number');
 
     if (empty($errors)) {
         $duplicateTeacher = findDuplicateTeacherProfile(
@@ -157,11 +163,11 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
     }
 }
 
-$editTeacher = null;
+$editTeacher = $postedTeacherData;
 if ($action === 'edit' && $id) {
     $stmt = $pdo->prepare("SELECT t.*, u.email FROM teachers t JOIN users u ON t.user_id = u.id WHERE t.id = :id LIMIT 1");
     $stmt->execute([':id' => $id]);
-    $editTeacher = $stmt->fetch();
+    $editTeacher = $postedTeacherData ?: $stmt->fetch();
 }
 
 $where = ''; $params = [];
@@ -218,7 +224,11 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Extension</label>
-                    <input type="text" class="form-control" name="extension_name" value="<?= e($editTeacher['extension_name'] ?? '') ?>" placeholder="Jr., III">
+                    <select class="form-select" name="extension_name">
+                        <?php foreach (nameExtensionOptions() as $value => $label): ?>
+                            <option value="<?= e($value) ?>" <?= e(normalizeNameExtension($editTeacher['extension_name'] ?? '') === $value ? 'selected' : '') ?>><?= e($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
                 <?php if ($action === 'create'): ?>
                 <div class="col-md-4 mb-3">
@@ -234,7 +244,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php endif; ?>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Contact Number</label>
-                    <input type="text" class="form-control" name="contact" value="<?= e($editTeacher['contact_number'] ?? '') ?>">
+                    <input class="form-control" name="contact" value="<?= e($editTeacher['contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Gender</label>
@@ -308,7 +318,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Emergency Contact Number</label>
-                    <input type="text" class="form-control" name="emergency_contact_number" value="<?= e($editTeacher['emergency_contact_number'] ?? '') ?>">
+                    <input class="form-control" name="emergency_contact_number" value="<?= e($editTeacher['emergency_contact_number'] ?? '') ?>" <?= phoneInputAttributes() ?>>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save</button>
