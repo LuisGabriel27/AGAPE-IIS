@@ -14,10 +14,52 @@ $pdo = getDB();
 $errors = [];
 
 $currentSY = currentSchoolYear();
+$currentTerm = currentAcademicTerm();
 
 // Calculate next SY
 $parts = explode('-', $currentSY);
 $nextSY = ((int)$parts[0] + 1) . '-' . ((int)$parts[1] + 1);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_period') {
+    validateCsrf();
+
+    $newSchoolYear = trim((string)($_POST['active_school_year'] ?? ''));
+    $newTerm = normalizeAcademicTerm($_POST['active_term'] ?? '');
+
+    if (!preg_match('/^\d{4}-\d{4}$/', $newSchoolYear)) {
+        $errors[] = 'School year must use the format YYYY-YYYY.';
+    } else {
+        [$startYear, $endYear] = array_map('intval', explode('-', $newSchoolYear));
+        if ($endYear !== $startYear + 1) {
+            $errors[] = 'School year end must be exactly one year after the start year.';
+        }
+    }
+
+    if (empty($errors)) {
+        try {
+            setSettingValue('active_school_year', $newSchoolYear);
+            setSettingValue('active_term', $newTerm);
+            clearAcademicPeriodCache();
+
+            auditLog('academic_period_updated', 'settings', null, [
+                'school_year' => $currentSY,
+                'term' => $currentTerm,
+            ], [
+                'school_year' => $newSchoolYear,
+                'term' => $newTerm,
+            ]);
+
+            setFlash('success', 'Active academic period updated to ' . $newSchoolYear . ' / ' . $newTerm . '.');
+            redirect(APP_URL . '/admin/admin-schoolyear.php');
+        } catch (Throwable $e) {
+            logException($e, 'Active academic period update failed.', [
+                'school_year' => $newSchoolYear,
+                'term' => $newTerm,
+            ]);
+            $errors[] = safeErrorMessage('Could not update the active academic period.');
+        }
+    }
+}
 
 // ── Handle School Year Reset ───────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset_sy') {
@@ -36,9 +78,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
         try {
             $pdo->beginTransaction();
 
-            // a. Update settings to next SY
-            $stmt = $pdo->prepare("UPDATE settings SET \"value\" = :new WHERE \"key\" = 'active_school_year'");
-            $stmt->execute([':new' => $nextSY]);
+            // a. Update settings to next SY and reset term.
+            setSettingValue('active_school_year', $nextSY);
+            setSettingValue('active_term', '1st Semester');
 
             // b. Archive enrollments for old SY
             $stmt = $pdo->prepare("UPDATE enrollments SET status = 'archived' WHERE school_year = :sy AND status != 'archived'");
@@ -60,17 +102,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
             $pdo->commit();
 
             // Clear cached school year
-            unset($_SESSION['_cached_school_year']);
+            clearAcademicPeriodCache();
 
             // e. Audit log
-            auditLog('school_year_reset', 'settings', null, ['school_year' => $oldSY], ['school_year' => $nextSY]);
+            auditLog('school_year_reset', 'settings', null, ['school_year' => $oldSY, 'term' => $currentTerm], ['school_year' => $nextSY, 'term' => '1st Semester']);
 
             setFlash('success', 'School year has been reset from ' . $oldSY . ' to ' . $nextSY . ' successfully.');
             redirect(APP_URL . '/admin/admin-schoolyear.php');
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $pdo->rollBack();
-            error_log('School year reset error: ' . $e->getMessage());
-            $errors[] = 'An error occurred during school year reset. Please try again.';
+            logException($e, 'School year reset failed.', ['old_school_year' => $oldSY, 'next_school_year' => $nextSY]);
+            $errors[] = safeErrorMessage('An error occurred during school year reset.');
         }
     }
 }
@@ -98,6 +140,10 @@ $depedEventsCount = $pdo->prepare("SELECT COUNT(*) FROM calendar_events WHERE so
 $depedEventsCount->execute([':sy' => $currentSY]);
 $depedEventsCount = (int)$depedEventsCount->fetchColumn();
 
+$activeScheduleCountStmt = $pdo->prepare("SELECT COUNT(*) FROM schedules WHERE school_year = :sy AND term = :term");
+$activeScheduleCountStmt->execute([':sy' => $currentSY, ':term' => $currentTerm]);
+$activeScheduleCount = (int)$activeScheduleCountStmt->fetchColumn();
+
 $pageTitle = 'School Year Management';
 require_once __DIR__ . '/../includes/header.php';
 ?>
@@ -118,7 +164,48 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="card-body text-center py-5">
         <div class="text-muted text-uppercase small fw-bold mb-2">Active School Year</div>
         <h1 class="display-4 fw-bold" style="color: var(--primary);"><?= e($currentSY) ?></h1>
-        <p class="text-secondary mt-2 mb-0">All modules are operating under this school year.</p>
+        <div class="fs-5 fw-semibold text-secondary mb-2"><?= e($currentTerm) ?></div>
+        <p class="text-secondary mt-2 mb-0">Schedules, grades, enrollment queues, and teacher views use this active academic period by default.</p>
+    </div>
+</div>
+
+<?php if ($activeScheduleCount === 0): ?>
+    <div class="alert alert-warning d-flex align-items-start gap-2">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <div>
+            <strong>No schedules exist for <?= e(formatAcademicPeriod($currentSY, $currentTerm)) ?>.</strong>
+            Teachers and guardians will see empty schedule pages until the active period has schedule entries.
+            <a href="<?= APP_URL ?>/admin/admin-schedule.php" class="alert-link">Add schedules now</a>.
+        </div>
+    </div>
+<?php endif; ?>
+
+<div class="card mb-4">
+    <div class="card-header bg-white fw-bold">
+        <i class="bi bi-calendar-check me-2"></i>Set Active Academic Period
+    </div>
+    <div class="card-body">
+        <form method="POST" class="row g-3 align-items-end">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="action" value="update_period">
+            <div class="col-md-4">
+                <label class="form-label" for="active_school_year">School Year</label>
+                <input type="text" class="form-control" id="active_school_year" name="active_school_year" value="<?= e($currentSY) ?>" pattern="\d{4}-\d{4}" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label" for="active_term">Term</label>
+                <select class="form-select" id="active_term" name="active_term">
+                    <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
+                        <option value="<?= e($termValue) ?>" <?= $currentTerm === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-save me-1"></i>Save Active Period
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 

@@ -109,6 +109,10 @@ INSERT INTO settings ("key", "value") VALUES
 ON CONFLICT ("key") DO NOTHING;
 
 INSERT INTO settings ("key", "value") VALUES
+    ('active_term', '1st Semester')
+ON CONFLICT ("key") DO NOTHING;
+
+INSERT INTO settings ("key", "value") VALUES
     ('attendance_module_enabled', '1')
 ON CONFLICT ("key") DO NOTHING;
 

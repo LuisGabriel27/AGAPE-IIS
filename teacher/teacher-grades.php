@@ -14,6 +14,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 $stmt = $pdo->prepare("SELECT * FROM teachers WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
@@ -33,16 +35,18 @@ $stmt = $pdo->prepare("
     JOIN subjects sub ON sch.subject_id = sub.id
     JOIN sections sec ON sch.section_id = sec.id
     WHERE sch.teacher_id = :tid
+      AND sch.school_year = :sy
+      AND sch.term = :term
     ORDER BY sub.name, sec.name
 ");
-$stmt->execute([':tid' => $teacher['id']]);
+$stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
 $classes = $stmt->fetchAll();
 
 // Selected class
 $selSubject  = (int)($_GET['subject_id'] ?? $_POST['subject_id'] ?? 0);
 $selSection  = (int)($_GET['section_id'] ?? $_POST['section_id'] ?? 0);
-$selYear     = $_GET['school_year'] ?? $_POST['school_year'] ?? currentSchoolYear();
-$selTerm     = $_GET['term'] ?? $_POST['term'] ?? '1st Semester';
+$selYear     = $_GET['school_year'] ?? $_POST['school_year'] ?? $activeYear;
+$selTerm     = normalizeAcademicTerm($_GET['term'] ?? $_POST['term'] ?? $activeTerm);
 $periods     = gradingPeriods();
 $selPeriod   = normalizeGradingPeriod($_GET['grading_period'] ?? $_POST['grading_period'] ?? 'quarter1');
 $selPeriodLabel = $periods[$selPeriod];
@@ -140,7 +144,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
 
     $invalidStudentIds = array_values(array_diff($submittedStudentIds, $allowedStudentIds));
     if (!empty($invalidStudentIds)) {
-        error_log('Teacher grade student tampering attempt by user_id=' . $userId . ' teacher_id=' . $teacher['id'] . ' section_id=' . $selSection . ' invalid_student_ids=' . implode(',', $invalidStudentIds));
+        appLog('warning', 'Teacher grade student tampering attempt.', [
+            'teacher_id' => $teacher['id'],
+            'section_id' => $selSection,
+            'invalid_student_ids' => $invalidStudentIds,
+        ]);
         $errors[] = 'Submitted student list does not match this class. Please reload the page and try again.';
     }
 
@@ -217,10 +225,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
             auditLog('grades_submitted', 'grades', $selSubject, null, ['section_id' => $selSection, 'period' => $selPeriod, 'count' => count($submittedStudentIds)]);
             setFlash('success', $selPeriodLabel . ' grades saved successfully.');
             redirect(APP_URL . '/teacher/teacher-grades.php?subject_id=' . $selSubject . '&section_id=' . $selSection . '&grading_period=' . urlencode($selPeriod));
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $pdo->rollBack();
-            error_log('Grade save error: ' . $e->getMessage());
-            $errors[] = 'An error occurred while saving grades. Please try again.';
+            logException($e, 'Grade save failed.', [
+                'teacher_id' => $teacher['id'],
+                'subject_id' => $selSubject,
+                'section_id' => $selSection,
+                'school_year' => $selYear,
+                'term' => $selTerm,
+            ]);
+            $errors[] = safeErrorMessage('An error occurred while saving grades.');
         }
     }
 }
@@ -232,6 +246,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-12">
         <h4 class="fw-bold"><i class="bi bi-pencil-square me-2"></i>Encode Grades</h4>
+        <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
     </div>
 </div>
 

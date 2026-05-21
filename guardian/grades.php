@@ -38,7 +38,8 @@ if ($requestedStudent > 0) {
     }
 }
 
-$selectedYear    = $_GET['school_year'] ?? currentSchoolYear();
+$selectedYear = trim((string)($_GET['school_year'] ?? currentSchoolYear()));
+$selectedTerm = normalizeAcademicTerm($_GET['term'] ?? currentAcademicTerm());
 
 $grades = [];
 $generalAverage = null;
@@ -49,10 +50,11 @@ if ($selectedStudent && !$accessDenied) {
         JOIN subjects sub ON g.subject_id = sub.id
         WHERE g.student_id = :sid
           AND g.school_year = :sy
+          AND g.term = :term
           AND g.published = 1
         ORDER BY sub.name
     ");
-    $stmt->execute([':sid' => $selectedStudent, ':sy' => $selectedYear]);
+    $stmt->execute([':sid' => $selectedStudent, ':sy' => $selectedYear, ':term' => $selectedTerm]);
     $grades = $stmt->fetchAll();
 
     $finalRatings = [];
@@ -68,6 +70,7 @@ $years = $pdo->query("SELECT DISTINCT school_year FROM grades ORDER BY school_ye
 if (empty($years)) {
     $years = [currentSchoolYear()];
 }
+$terms = array_keys(academicTermOptions());
 
 $pageTitle = 'Grades';
 require_once __DIR__ . '/../includes/header.php';
@@ -77,12 +80,13 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="col-md-8">
         <div class="page-header-guardian">
             <h4><i class="bi bi-card-checklist me-2"></i>Student Grades</h4>
+            <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
         </div>
     </div>
     <div class="col-md-4 text-md-end mt-3 mt-md-0">
         <?php if ($selectedStudent > 0): ?>
             <a class="btn btn-outline-primary"
-               href="<?= e(APP_URL . '/guardian/report-card.php?' . http_build_query(['student_id' => $selectedStudent, 'school_year' => $selectedYear])) ?>"
+               href="<?= e(APP_URL . '/guardian/report-card.php?' . http_build_query(['student_id' => $selectedStudent, 'school_year' => $selectedYear, 'term' => $selectedTerm])) ?>"
                target="_blank" rel="noopener">
                 <i class="bi bi-printer me-1"></i>Print Report Card
             </a>
@@ -106,11 +110,19 @@ require_once __DIR__ . '/../includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-5">
+            <div class="col-md-3">
                 <label for="school_year" class="form-label">School Year</label>
                 <select class="form-select" name="school_year" id="school_year">
                     <?php foreach ($years as $y): ?>
                         <option value="<?= e($y) ?>" <?= $selectedYear === $y ? 'selected' : '' ?>><?= e($y) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="term" class="form-label">Term</label>
+                <select class="form-select" name="term" id="term">
+                    <?php foreach ($terms as $term): ?>
+                        <option value="<?= e($term) ?>" <?= $selectedTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

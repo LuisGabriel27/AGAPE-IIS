@@ -301,9 +301,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $step = 2;
                 }
-            } catch (Exception $e) {
-                error_log('Enrollment duplicate check error: ' . $e->getMessage());
-                $errors[] = 'Unable to check for duplicate students. Please try again.';
+            } catch (Throwable $e) {
+                logException($e, 'Enrollment duplicate check failed.');
+                $errors[] = safeErrorMessage('Unable to check for duplicate students.');
                 $step = 2;
             }
         }
@@ -314,7 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['enroll']['grade_level'] = trim($_POST['grade_level'] ?? '');
         $_SESSION['enroll']['section_id']  = (int)($_POST['section_id'] ?? 0);
         $_SESSION['enroll']['school_year'] = trim($_POST['school_year'] ?? currentSchoolYear());
-        $_SESSION['enroll']['term']        = trim($_POST['term'] ?? '1st Semester');
+        $_SESSION['enroll']['term']        = normalizeAcademicTerm($_POST['term'] ?? currentAcademicTerm());
         $requiredDocuments = requiredEnrollmentDocumentsForGrade($_SESSION['enroll']['grade_level'] ?? '');
         $uploadedRequirements = [];
 
@@ -516,13 +516,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'term'        => $enrollData['term'],
                         'documents'   => array_keys($uploadedRequirements),
                     ]);
-                } catch (Exception $auditError) {
-                    error_log('Enrollment audit error: ' . $auditError->getMessage());
+                } catch (Throwable $auditError) {
+                    logException($auditError, 'Enrollment audit failed.', ['enrollment_id' => $enrollmentId]);
                 }
 
                 setFlash('success', 'Enrollment requirements uploaded. The Enrollment Clerk can now review the files, assess the enrollment, and validate its status.');
                 redirect(APP_URL . '/guardian/dashboard.php');
-            } catch (Exception $e) {
+            } catch (Throwable $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
                 }
@@ -531,13 +531,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         deleteEnrollmentDocumentStoredFile($path);
                     }
                 }
-                error_log('Enrollment creation error: ' . $e->getMessage());
+                logException($e, 'Enrollment creation failed.', ['step' => $step]);
                 if (str_contains($e->getMessage(), 'already has an enrollment')) {
                     $errors[] = $e->getMessage();
                 } elseif (str_contains($e->getMessage(), 'Selected student was not found')) {
                     $errors[] = 'Selected student was not found under your guardian account.';
                 } else {
-                    $errors[] = 'An error occurred while saving enrollment. Please try again.';
+                    $errors[] = safeErrorMessage('An error occurred while saving enrollment.');
                 }
                 $step = 3;
             }
@@ -1054,8 +1054,9 @@ $stepKeys = array_keys($stepLabels);
             <div class="col-md-6 mb-3">
                 <label class="form-label">Term</label>
                 <select class="form-select" name="term">
-                    <option value="1st Semester" <?= ($enrollData['term'] ?? '1st Semester') === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-                    <option value="2nd Semester" <?= ($enrollData['term'] ?? '') === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
+                    <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
+                        <option value="<?= e($termValue) ?>" <?= normalizeAcademicTerm($enrollData['term'] ?? currentAcademicTerm()) === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
         </div>

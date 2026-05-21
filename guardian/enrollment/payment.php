@@ -215,10 +215,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             setFlash('success', 'Payment reference submitted. School staff can now verify the payment.');
             redirect(APP_URL . '/guardian/dashboard.php');
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $pdo->rollBack();
-            error_log('Enrollment payment submission error: ' . $e->getMessage());
-            $errors[] = 'Unable to submit payment reference right now. Please try again.';
+            logException($e, 'Enrollment payment submission failed.', ['enrollment_id' => $enrollmentId]);
+            $errors[] = safeErrorMessage('Unable to submit payment reference right now.');
         }
     }
 

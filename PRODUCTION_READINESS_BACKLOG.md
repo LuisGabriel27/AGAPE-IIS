@@ -190,6 +190,7 @@ Priority guide:
 ### P1-06 Fix active school year and schedule consistency
 
 - Area: Settings, schedules, guardian portal
+- Status: Implemented in code on 2026-05-21. Active academic period now includes `active_school_year` and `active_term`; admin can update both from School Year Management. Dashboards, schedules, teacher grades/attendance/students, guardian schedules/grades/report cards, and enrollment queue now default/filter by the active period. Needs browser UAT for admin/clerk/teacher/guardian views after sync.
 - Problem: Active school year and stored schedule data can mismatch.
 - Change:
   - Enforce active school year and term consistently across dashboards, schedules, grades, attendance, and enrollment.
@@ -202,6 +203,7 @@ Priority guide:
 ### P1-07 Add reliable error logging
 
 - Area: Observability
+- Status: Implemented in code on 2026-05-21. Added structured app logging with request ID, route, user ID, role, exception class, file, and line. Replaced raw `error_log()` usage in live app pages with `logException()` / `appLog()` and safe user-facing reference messages. Needs deployment log retention/backup policy before production.
 - Change:
   - Log server errors to a protected log file or service.
   - Show safe generic errors to users.

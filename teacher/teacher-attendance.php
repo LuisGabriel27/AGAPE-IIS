@@ -14,6 +14,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
 $errors = [];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 if (!attendanceModuleEnabled()) {
     setFlash('warning', 'Attendance module is currently disabled by admin. Please contact the administrator.');
@@ -36,9 +38,11 @@ $stmt = $pdo->prepare("
     FROM schedules sch
     JOIN sections sec ON sch.section_id = sec.id
     WHERE sch.teacher_id = :tid
+      AND sch.school_year = :sy
+      AND sch.term = :term
     ORDER BY sec.grade_level, sec.name
 ");
-$stmt->execute([':tid' => $teacher['id']]);
+$stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
 $sections = $stmt->fetchAll();
 
 $selSection = (int)($_GET['section_id'] ?? $_POST['section_id'] ?? ($sections[0]['id'] ?? 0));
@@ -118,7 +122,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hasAccess) {
 
     $invalidStudentIds = array_values(array_diff($submittedStudentIds, $allowedStudentIds));
     if (!empty($invalidStudentIds)) {
-        error_log('Teacher attendance student tampering attempt by user_id=' . $userId . ' teacher_id=' . $teacher['id'] . ' section_id=' . $postSection . ' invalid_student_ids=' . implode(',', $invalidStudentIds));
+        appLog('warning', 'Teacher attendance student tampering attempt.', [
+            'teacher_id' => $teacher['id'],
+            'section_id' => $postSection,
+            'invalid_student_ids' => $invalidStudentIds,
+        ]);
         $errors[] = 'Submitted student list does not match this section. Please reload the page and try again.';
     }
 
@@ -167,10 +175,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hasAccess) {
             ]);
             setFlash('success', 'Attendance recorded successfully for ' . count($studentIds) . ' students.');
             redirect(APP_URL . '/teacher/teacher-attendance.php?section_id=' . $postSection . '&date=' . urlencode($postDate));
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $pdo->rollBack();
-            error_log('Attendance save error: ' . $e->getMessage());
-            $errors[] = 'An error occurred while saving attendance. Please try again.';
+            logException($e, 'Attendance save failed.', [
+                'teacher_id' => $teacher['id'],
+                'section_id' => $postSection,
+                'date' => $postDate,
+            ]);
+            $errors[] = safeErrorMessage('An error occurred while saving attendance.');
         }
     }
 }
@@ -182,7 +194,8 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-12">
         <h4 class="fw-bold"><i class="bi bi-clipboard-check me-2"></i>Quick-Mark Attendance</h4>
-        <p class="text-muted">Select a section and date to record attendance for your students.</p>
+        <p class="text-muted mb-1">Select a section and date to record attendance for your students.</p>
+        <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
     </div>
 </div>
 

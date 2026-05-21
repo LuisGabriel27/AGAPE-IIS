@@ -79,10 +79,7 @@ if (!empty($schoolYears) && !in_array($selectedYear, $schoolYears, true)) {
     $selectedYear = $schoolYears[0];
 }
 
-$selectedTerm = trim($_GET['term'] ?? '1st Semester');
-if (!in_array($selectedTerm, ['1st Semester', '2nd Semester'], true)) {
-    $selectedTerm = '1st Semester';
-}
+$selectedTerm = normalizeAcademicTerm($_GET['term'] ?? currentAcademicTerm());
 
 $stmt = $pdo->prepare("
     SELECT e.id, e.school_year, e.term, e.status, e.enrolled_at,

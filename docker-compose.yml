@@ -8,6 +8,7 @@ services:
       APP_ENV: local
       APP_DEBUG: "${APP_DEBUG:-0}"
       APP_URL: "${APP_URL:-http://localhost:8080}"
+      APP_DEPLOYMENT_MODE: "${APP_DEPLOYMENT_MODE:-hybrid_role_routed}"
       DB_HOST: "${DB_HOST:-db}"
       DB_PORT: "${DB_PORT:-5432}"
       DB_NAME: "${DB_NAME:-agape_iis}"

@@ -12,8 +12,11 @@ require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 $filterStatus = $_GET['status'] ?? '';
-$filterYear   = $_GET['year'] ?? '';
+$filterYear   = $_GET['year'] ?? $activeYear;
+$filterTerm   = normalizeAcademicTerm($_GET['term'] ?? $activeTerm);
 $search       = trim($_GET['search'] ?? '');
 $errors = [];
 $requiredDocuments = requiredEnrollmentDocuments();
@@ -216,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             setFlash('success', $flashMessage);
-            redirect(APP_URL . '/admin/admin-enrollments.php?status=' . urlencode($filterStatus) . '&year=' . urlencode($filterYear));
+            redirect(APP_URL . '/admin/admin-enrollments.php?status=' . urlencode($filterStatus) . '&year=' . urlencode($filterYear) . '&term=' . urlencode($filterTerm));
         }
     }
 }
@@ -230,6 +233,10 @@ if ($filterStatus !== '') {
 if ($filterYear !== '') {
     $where[] = 'e.school_year = :year';
     $params[':year'] = $filterYear;
+}
+if ($filterTerm !== '') {
+    $where[] = 'e.term = :term';
+    $params[':term'] = $filterTerm;
 }
 if ($search !== '') {
     $where[] = '(s.last_name ILIKE :search OR s.first_name ILIKE :search2 OR s.lrn ILIKE :search3)';
@@ -289,9 +296,15 @@ if (!empty($enrollments)) {
 }
 
 $years = $pdo->query("SELECT DISTINCT school_year FROM enrollments ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
+if (empty($years)) {
+    $years = [$activeYear];
+} elseif (!in_array($activeYear, $years, true)) {
+    array_unshift($years, $activeYear);
+}
+$terms = array_keys(academicTermOptions());
 
 // Single aggregation query for KPI counts
-$stats = $pdo->query("
+$statsStmt = $pdo->prepare("
     SELECT
         COUNT(*)                                                                  AS total,
         COUNT(*) FILTER (WHERE status = 'enrolled')                               AS enrolled,
@@ -303,7 +316,10 @@ $stats = $pdo->query("
         COUNT(*) FILTER (WHERE status = 'submitted')                              AS submitted,
         COUNT(*) FILTER (WHERE status = 'returned')                               AS returned
     FROM enrollments
-")->fetch();
+    WHERE school_year = :sy AND term = :term
+");
+$statsStmt->execute([':sy' => $filterYear, ':term' => $filterTerm]);
+$stats = $statsStmt->fetch();
 
 $totalEnrollments        = (int)$stats['total'];
 $enrolledCount           = (int)$stats['enrolled'];
@@ -327,6 +343,11 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
     </div>
 <?php endif; ?>
 
+<div class="alert alert-light border d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div><i class="bi bi-calendar-check me-1"></i>Enrollment queue period</div>
+    <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle"><?= e(formatAcademicPeriod($filterYear, $filterTerm)) ?></span>
+</div>
+
 <div class="alert alert-light border mb-4">
     <div class="fw-semibold mb-2"><i class="bi bi-diagram-3 me-1"></i>Enrollment Chain</div>
     <div class="row g-3 small">
@@ -348,7 +369,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         </div>
     </div>
     <div class="col">
-        <a class="text-decoration-none" href="?status=requirements_incomplete">
+        <a class="text-decoration-none" href="?status=requirements_incomplete&year=<?= e(urlencode($filterYear)) ?>&term=<?= e(urlencode($filterTerm)) ?>">
             <div class="kpi-card kpi-danger">
                 <div class="kpi-icon-wrap"><i class="bi bi-exclamation-triangle-fill"></i></div>
                 <div>
@@ -359,7 +380,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         </a>
     </div>
     <div class="col">
-        <a class="text-decoration-none" href="?status=documents_under_review">
+        <a class="text-decoration-none" href="?status=documents_under_review&year=<?= e(urlencode($filterYear)) ?>&term=<?= e(urlencode($filterTerm)) ?>">
             <div class="kpi-card kpi-info">
                 <div class="kpi-icon-wrap"><i class="bi bi-clipboard-data-fill"></i></div>
                 <div>
@@ -370,7 +391,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         </a>
     </div>
     <div class="col">
-        <a class="text-decoration-none" href="?status=assessed_for_payment">
+        <a class="text-decoration-none" href="?status=assessed_for_payment&year=<?= e(urlencode($filterYear)) ?>&term=<?= e(urlencode($filterTerm)) ?>">
             <div class="kpi-card kpi-warning">
                 <div class="kpi-icon-wrap"><i class="bi bi-cash-coin"></i></div>
                 <div>
@@ -392,7 +413,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         </a>
     </div>
     <div class="col">
-        <a class="text-decoration-none" href="?status=paid_for_registrar">
+        <a class="text-decoration-none" href="?status=paid_for_registrar&year=<?= e(urlencode($filterYear)) ?>&term=<?= e(urlencode($filterTerm)) ?>">
             <div class="kpi-card kpi-info">
                 <div class="kpi-icon-wrap"><i class="bi bi-inbox-fill"></i></div>
                 <div>
@@ -403,7 +424,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         </a>
     </div>
     <div class="col">
-        <a class="text-decoration-none" href="?status=enrolled">
+        <a class="text-decoration-none" href="?status=enrolled&year=<?= e(urlencode($filterYear)) ?>&term=<?= e(urlencode($filterTerm)) ?>">
             <div class="kpi-card kpi-success">
                 <div class="kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
                 <div>
@@ -414,7 +435,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
         </a>
     </div>
     <div class="col">
-        <a class="text-decoration-none" href="?status=returned">
+        <a class="text-decoration-none" href="?status=returned&year=<?= e(urlencode($filterYear)) ?>&term=<?= e(urlencode($filterTerm)) ?>">
             <div class="kpi-card kpi-danger">
                 <div class="kpi-icon-wrap"><i class="bi bi-arrow-counterclockwise"></i></div>
                 <div>
@@ -429,7 +450,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" class="row g-2 align-items-center" id="enrollment-filter">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <input type="text" class="form-control form-control-sm" name="search"
                        placeholder="Search by student name or LRN..."
                        value="<?= e($search) ?>">
@@ -444,17 +465,23 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
             </div>
             <div class="col-md-2">
                 <select class="form-select form-select-sm" name="year">
-                    <option value="">All Years</option>
                     <?php foreach ($years as $y): ?>
                         <option value="<?= e($y) ?>" <?= e($filterYear === $y ? 'selected' : '') ?>><?= e($y) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-2">
+                <select class="form-select form-select-sm" name="term">
+                    <?php foreach ($terms as $term): ?>
+                        <option value="<?= e($term) ?>" <?= $filterTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
                 <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-search me-1"></i>Search</button>
             </div>
-            <?php if ($filterStatus || $filterYear || $search): ?>
-                <div class="col-md-2">
+            <?php if ($filterStatus || $filterYear !== $activeYear || $filterTerm !== $activeTerm || $search): ?>
+                <div class="col-md-1">
                     <a href="<?= APP_URL ?>/admin/admin-enrollments.php" class="btn btn-sm btn-outline-secondary w-100">Clear</a>
                 </div>
             <?php endif; ?>

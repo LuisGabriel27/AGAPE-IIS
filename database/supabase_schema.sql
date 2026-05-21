@@ -388,6 +388,7 @@ CREATE TRIGGER trg_grades_updated_at
 -- ============================================================
 INSERT INTO settings ("key", "value") VALUES
     ('active_school_year', '2024-2025'),
+    ('active_term', '1st Semester'),
     ('attendance_module_enabled', '1');
 
 -- ============================================================

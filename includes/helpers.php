@@ -22,6 +22,53 @@ function redirect(string $url): void
     exit;
 }
 
+function appDeploymentMode(): string
+{
+    return databaseDeploymentMode();
+}
+
+/**
+ * Roles allowed to sign in on this app instance.
+ *
+ * development: all roles for thesis/demo testing.
+ * local_school: school office device/container, admin + clerk only.
+ * online_portal: public Supabase-backed portal, teacher + guardian only.
+ * hybrid_role_routed: all roles in one portal; database scope depends on role.
+ *
+ * @return list<string>
+ */
+function deploymentAllowedRoles(?string $mode = null): array
+{
+    $mode = $mode ?? appDeploymentMode();
+    return match ($mode) {
+        'local_school'  => ['admin', 'clerk'],
+        'online_portal' => ['teacher', 'guardian'],
+        default         => ['admin', 'clerk', 'teacher', 'guardian'],
+    };
+}
+
+function isDeploymentRoleAllowed(string $role): bool
+{
+    return in_array($role, deploymentAllowedRoles(), true);
+}
+
+function deploymentModeLabel(?string $mode = null): string
+{
+    $mode = $mode ?? appDeploymentMode();
+    return match ($mode) {
+        'local_school'  => 'School Local System',
+        'online_portal' => 'Online Teacher/Guardian Portal',
+        'hybrid_role_routed' => 'Hybrid School Portal',
+        default         => 'Development Demo System',
+    };
+}
+
+function deploymentAccessMessage(?string $role = null): string
+{
+    $roleText = $role ? ucfirst($role === 'clerk' ? 'enrollment clerk' : $role) . ' access' : 'That portal';
+    return $roleText . ' is not available on this ' . deploymentModeLabel() . '.';
+}
+
 /**
  * Write an entry to the audit log.
  */
@@ -663,7 +710,8 @@ function getSettingValue(string $key, ?string $default = null): ?string
         $stmt->execute([':key' => $key]);
         $value = $stmt->fetchColumn();
         return $value === false ? $default : (string)$value;
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
+        logException($e, 'Unable to read setting.', ['setting_key' => $key]);
         return $default;
     }
 }
@@ -688,6 +736,28 @@ function attendanceModuleEnabled(): bool
 {
     $value = strtolower(trim((string)getSettingValue('attendance_module_enabled', '1')));
     return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+/**
+ * @return array<string, string>
+ */
+function academicTermOptions(): array
+{
+    return [
+        '1st Semester' => '1st Semester',
+        '2nd Semester' => '2nd Semester',
+    ];
+}
+
+function normalizeAcademicTerm(?string $term): string
+{
+    $term = trim((string)$term);
+    return array_key_exists($term, academicTermOptions()) ? $term : '1st Semester';
+}
+
+function clearAcademicPeriodCache(): void
+{
+    unset($_SESSION['_cached_school_year'], $_SESSION['_cached_academic_term']);
 }
 
 /**
@@ -718,6 +788,39 @@ function currentSchoolYear(): string
     }
     $_SESSION['_cached_school_year'] = $sy;
     return $sy;
+}
+
+function currentAcademicTerm(): string
+{
+    if (!empty($_SESSION['_cached_academic_term'])) {
+        return normalizeAcademicTerm($_SESSION['_cached_academic_term']);
+    }
+
+    $term = normalizeAcademicTerm(getSettingValue('active_term', '1st Semester'));
+    $_SESSION['_cached_academic_term'] = $term;
+    return $term;
+}
+
+/**
+ * @return array{school_year:string,term:string}
+ */
+function activeAcademicPeriod(): array
+{
+    return [
+        'school_year' => currentSchoolYear(),
+        'term' => currentAcademicTerm(),
+    ];
+}
+
+function formatAcademicPeriod(?string $schoolYear = null, ?string $term = null): string
+{
+    return trim((string)($schoolYear ?: currentSchoolYear())) . ' / ' . normalizeAcademicTerm($term ?: currentAcademicTerm());
+}
+
+function activeAcademicPeriodBadge(): string
+{
+    return '<span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">'
+        . e(formatAcademicPeriod()) . '</span>';
 }
 
 /**
@@ -1234,7 +1337,16 @@ function enrollmentDocumentUrl(array $document, bool $download = false): string
 function enrollmentDocumentStorageDriver(): string
 {
     $driver = strtolower(trim((string)(defined('ENROLLMENT_DOCUMENT_STORAGE_DRIVER') ? ENROLLMENT_DOCUMENT_STORAGE_DRIVER : 'local')));
-    return $driver === 'supabase' ? 'supabase' : 'local';
+    if ($driver === 'supabase') {
+        return 'supabase';
+    }
+
+    $role = strtolower(trim((string)($_SESSION['role'] ?? '')));
+    if (databaseDeploymentMode() === 'hybrid_role_routed' && in_array($role, ['teacher', 'guardian'], true)) {
+        return 'supabase';
+    }
+
+    return 'local';
 }
 
 function supabaseStorageConfigured(): bool
@@ -1466,7 +1578,7 @@ function deleteEnrollmentDocumentStoredFile(?string $filePath): void
                 supabaseStorageObjectUrl($remote['bucket'], $remote['path'])
             );
         } catch (Throwable $e) {
-            error_log('Supabase Storage delete failed: ' . $e->getMessage());
+            logException($e, 'Supabase Storage delete failed.', ['file_path' => $filePath]);
         }
         return;
     }

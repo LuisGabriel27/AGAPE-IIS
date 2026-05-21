@@ -316,10 +316,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $pdo->rollBack();
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            error_log('Assessment save error: ' . $e->getMessage());
-            $errors[] = 'Could not save the assessment. Please try again.';
+            logException($e, 'Assessment save failed.', ['enrollment_id' => $enrollmentId]);
+            $errors[] = safeErrorMessage('Could not save the assessment.');
         }
     }
 }

@@ -13,6 +13,8 @@ $pdo    = getDB();
 $action = $_GET['action'] ?? '';
 $id     = (int)($_GET['id'] ?? 0);
 $errors = [];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 if ($action === 'delete' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -32,8 +34,8 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
         'day_of_week' => trim($_POST['day_of_week'] ?? ''),
         'time_start'  => trim($_POST['time_start'] ?? ''),
         'time_end'    => trim($_POST['time_end'] ?? ''),
-        'school_year' => trim($_POST['school_year'] ?? currentSchoolYear()),
-        'term'        => trim($_POST['term'] ?? '1st Semester'),
+        'school_year' => trim($_POST['school_year'] ?? $activeYear),
+        'term'        => normalizeAcademicTerm($_POST['term'] ?? $activeTerm),
     ];
 
     if (!$data['subject_id']) $errors[] = 'Subject is required.';
@@ -97,10 +99,12 @@ $subjectsList = $pdo->query("
 $sectionsList = $pdo->query("SELECT id, name, grade_level FROM sections ORDER BY grade_level, name")->fetchAll();
 $teachersList = $pdo->query("SELECT id, first_name, last_name FROM teachers ORDER BY last_name, first_name")->fetchAll();
 
-$total = $pdo->query("SELECT COUNT(*) FROM schedules")->fetchColumn();
+$totalStmt = $pdo->prepare("SELECT COUNT(*) FROM schedules WHERE school_year = :sy AND term = :term");
+$totalStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$total = (int)$totalStmt->fetchColumn();
 [$offset, $limit, $page, $totalPages] = paginate($total, 15);
 
-$stmt = $pdo->query("
+$stmt = $pdo->prepare("
     SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
            sec.name AS section_name, sec.grade_level,
            CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS teacher_name
@@ -108,9 +112,12 @@ $stmt = $pdo->query("
     JOIN subjects sub ON sch.subject_id = sub.id
     JOIN sections sec ON sch.section_id = sec.id
     JOIN teachers t ON sch.teacher_id = t.id
+    WHERE sch.school_year = :sy
+      AND sch.term = :term
     ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
     LIMIT {$limit} OFFSET {$offset}
 ");
+$stmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
 $schedules = $stmt->fetchAll();
 
 $pageTitle = 'Manage Schedules';
@@ -119,7 +126,10 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 ?>
 
 <div class="row mb-4">
-    <div class="col-md-6"><h4 class="fw-bold"><i class="bi bi-calendar3 me-2"></i>Class Schedules</h4></div>
+    <div class="col-md-6">
+        <h4 class="fw-bold"><i class="bi bi-calendar3 me-2"></i>Class Schedules</h4>
+        <div class="text-muted small">Showing active period: <?= activeAcademicPeriodBadge() ?></div>
+    </div>
     <div class="col-md-6 text-md-end"><a href="?action=create" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i>Add Schedule</a></div>
 </div>
 
@@ -185,10 +195,19 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">School Year</label>
-                    <input type="text" class="form-control" name="school_year" value="<?= e($editSched['school_year'] ?? currentSchoolYear()) ?>">
+                    <input type="text" class="form-control" name="school_year" value="<?= e($editSched['school_year'] ?? $activeYear) ?>">
                 </div>
             </div>
-            <input type="hidden" name="term" value="<?= e($editSched['term'] ?? '1st Semester') ?>">
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Term</label>
+                    <select class="form-select" name="term">
+                        <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
+                            <option value="<?= e($termValue) ?>" <?= ($editSched['term'] ?? $activeTerm) === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
             <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save</button>
             <a href="<?= APP_URL ?>/admin/admin-schedule.php" class="btn btn-outline-secondary">Cancel</a>
         </form>

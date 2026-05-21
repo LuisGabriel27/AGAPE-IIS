@@ -18,6 +18,7 @@ $errorMessages = [
     'oauth_disabled'  => 'Google sign-in has been disabled. Please use your email and password.',
     'account_inactive'=> 'Your account has been deactivated. Contact an administrator.',
     'csrf_expired'    => 'Your form session expired. Please choose a portal and try again.',
+    'deployment_role_blocked' => deploymentAccessMessage(),
 ];
 
 $baseUrl = rtrim(APP_URL, '/');
@@ -60,6 +61,7 @@ $roleCards = [
         'iconColor'   => '#B45309',
     ],
 ];
+$roleCards = array_intersect_key($roleCards, array_flip(deploymentAllowedRoles()));
 
 $urlError  = $_GET['error'] ?? '';
 $pageError = $errorMessages[$urlError] ?? '';
@@ -448,7 +450,7 @@ $roleSvgIcons = [
                 <?= e(APP_NAME) ?>
             </div>
             <h1>Choose your portal</h1>
-            <p>Select the role that matches your account, then continue to a dedicated sign&#8209;in page.</p>
+            <p><?= e(deploymentModeLabel()) ?>. Select the role that matches your account, then continue to a dedicated sign&#8209;in page.</p>
         </div>
     </div>
 

@@ -88,10 +88,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $step === 'confirm') {
                 $pdo->commit();
                 auditLog('deped_calendar_import', 'calendar_events', null, null, ['school_year' => $selectedSY, 'count' => count($events)]);
                 $imported = true;
-            } catch (Exception $e) {
+            } catch (Throwable $e) {
                 $pdo->rollBack();
-                error_log('DepEd calendar import error: ' . $e->getMessage());
-                $errors[] = 'An error occurred during import. Please try again.';
+                logException($e, 'DepEd calendar import failed.', ['school_year' => $selectedSY]);
+                $errors[] = safeErrorMessage('An error occurred during import.');
             }
         }
     }

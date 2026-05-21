@@ -216,10 +216,10 @@ if ($action === 'record' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            error_log('Payment verification error: ' . $e->getMessage());
+            logException($e, 'Payment verification failed.', ['payment_id' => $paymentId ?? null]);
             $errors[] = $e instanceof RuntimeException
                 ? $e->getMessage()
-                : 'Unable to save payment right now. Please try again.';
+                : safeErrorMessage('Unable to save payment right now.');
         }
     }
 }

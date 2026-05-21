@@ -233,8 +233,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
                 }
-                error_log('Create user failed: ' . $e->getMessage());
-                $errors[] = 'User could not be created. Please review the details and try again.';
+                logException($e, 'Create user failed.', ['new_user_role' => $role]);
+                $errors[] = safeErrorMessage('User could not be created. Please review the details and try again.');
             }
         }
     }

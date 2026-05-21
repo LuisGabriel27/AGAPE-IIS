@@ -38,6 +38,7 @@ if (!in_array($selectedStudent, $allowedStudentIds, true)) {
 }
 
 $selectedYear = trim($_GET['school_year'] ?? currentSchoolYear());
+$selectedTerm = normalizeAcademicTerm($_GET['term'] ?? currentAcademicTerm());
 
 $stmt = $pdo->prepare("
     SELECT s.id, s.first_name, s.last_name, s.grade_level, s.lrn,
@@ -66,6 +67,7 @@ if (empty($years)) {
 if (!in_array($selectedYear, $years, true)) {
     $selectedYear = $years[0];
 }
+$terms = array_keys(academicTermOptions());
 
 $stmt = $pdo->prepare("
     SELECT sub.code, sub.name AS subject_name,
@@ -74,12 +76,14 @@ $stmt = $pdo->prepare("
     INNER JOIN subjects sub ON sub.id = g.subject_id
     WHERE g.student_id = :sid
       AND g.school_year = :sy
+      AND g.term = :term
       AND g.published = 1
     ORDER BY sub.name
 ");
 $stmt->execute([
     ':sid' => $selectedStudent,
     ':sy' => $selectedYear,
+    ':term' => $selectedTerm,
 ]);
 $grades = $stmt->fetchAll();
 
@@ -155,11 +159,19 @@ renderOfficialDocumentStyles();
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-5">
+                <div class="col-md-3">
                     <label class="form-label">School Year</label>
                     <select class="form-select" name="school_year">
                         <?php foreach ($years as $year): ?>
                             <option value="<?= e($year) ?>" <?= $selectedYear === $year ? 'selected' : '' ?>><?= e($year) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Term</label>
+                    <select class="form-select" name="term">
+                        <?php foreach ($terms as $term): ?>
+                            <option value="<?= e($term) ?>" <?= $selectedTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -176,7 +188,7 @@ renderOfficialDocumentStyles();
         <div class="official-document-body">
             <h2 class="official-document-title">Student Report Card</h2>
             <div class="report-card-meta">
-                <div>School Year: <strong><?= e($selectedYear) ?></strong></div>
+                <div>School Year: <strong><?= e($selectedYear) ?></strong> / <strong><?= e($selectedTerm) ?></strong></div>
                 <div>Date Issued: <strong><?= e($reportDate) ?></strong></div>
             </div>
 
@@ -220,7 +232,7 @@ renderOfficialDocumentStyles();
                     </thead>
                     <tbody>
                         <?php if (empty($grades)): ?>
-                            <?= emptyStateRow(9, 'No grades to show for this school year.', 'Grades appear on the report card once the class teacher encodes and publishes them.', 'bi-card-checklist') ?>
+                            <?= emptyStateRow(9, 'No grades to show for this school year and term.', 'Grades appear on the report card once the class teacher encodes and publishes them.', 'bi-card-checklist') ?>
                         <?php else: ?>
                             <?php foreach ($grades as $grade): ?>
                                 <?php $final = $grade['final_grade'] !== null ? (float)$grade['final_grade'] : null; ?>

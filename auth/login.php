@@ -44,6 +44,8 @@ $allowedRoles = [
     ],
 ];
 
+$allowedRoles = array_intersect_key($allowedRoles, array_flip(deploymentAllowedRoles()));
+
 $errors = [];
 $email = '';
 $urlError = $_GET['error'] ?? '';
@@ -56,6 +58,8 @@ if (!isset($allowedRoles[$role])) {
 
     if ($urlError !== '') {
         $query['error'] = $urlError;
+    } elseif ($role !== '' && !isDeploymentRoleAllowed($role)) {
+        $query['error'] = 'deployment_role_blocked';
     } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $query['error'] = 'select_role';
     }
@@ -105,15 +109,30 @@ function recentFailedLoginCounts(PDO $pdo, string $email): array
 function recordLoginFailure(string $email, string $role, ?int $userId, string $reason): void
 {
     try {
-        auditLog('login_failed', 'users', $userId, null, [
-            'email' => $email,
-            'role' => $role,
-            'reason' => $reason,
-            'user_agent_hash' => currentLoginUserAgentHash(),
+        $pdo = getDB(databaseScopeForRole($role));
+        $stmt = $pdo->prepare("
+            INSERT INTO audit_log (user_id, action, table_affected, record_id, old_value, new_value, ip_address, timestamp)
+            VALUES (:uid, 'login_failed', 'users', :rid, NULL, :new, :ip, NOW())
+        ");
+        $stmt->execute([
+            ':uid' => $userId,
+            ':rid' => $userId,
+            ':new' => json_encode([
+                'email' => $email,
+                'role' => $role,
+                'reason' => $reason,
+                'user_agent_hash' => currentLoginUserAgentHash(),
+            ]),
+            ':ip' => $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
         ]);
     } catch (Throwable $e) {
-        error_log('Unable to audit failed login: ' . $e->getMessage());
+        logException($e, 'Unable to audit failed login.', ['login_role' => $role]);
     }
+}
+
+function loginDatabaseForRole(string $role): PDO
+{
+    return getDB(databaseScopeForRole($role));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -132,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        $pdo = getDB();
+        $pdo = loginDatabaseForRole($role);
         $failedCounts = recentFailedLoginCounts($pdo, $normalizedEmail);
 
         if (
@@ -195,6 +214,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+/*
+ * The login block above intentionally selects the database from the requested
+ * role before querying users. In hybrid mode, teachers/guardians authenticate
+ * against Supabase while admin/clerk accounts authenticate against Docker.
+ */
+
 $errorMessages = [
     'unauthenticated' => 'Please log in to access that page.',
     'unauthorized' => 'You do not have permission to access that page.',
@@ -203,6 +228,7 @@ $errorMessages = [
     'account_inactive' => 'Your account has been deactivated. Contact an administrator.',
     'role_mismatch' => 'Selected role does not match the account role.',
     'csrf_expired' => 'Your sign-in form expired. Please enter your password and try again.',
+    'deployment_role_blocked' => deploymentAccessMessage(),
 ];
 
 if (isset($errorMessages[$urlError])) {
@@ -323,4 +349,3 @@ $styleVersion = APP_VERSION . '-' . (is_file($stylePath) ? filemtime($stylePath)
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-

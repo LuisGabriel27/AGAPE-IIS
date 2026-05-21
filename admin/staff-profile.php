@@ -150,8 +150,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            error_log('Staff profile update failed: ' . $e->getMessage());
-            $errors[] = 'Profile could not be saved. Please review the form and try again.';
+            logException($e, 'Staff profile update failed.');
+            $errors[] = safeErrorMessage('Profile could not be saved. Please review the form and try again.');
         }
     }
 }

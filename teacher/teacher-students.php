@@ -11,6 +11,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
 $userId = (int)($_SESSION['user_id'] ?? 0);
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 $stmt = $pdo->prepare("SELECT * FROM teachers WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
@@ -22,6 +24,7 @@ if (!$teacher) {
 }
 
 $requestedSchoolYear = trim((string)($_GET['school_year'] ?? ''));
+$requestedTerm = normalizeAcademicTerm($_GET['term'] ?? $activeTerm);
 $search = trim((string)($_GET['search'] ?? ''));
 
 $yearsStmt = $pdo->prepare("
@@ -35,14 +38,17 @@ $yearsStmt = $pdo->prepare("
 ");
 $yearsStmt->execute([':tid' => (int)$teacher['id']]);
 $schoolYears = $yearsStmt->fetchAll(PDO::FETCH_COLUMN);
-$schoolYear = $requestedSchoolYear !== '' ? $requestedSchoolYear : (string)($schoolYears[0] ?? currentSchoolYear());
+$schoolYear = $requestedSchoolYear !== '' ? $requestedSchoolYear : (in_array($activeYear, $schoolYears, true) ? $activeYear : (string)($schoolYears[0] ?? $activeYear));
+$schoolTerm = $requestedTerm;
 
 $where = [
     'sec.adviser_id = :teacher_id',
     "e.status = 'enrolled'",
+    'e.term = :term',
 ];
 $params = [
     ':teacher_id' => (int)$teacher['id'],
+    ':term' => $schoolTerm,
 ];
 if ($schoolYear !== '') {
     $where[] = 'e.school_year = :school_year';
@@ -93,14 +99,15 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-12">
         <h4 class="fw-bold"><i class="bi bi-people-fill me-2"></i>My Students</h4>
-        <p class="text-muted mb-0">Students appear here after the registrar submits the paid enrollment to your advisory section.</p>
+        <p class="text-muted mb-1">Students appear here after the registrar submits the paid enrollment to your advisory section.</p>
+        <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
     </div>
 </div>
 
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" class="row g-2 align-items-center">
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <input type="text" class="form-control form-control-sm" name="search" value="<?= e($search) ?>" placeholder="Search by name or LRN...">
             </div>
             <div class="col-md-3">
@@ -115,10 +122,17 @@ require_once __DIR__ . '/../includes/header.php';
                 </select>
             </div>
             <div class="col-md-2">
+                <select class="form-select form-select-sm" name="term">
+                    <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
+                        <option value="<?= e($termValue) ?>" <?= $schoolTerm === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
                 <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-search me-1"></i>Search</button>
             </div>
             <?php if ($search !== ''): ?>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <a href="<?= APP_URL ?>/teacher/teacher-students.php" class="btn btn-sm btn-outline-secondary w-100">Clear</a>
                 </div>
             <?php endif; ?>

@@ -12,6 +12,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 // Get teacher record
 $stmt = $pdo->prepare("SELECT * FROM teachers WHERE user_id = :uid LIMIT 1");
@@ -28,9 +30,11 @@ if ($teacher) {
         JOIN subjects sub ON sch.subject_id = sub.id
         JOIN sections sec ON sch.section_id = sec.id
         WHERE sch.teacher_id = :tid
+          AND sch.school_year = :sy
+          AND sch.term = :term
         ORDER BY sub.name, sec.name
     ");
-    $stmt->execute([':tid' => $teacher['id']]);
+    $stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
     $assignments = $stmt->fetchAll();
 }
 
@@ -46,11 +50,12 @@ foreach ($assignments as $a) {
 // Get upcoming calendar events (next 3)
 $stmt = $pdo->prepare("
     SELECT * FROM calendar_events 
-    WHERE date_end >= CURRENT_DATE 
+    WHERE date_end >= CURRENT_DATE
+      AND (school_year = :sy OR school_year = '' OR school_year IS NULL)
     ORDER BY date_start 
     LIMIT 3
 ");
-$stmt->execute();
+$stmt->execute([':sy' => $activeYear]);
 $upcomingEvents = $stmt->fetchAll();
 
 // ── KPI: Pending Grade Entry ────────────────────────────
@@ -61,8 +66,10 @@ if ($teacher) {
         SELECT DISTINCT sch.subject_id, sch.section_id, sch.school_year, sch.term
         FROM schedules sch
         WHERE sch.teacher_id = :tid
+          AND sch.school_year = :sy
+          AND sch.term = :term
     ");
-    $stmt->execute([':tid' => $teacher['id']]);
+    $stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
     $teacherCombos = $stmt->fetchAll();
 
     foreach ($teacherCombos as $combo) {
@@ -113,7 +120,8 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-12">
         <h4 class="fw-bold"><i class="bi bi-speedometer2 me-2"></i>Teacher Dashboard</h4>
-        <p class="text-muted">Welcome, <?= e(format_name($teacher['first_name'] ?? '', $teacher['last_name'] ?? 'Teacher')) ?>!</p>
+        <p class="text-muted mb-1">Welcome, <?= e(format_name($teacher['first_name'] ?? '', $teacher['last_name'] ?? 'Teacher')) ?>!</p>
+        <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
     </div>
 </div>
 

@@ -420,9 +420,9 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
                     . format_name($duplicateGuardian['first_name'] ?? '', $duplicateGuardian['last_name'] ?? '')
                     . ' (' . ($duplicateGuardian['email'] ?? 'no email') . '). Please use Link Existing Guardian.');
             }
-        } catch (Exception $e) {
-            error_log('Guardian duplicate check error: ' . $e->getMessage());
-            $errors[] = 'Unable to check for duplicate guardians. Please try again.';
+        } catch (Throwable $e) {
+            logException($e, 'Guardian duplicate check failed.');
+            $errors[] = safeErrorMessage('Unable to check for duplicate guardians.');
         }
     }
 
@@ -444,9 +444,9 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
                     $addFieldError('last_name', 'A student with the same full name already exists: ' . $duplicateName . '.');
                 }
             }
-        } catch (Exception $e) {
-            error_log('Student duplicate check error: ' . $e->getMessage());
-            $errors[] = 'Unable to check for duplicate students. Please try again.';
+        } catch (Throwable $e) {
+            logException($e, 'Student duplicate check failed.');
+            $errors[] = safeErrorMessage('Unable to check for duplicate students.');
         }
     }
 
@@ -589,12 +589,12 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
             }
 
             redirect(APP_URL . '/admin/admin-students.php');
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
             $dbMessage = $e->getMessage();
-            error_log('Student save error: ' . $dbMessage);
+            logException($e, 'Student save failed.', ['action' => $action, 'student_id' => $id ?: null]);
 
             if (stripos($dbMessage, 'uq_students_lrn') !== false || stripos($dbMessage, 'chk_students_lrn') !== false) {
                 $addFieldError('lrn', 'LRN must be unique and exactly 12 digits.');

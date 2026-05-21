@@ -26,6 +26,9 @@ if (switchRole($newRole)) {
     auditLog('role_switch', 'users', $_SESSION['user_id'], null, ['to_role' => $newRole]);
     redirect(getRoleDashboardUrl());
 } else {
-    setFlash('danger', 'You do not have access to that role.');
+    $message = isDeploymentRoleAllowed($newRole)
+        ? 'You do not have access to that role.'
+        : deploymentAccessMessage($newRole);
+    setFlash('danger', $message);
     redirect(getRoleDashboardUrl());
 }

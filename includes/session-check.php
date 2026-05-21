@@ -75,8 +75,37 @@ function requireRole($roles): void
         $roles = [$roles];
     }
 
+    $deploymentAllowedRoles = deploymentAllowedRoles();
+    $rolesAllowedHere = array_values(array_filter(
+        $roles,
+        static fn(string $role): bool => in_array($role, $deploymentAllowedRoles, true)
+    ));
+
+    if (empty($rolesAllowedHere)) {
+        $activeRole = (string)($_SESSION['role'] ?? '');
+        if ($activeRole !== '' && isDeploymentRoleAllowed($activeRole)) {
+            setFlash('warning', deploymentAccessMessage($roles[0] ?? null));
+            header('Location: ' . getRoleDashboardUrl());
+            exit;
+        }
+
+        foreach (getAllRoles() as $userRole) {
+            if (isDeploymentRoleAllowed((string)$userRole)) {
+                $_SESSION['role'] = (string)$userRole;
+                setFlash('warning', deploymentAccessMessage($roles[0] ?? null));
+                header('Location: ' . getRoleDashboardUrl());
+                exit;
+            }
+        }
+
+        session_unset();
+        session_destroy();
+        header('Location: ' . APP_URL . '/auth/select-role.php?error=deployment_role_blocked');
+        exit;
+    }
+
     $userRoles = getAllRoles();
-    foreach ($roles as $r) {
+    foreach ($rolesAllowedHere as $r) {
         if (in_array($r, $userRoles, true)) {
             return; // access granted
         }
@@ -92,7 +121,18 @@ function requireRole($roles): void
  */
 function getRoleDashboardUrl(): string
 {
-    switch ($_SESSION['role'] ?? '') {
+    $role = (string)($_SESSION['role'] ?? '');
+    if ($role !== '' && !isDeploymentRoleAllowed($role)) {
+        foreach (getAllRoles() as $candidate) {
+            if (isDeploymentRoleAllowed((string)$candidate)) {
+                $_SESSION['role'] = (string)$candidate;
+                $role = (string)$candidate;
+                break;
+            }
+        }
+    }
+
+    switch ($role) {
         case 'admin':
             return APP_URL . '/admin/admin-dashboard.php';
         case 'clerk':
@@ -113,6 +153,9 @@ function getRoleDashboardUrl(): string
 function switchRole(string $newRole): bool
 {
     if (!isLoggedIn()) {
+        return false;
+    }
+    if (!isDeploymentRoleAllowed($newRole)) {
         return false;
     }
     if (!in_array($newRole, getAllRoles(), true)) {

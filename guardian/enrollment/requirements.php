@@ -218,13 +218,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 auditLog('enrollment_requirements_uploaded', 'enrollment_documents', $enrollmentId, null, [
                     'documents' => array_keys($uploadedRequirements),
                 ]);
-            } catch (Exception $auditError) {
-                error_log('Enrollment requirements audit error: ' . $auditError->getMessage());
+            } catch (Throwable $auditError) {
+                logException($auditError, 'Enrollment requirements audit failed.', ['enrollment_id' => $enrollmentId]);
             }
 
             setFlash('success', 'Enrollment requirements uploaded. The Enrollment Clerk can now review and validate them.');
             redirect(APP_URL . '/guardian/dashboard.php');
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
@@ -233,8 +233,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     deleteEnrollmentDocumentStoredFile($path);
                 }
             }
-            error_log('Enrollment requirements upload error: ' . $e->getMessage());
-            $errors[] = 'An error occurred while saving requirements. Please try again.';
+            logException($e, 'Enrollment requirements upload failed.', ['enrollment_id' => $enrollmentId]);
+            $errors[] = safeErrorMessage('An error occurred while saving requirements.');
         }
     }
 

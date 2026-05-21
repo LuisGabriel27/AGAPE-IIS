@@ -10,17 +10,26 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 $totalStudents     = $pdo->query("SELECT COUNT(*) FROM students")->fetchColumn();
 $totalRevenue      = $pdo->query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'paid'")->fetchColumn();
-$enrolledThisTerm  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'enrolled' AND school_year = '" . currentSchoolYear() . "'")->fetchColumn();
+$enrolledThisTermStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status = 'enrolled' AND school_year = :sy AND term = :term");
+$enrolledThisTermStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$enrolledThisTerm = (int)$enrolledThisTermStmt->fetchColumn();
 $totalStudentsForRate = max(1, $totalStudents);
 $enrollmentRate    = round(($enrolledThisTerm / $totalStudentsForRate) * 100, 1);
 
 // "For Registrar" = payment has been verified, registrar needs to submit to teachers.
 // "For Payment"   = assessment/payment reference still needs verification.
-$pendingEnroll  = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status = 'paid_for_registrar'")->fetchColumn();
-$pendingPayment = $pdo->query("SELECT COUNT(*) FROM enrollments WHERE status IN ('awaiting_payment', 'assessed_for_payment')")->fetchColumn();
+$pendingEnrollStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status = 'paid_for_registrar' AND school_year = :sy AND term = :term");
+$pendingEnrollStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$pendingEnroll = (int)$pendingEnrollStmt->fetchColumn();
+
+$pendingPaymentStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status IN ('awaiting_payment', 'assessed_for_payment') AND school_year = :sy AND term = :term");
+$pendingPaymentStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$pendingPayment = (int)$pendingPaymentStmt->fetchColumn();
 
 $totalUsers        = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
 $totalTeachers     = $pdo->query("SELECT COUNT(*) FROM teachers")->fetchColumn();
@@ -54,7 +63,8 @@ $stmt = $pdo->query("
 $recentActivity = $stmt->fetchAll();
 
 // Upcoming events
-$stmt = $pdo->query("SELECT * FROM calendar_events WHERE date_end >= CURRENT_DATE ORDER BY date_start LIMIT 5");
+$stmt = $pdo->prepare("SELECT * FROM calendar_events WHERE date_end >= CURRENT_DATE AND (school_year = :sy OR school_year = '' OR school_year IS NULL) ORDER BY date_start LIMIT 5");
+$stmt->execute([':sy' => $activeYear]);
 $upcomingEvents = $stmt->fetchAll();
 
 $pageTitle = 'Admin Dashboard';
@@ -65,6 +75,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
 
 <!-- KPI Cards -->
 <div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="alert alert-light border d-flex align-items-center justify-content-between flex-wrap gap-2 mb-0">
+            <div><i class="bi bi-calendar-check me-1"></i>Active academic period</div>
+            <?= activeAcademicPeriodBadge() ?>
+        </div>
+    </div>
     <div class="col-xl-3 col-md-6 col-6">
         <div class="kpi-card kpi-primary">
             <div class="kpi-icon-wrap"><i class="bi bi-people-fill"></i></div>

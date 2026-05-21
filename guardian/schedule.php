@@ -11,6 +11,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
 $userId = (int)($_SESSION['user_id'] ?? 0);
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 // Get guardian and linked students
 $stmt = $pdo->prepare('SELECT id FROM guardians WHERE user_id = :uid LIMIT 1');
@@ -63,7 +65,7 @@ $requestedYear = trim((string)($_GET['school_year'] ?? ''));
 if ($requestedYear !== '' && in_array($requestedYear, $years, true)) {
     $selectedYear = $requestedYear;
 } else {
-    $selectedYear = in_array(currentSchoolYear(), $years, true) ? currentSchoolYear() : (string)$years[0];
+    $selectedYear = in_array($activeYear, $years, true) ? $activeYear : (string)$years[0];
 }
 
 // Build available Term options based on selected section + school year
@@ -89,7 +91,7 @@ $requestedTerm = trim((string)($_GET['term'] ?? ''));
 if ($requestedTerm !== '' && in_array($requestedTerm, $terms, true)) {
     $selectedTerm = $requestedTerm;
 } else {
-    $selectedTerm = in_array('1st Semester', $terms, true) ? '1st Semester' : (string)$terms[0];
+    $selectedTerm = in_array($activeTerm, $terms, true) ? $activeTerm : (in_array('1st Semester', $terms, true) ? '1st Semester' : (string)$terms[0]);
 }
 
 // Fetch weekly schedule
@@ -142,12 +144,13 @@ $firstDay = mktime(0, 0, 0, $calMonth, 1, $calYear);
 $daysInMonth = (int)date('t', $firstDay);
 $startDow = (int)date('N', $firstDay); // 1=Mon
 
-$stmt = $pdo->prepare('
+$stmt = $pdo->prepare("
     SELECT * FROM calendar_events
-    WHERE (date_start BETWEEN :start AND :end)
-       OR (date_end BETWEEN :start2 AND :end2)
+    WHERE ((date_start BETWEEN :start AND :end)
+       OR (date_end BETWEEN :start2 AND :end2))
+      AND (school_year = :school_year OR school_year = '' OR school_year IS NULL)
     ORDER BY date_start
-');
+");
 $monthStart = date('Y-m-01', $firstDay);
 $monthEnd = date('Y-m-t', $firstDay);
 $stmt->execute([
@@ -155,6 +158,7 @@ $stmt->execute([
     ':end' => $monthEnd,
     ':start2' => $monthStart,
     ':end2' => $monthEnd,
+    ':school_year' => $selectedYear,
 ]);
 $events = $stmt->fetchAll();
 
@@ -205,6 +209,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="col-12">
         <div class="page-header-guardian">
             <h4><i class="bi bi-calendar-week me-2"></i>Schedule & Calendar</h4>
+            <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
         </div>
     </div>
 </div>

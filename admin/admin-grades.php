@@ -13,10 +13,11 @@ require_once __DIR__ . '/../includes/helpers.php';
 $pdo = getDB();
 $filterStudent = (int)($_GET['student_id'] ?? 0);
 $studentSearch = trim($_GET['student_search'] ?? '');
-$filterYear    = $_GET['school_year'] ?? '';
+$filterYear    = $_GET['school_year'] ?? currentSchoolYear();
+$filterTerm    = normalizeAcademicTerm($_GET['term'] ?? currentAcademicTerm());
 $errors        = [];
 
-$gradesFilterUrl = static function (int $studentId, string $search, string $schoolYear): string {
+$gradesFilterUrl = static function (int $studentId, string $search, string $schoolYear, string $term): string {
     $params = [];
     if ($studentId > 0) {
         $params['student_id'] = $studentId;
@@ -26,6 +27,9 @@ $gradesFilterUrl = static function (int $studentId, string $search, string $scho
     }
     if ($schoolYear !== '') {
         $params['school_year'] = $schoolYear;
+    }
+    if ($term !== '') {
+        $params['term'] = $term;
     }
 
     return APP_URL . '/admin/admin-grades.php' . (!empty($params) ? '?' . http_build_query($params) : '');
@@ -49,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             auditLog($newPub ? 'grade_published' : 'grade_unpublished', 'grades', $gradeId);
             setFlash('success', $newPub ? 'Grade published.' : 'Grade unpublished.');
-            redirect($gradesFilterUrl($filterStudent, $studentSearch, $filterYear));
+            redirect($gradesFilterUrl($filterStudent, $studentSearch, $filterYear, $filterTerm));
         }
     }
 
@@ -91,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             auditLog('grade_override', 'grades', $gradeId, $oldData, $quarterGrades + ['final_grade' => $finalGrade]);
             setFlash('success', 'Grade overridden successfully.');
-            redirect($gradesFilterUrl($filterStudent, $studentSearch, $filterYear));
+            redirect($gradesFilterUrl($filterStudent, $studentSearch, $filterYear, $filterTerm));
         }
     }
 }
@@ -105,7 +109,10 @@ $allStudents = $pdo->query("
 $years = $pdo->query("SELECT DISTINCT school_year FROM grades ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 if (empty($years)) {
     $years = [currentSchoolYear()];
+} elseif (!in_array(currentSchoolYear(), $years, true)) {
+    array_unshift($years, currentSchoolYear());
 }
+$terms = array_keys(academicTermOptions());
 
 $studentSearchLabel = static function (array $student): string {
     $name = format_name($student['first_name'] ?? '', $student['last_name'] ?? '');
@@ -184,6 +191,10 @@ if ($filterStudent) {
         $where .= " AND g.school_year = :sy";
         $params[':sy'] = $filterYear;
     }
+    if ($filterTerm) {
+        $where .= " AND g.term = :term";
+        $params[':term'] = $filterTerm;
+    }
 
     $stmt = $pdo->prepare("
         SELECT g.*, sub.name AS subject_name, sub.code AS subject_code,
@@ -192,7 +203,7 @@ if ($filterStudent) {
         JOIN subjects sub ON g.subject_id = sub.id
         LEFT JOIN teachers t ON g.submitted_by = t.id
         {$where}
-        ORDER BY g.school_year DESC, sub.name
+        ORDER BY g.school_year DESC, g.term DESC, sub.name
     ");
     $stmt->execute($params);
     $grades = $stmt->fetchAll();
@@ -203,7 +214,10 @@ require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="row mb-4">
-    <div class="col-12"><h4 class="fw-bold"><i class="bi bi-card-checklist me-2"></i>Grades Management</h4></div>
+    <div class="col-12">
+        <h4 class="fw-bold"><i class="bi bi-card-checklist me-2"></i>Grades Management</h4>
+        <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
+    </div>
 </div>
 
 <?php if (!empty($errors)): ?>
@@ -212,7 +226,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="card mb-4"><div class="card-body">
     <form method="GET" class="row g-3 align-items-start grades-filter-form" id="grades-filter">
-        <div class="col-md-6">
+        <div class="col-md-5">
             <label class="form-label" for="student-search">Student</label>
             <input type="hidden" name="student_id" id="student-id" value="<?= e($filterStudent ? (string)$filterStudent : '') ?>">
             <div class="student-search-picker">
@@ -234,7 +248,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="text-muted small mb-1">Multiple students matched. Choose one:</div>
                     <?php foreach ($searchMatches as $match): ?>
                         <a class="student-server-match"
-                           href="<?= e($gradesFilterUrl((int)$match['id'], $match['label'], $filterYear)) ?>">
+                           href="<?= e($gradesFilterUrl((int)$match['id'], $match['label'], $filterYear, $filterTerm)) ?>">
                             <span><?= e($match['name']) ?></span>
                             <small><?= e(trim(($match['lrn'] ? 'LRN ' . $match['lrn'] : '') . ' ' . ($match['grade'] !== 'N/A' ? '| ' . $match['grade'] : ''))) ?></small>
                         </a>
@@ -244,12 +258,19 @@ require_once __DIR__ . '/../includes/header.php';
                 <span class="field-error text-danger small d-block mt-1">No student matched that LRN or name.</span>
             <?php endif; ?>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <label class="form-label" for="school-year">School Year</label>
             <select class="form-select" name="school_year" id="school-year">
-                <option value="">All</option>
                 <?php foreach ($years as $y): ?>
                     <option value="<?= e($y) ?>" <?= e($filterYear === $y ? 'selected' : '') ?>><?= e($y) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="term">Term</label>
+            <select class="form-select" name="term" id="term">
+                <?php foreach ($terms as $term): ?>
+                    <option value="<?= e($term) ?>" <?= $filterTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -267,6 +288,7 @@ require_once __DIR__ . '/../includes/header.php';
             <tr>
                 <th>Subject</th>
                 <th>School Year</th>
+                <th>Term</th>
                 <th class="text-center">1st</th>
                 <th class="text-center">2nd</th>
                 <th class="text-center">3rd</th>
@@ -284,6 +306,7 @@ require_once __DIR__ . '/../includes/header.php';
             <tr>
                 <td><span class="badge bg-secondary"><?= e($g['subject_code']) ?></span> <?= e($g['subject_name']) ?></td>
                 <td><?= e($g['school_year']) ?></td>
+                <td><?= e($g['term']) ?></td>
                 <td class="text-center"><?= e($g['quarter1'] !== null ? number_format((float)$g['quarter1'], 2) : '-') ?></td>
                 <td class="text-center"><?= e($g['quarter2'] !== null ? number_format((float)$g['quarter2'], 2) : '-') ?></td>
                 <td class="text-center"><?= e($g['quarter3'] !== null ? number_format((float)$g['quarter3'], 2) : '-') ?></td>
