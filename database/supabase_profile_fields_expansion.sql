@@ -74,6 +74,30 @@ CREATE INDEX IF NOT EXISTS idx_students_middle_name
 CREATE INDEX IF NOT EXISTS idx_students_birth_profile
     ON students (last_name, first_name, middle_name, birthdate);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_students_psa_birth_certificate_no
+    ON students ((lower(btrim(psa_birth_certificate_no))))
+    WHERE psa_birth_certificate_no IS NOT NULL
+      AND btrim(psa_birth_certificate_no) <> '';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_students_ph_zip_codes'
+          AND conrelid = 'students'::regclass
+    ) THEN
+        ALTER TABLE students
+            ADD CONSTRAINT chk_students_ph_zip_codes
+            CHECK (
+                (current_zip_code IS NULL OR btrim(current_zip_code) = '' OR current_zip_code ~ '^[0-9]{4}$')
+                AND
+                (permanent_zip_code IS NULL OR btrim(permanent_zip_code) = '' OR permanent_zip_code ~ '^[0-9]{4}$')
+            );
+    END IF;
+END
+$$;
+
 -- ------------------------------------------------------------
 -- Guardians: fuller parent/legal guardian profile
 -- ------------------------------------------------------------

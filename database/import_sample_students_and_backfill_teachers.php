@@ -3,7 +3,7 @@
  * One-time data helper for the AGAPE AIIS demo/defense database.
  *
  * Imports database/sample_students_guardians_50.csv and fills missing teacher
- * profile fields added by supabase_profile_fields_expansion.sql.
+ * profile fields added by supabase_update_required_latest.sql.
  */
 
 require_once __DIR__ . '/../includes/db.php';
@@ -44,7 +44,7 @@ function requireColumn(PDO $pdo, string $table, string $column): void
 
     if ((int)$stmt->fetchColumn() === 0) {
         throw new RuntimeException(
-            "Missing column {$table}.{$column}. Run database/supabase_profile_fields_expansion.sql first."
+            "Missing column {$table}.{$column}. Run database/supabase_update_required_latest.sql first."
         );
     }
 }

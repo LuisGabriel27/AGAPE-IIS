@@ -32,6 +32,12 @@ if (!$teacher) {
     redirect(APP_URL . '/teacher/teacher-dashboard.php');
 }
 
+$sectionParams = [
+    ':tid' => $teacher['id'],
+    ':sy' => $activeYear,
+];
+$sectionTermClause = academicTermWhereClause('sch.term', 'section_term', $sectionParams, $activeTerm);
+
 // Get assigned sections (only sections this teacher teaches)
 $stmt = $pdo->prepare("
     SELECT DISTINCT sec.id, sec.name, sec.grade_level
@@ -39,10 +45,10 @@ $stmt = $pdo->prepare("
     JOIN sections sec ON sch.section_id = sec.id
     WHERE sch.teacher_id = :tid
       AND sch.school_year = :sy
-      AND sch.term = :term
+      AND {$sectionTermClause}
     ORDER BY sec.grade_level, sec.name
 ");
-$stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
+$stmt->execute($sectionParams);
 $sections = $stmt->fetchAll();
 
 $selSection = (int)($_GET['section_id'] ?? $_POST['section_id'] ?? ($sections[0]['id'] ?? 0));
@@ -63,13 +69,23 @@ foreach ($sections as $sec) {
 $students = [];
 $existingRecords = [];
 if ($hasAccess && $selSection) {
+    $studentParams = [
+        ':secid' => $selSection,
+        ':sy' => $activeYear,
+    ];
+    $studentTermClause = academicTermWhereClause('e.term', 'attendance_student_term', $studentParams, $activeTerm);
     $stmt = $pdo->prepare("
         SELECT s.id, s.first_name, s.last_name, s.lrn
         FROM students s
+        INNER JOIN enrollments e
+            ON e.student_id = s.id
+           AND e.status = 'enrolled'
+           AND e.school_year = :sy
+           AND {$studentTermClause}
         WHERE s.section_id = :secid
         ORDER BY s.last_name, s.first_name
     ");
-    $stmt->execute([':secid' => $selSection]);
+    $stmt->execute($studentParams);
     $students = $stmt->fetchAll();
 
     // Check for existing attendance records

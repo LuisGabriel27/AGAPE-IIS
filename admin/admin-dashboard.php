@@ -15,20 +15,26 @@ $activeTerm = currentAcademicTerm();
 
 $totalStudents     = $pdo->query("SELECT COUNT(*) FROM students")->fetchColumn();
 $totalRevenue      = $pdo->query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'paid'")->fetchColumn();
-$enrolledThisTermStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status = 'enrolled' AND school_year = :sy AND term = :term");
-$enrolledThisTermStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$enrolledThisTermParams = [':sy' => $activeYear];
+$enrolledThisTermClause = academicTermWhereClause('term', 'enrolled_term', $enrolledThisTermParams, $activeTerm);
+$enrolledThisTermStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status = 'enrolled' AND school_year = :sy AND {$enrolledThisTermClause}");
+$enrolledThisTermStmt->execute($enrolledThisTermParams);
 $enrolledThisTerm = (int)$enrolledThisTermStmt->fetchColumn();
 $totalStudentsForRate = max(1, $totalStudents);
 $enrollmentRate    = round(($enrolledThisTerm / $totalStudentsForRate) * 100, 1);
 
 // "For Registrar" = payment has been verified, registrar needs to submit to teachers.
 // "For Payment"   = assessment/payment reference still needs verification.
-$pendingEnrollStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status = 'paid_for_registrar' AND school_year = :sy AND term = :term");
-$pendingEnrollStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$pendingEnrollParams = [':sy' => $activeYear];
+$pendingEnrollTermClause = academicTermWhereClause('term', 'pending_enroll_term', $pendingEnrollParams, $activeTerm);
+$pendingEnrollStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status = 'paid_for_registrar' AND school_year = :sy AND {$pendingEnrollTermClause}");
+$pendingEnrollStmt->execute($pendingEnrollParams);
 $pendingEnroll = (int)$pendingEnrollStmt->fetchColumn();
 
-$pendingPaymentStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status IN ('awaiting_payment', 'assessed_for_payment') AND school_year = :sy AND term = :term");
-$pendingPaymentStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$pendingPaymentParams = [':sy' => $activeYear];
+$pendingPaymentTermClause = academicTermWhereClause('term', 'pending_payment_term', $pendingPaymentParams, $activeTerm);
+$pendingPaymentStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE status IN ('awaiting_payment', 'assessed_for_payment') AND school_year = :sy AND {$pendingPaymentTermClause}");
+$pendingPaymentStmt->execute($pendingPaymentParams);
 $pendingPayment = (int)$pendingPaymentStmt->fetchColumn();
 
 $totalUsers        = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();

@@ -175,7 +175,7 @@ Priority guide:
 ### P1-05A Expand production-ready profile and enrollment fields
 
 - Area: Registrar records, guardians, teachers, admin users
-- Status: Implemented in code on 2026-05-18. Requires running `database/supabase_profile_fields_expansion.sql` in Supabase before browser UAT.
+- Status: Implemented in code on 2026-05-18. Included in `database/supabase_update_required_latest.sql` for Supabase UAT.
 - Change:
   - Add DepEd-aligned learner fields: middle/extension name, PSA number, birthplace, mother tongue, religion, detailed addresses, parent names/contact, IP/4Ps/disability flags, transferee/returning learner data, previous school, and SHS track/strand.
   - Expand guardian records with middle name, address, occupation, civil status, nationality, religion, emergency contact, and data privacy consent timestamp.

@@ -22,6 +22,11 @@ $days  = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 $slots = [];
 
 if ($teacher) {
+    $scheduleParams = [
+        ':tid' => $teacher['id'],
+        ':sy' => $activeYear,
+    ];
+    $scheduleTermClause = academicTermWhereClause('sch.term', 'schedule_term', $scheduleParams, $activeTerm);
     $stmt = $pdo->prepare("
         SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
                sec.name AS section_name, sec.grade_level
@@ -30,10 +35,10 @@ if ($teacher) {
         JOIN sections sec ON sch.section_id = sec.id
         WHERE sch.teacher_id = :tid
           AND sch.school_year = :sy
-          AND sch.term = :term
+          AND {$scheduleTermClause}
         ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
     ");
-    $stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
+    $stmt->execute($scheduleParams);
     $rows = $stmt->fetchAll();
 
     foreach ($rows as $row) {
@@ -56,7 +61,7 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php if (empty($slots)): ?>
-    <?= emptyStateHtml('You have no class schedule for ' . formatAcademicPeriod($activeYear, $activeTerm) . '.', 'Class schedules are created by the school administrator. Please contact the admin or registrar if you expect to be assigned classes this term.', 'bi-calendar-week') ?>
+    <?= emptyStateHtml('You have no class schedule for ' . formatAcademicPeriod($activeYear, $activeTerm) . '.', 'Class schedules are created by the school administrator. Please contact the admin or registrar if you expect to be assigned classes this quarter.', 'bi-calendar-week') ?>
 <?php else: ?>
 <div class="card">
     <div class="card-body p-0">

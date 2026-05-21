@@ -69,29 +69,35 @@ if (!in_array($selectedYear, $years, true)) {
 }
 $terms = array_keys(academicTermOptions());
 
+$gradeParams = [
+    ':sid' => $selectedStudent,
+    ':sy' => $selectedYear,
+];
+$gradeTermClause = academicTermWhereClause('g.term', 'report_grade_term', $gradeParams, $selectedTerm, true);
 $stmt = $pdo->prepare("
-    SELECT sub.code, sub.name AS subject_name,
-           g.quarter1, g.quarter2, g.quarter3, g.quarter4, g.final_grade
+    SELECT sub.id AS subject_id, sub.code, sub.name AS subject_name,
+           MAX(g.quarter1) AS quarter1,
+           MAX(g.quarter2) AS quarter2,
+           MAX(g.quarter3) AS quarter3,
+           MAX(g.quarter4) AS quarter4
     FROM grades g
     INNER JOIN subjects sub ON sub.id = g.subject_id
     WHERE g.student_id = :sid
       AND g.school_year = :sy
-      AND g.term = :term
+      AND {$gradeTermClause}
       AND g.published = 1
+    GROUP BY sub.id, sub.code, sub.name
     ORDER BY sub.name
 ");
-$stmt->execute([
-    ':sid' => $selectedStudent,
-    ':sy' => $selectedYear,
-    ':term' => $selectedTerm,
-]);
+$stmt->execute($gradeParams);
 $grades = $stmt->fetchAll();
 
 $finalRatings = [];
 $failingSubjects = 0;
-foreach ($grades as $grade) {
-    if ($grade['final_grade'] !== null) {
-        $finalGrade = (float)$grade['final_grade'];
+foreach ($grades as $idx => $grade) {
+    $finalGrade = finalRatingFromQuarterGrades($grade);
+    $grades[$idx]['final_grade'] = $finalGrade;
+    if ($finalGrade !== null) {
         $finalRatings[] = $finalGrade;
         if ($finalGrade < 75) {
             $failingSubjects++;
@@ -168,7 +174,7 @@ renderOfficialDocumentStyles();
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Term</label>
+                    <label class="form-label">Quarter</label>
                     <select class="form-select" name="term">
                         <?php foreach ($terms as $term): ?>
                             <option value="<?= e($term) ?>" <?= $selectedTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>

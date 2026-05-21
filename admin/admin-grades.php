@@ -192,8 +192,7 @@ if ($filterStudent) {
         $params[':sy'] = $filterYear;
     }
     if ($filterTerm) {
-        $where .= " AND g.term = :term";
-        $params[':term'] = $filterTerm;
+        $where .= " AND " . academicTermWhereClause('g.term', 'grade_filter_term', $params, $filterTerm, true);
     }
 
     $stmt = $pdo->prepare("
@@ -267,7 +266,7 @@ require_once __DIR__ . '/../includes/header.php';
             </select>
         </div>
         <div class="col-md-2">
-            <label class="form-label" for="term">Term</label>
+            <label class="form-label" for="term">Quarter</label>
             <select class="form-select" name="term" id="term">
                 <?php foreach ($terms as $term): ?>
                     <option value="<?= e($term) ?>" <?= $filterTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
@@ -288,7 +287,7 @@ require_once __DIR__ . '/../includes/header.php';
             <tr>
                 <th>Subject</th>
                 <th>School Year</th>
-                <th>Term</th>
+                <th>Quarter</th>
                 <th class="text-center">1st</th>
                 <th class="text-center">2nd</th>
                 <th class="text-center">3rd</th>
@@ -306,7 +305,7 @@ require_once __DIR__ . '/../includes/header.php';
             <tr>
                 <td><span class="badge bg-secondary"><?= e($g['subject_code']) ?></span> <?= e($g['subject_name']) ?></td>
                 <td><?= e($g['school_year']) ?></td>
-                <td><?= e($g['term']) ?></td>
+                <td><?= e(normalizeAcademicTerm($g['term'] ?? '')) ?></td>
                 <td class="text-center"><?= e($g['quarter1'] !== null ? number_format((float)$g['quarter1'], 2) : '-') ?></td>
                 <td class="text-center"><?= e($g['quarter2'] !== null ? number_format((float)$g['quarter2'], 2) : '-') ?></td>
                 <td class="text-center"><?= e($g['quarter3'] !== null ? number_format((float)$g['quarter3'], 2) : '-') ?></td>

@@ -11,6 +11,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
 $userId = $_SESSION['user_id'];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 // Get guardian info
 $stmt = $pdo->prepare("SELECT * FROM guardians WHERE user_id = :uid LIMIT 1");
@@ -48,16 +50,23 @@ if ($guardian) {
 // Upcoming schedules (next 3)
 $upcomingSchedules = [];
 if (!empty($students)) {
+    $scheduleParams = [
+        ':secid' => $students[0]['section_id'] ?? 0,
+        ':sy' => $activeYear,
+    ];
+    $scheduleTermClause = academicTermWhereClause('sch.term', 'dashboard_schedule_term', $scheduleParams, $activeTerm);
     $stmt = $pdo->prepare("
         SELECT sch.day_of_week, sch.time_start, sch.time_end, sub.name AS subject_name, sch.room
         FROM schedules sch
         JOIN subjects sub ON sch.subject_id = sub.id
         JOIN sections sec ON sch.section_id = sec.id
         WHERE sec.id = :secid
+          AND sch.school_year = :sy
+          AND {$scheduleTermClause}
         ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
         LIMIT 3
     ");
-    $stmt->execute([':secid' => $students[0]['section_id'] ?? 0]);
+    $stmt->execute($scheduleParams);
     $upcomingSchedules = $stmt->fetchAll();
 }
 
@@ -227,6 +236,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 $requiredDocumentCount = $requirementStatus ? (int)$requirementStatus['required_document_count'] : count(requiredEnrollmentDocumentsForGrade((string)($stu['grade_level'] ?? '')));
                                 $documentSummary = $requirementStatus['document_summary'] ?? null;
                                 $needsReplacement = $documentSummary && !empty($documentSummary['needs_replacement_labels']);
+                                $needsReplacementNotes = $documentSummary['needs_replacement_notes'] ?? [];
                                 $hasPendingReview = $documentSummary && !empty($documentSummary['pending_labels']);
                                 $documentsAccepted = $documentSummary && !empty($documentSummary['all_accepted']);
                                 $canUploadRequirements = $requirementStatus
@@ -253,6 +263,13 @@ require_once __DIR__ . '/../includes/header.php';
                                         <div class="small text-danger mt-1">
                                             Needs replacement: <?= e(implode(', ', $documentSummary['needs_replacement_labels'])) ?>
                                         </div>
+                                        <?php foreach ($needsReplacementNotes as $note): ?>
+                                            <div class="small text-muted mt-1">
+                                                <i class="bi bi-chat-left-text me-1"></i>
+                                                <strong><?= e($note['label'] ?? 'Clerk note') ?>:</strong>
+                                                <?= e($note['note'] ?? '') ?>
+                                            </div>
+                                        <?php endforeach; ?>
                                     <?php endif; ?>
                                 </div>
                             <?php elseif ($hasInProgressUpload): ?>

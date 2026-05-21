@@ -41,7 +41,15 @@ $stmt = $pdo->prepare("
     WHERE s.guardian_id = :gid
       AND e.status = 'enrolled'
     ORDER BY e.school_year DESC,
-             CASE e.term WHEN '2nd Semester' THEN 2 WHEN '1st Semester' THEN 1 ELSE 0 END DESC,
+             CASE e.term
+                 WHEN '4th Quarter' THEN 4
+                 WHEN '3rd Quarter' THEN 3
+                 WHEN '2nd Semester' THEN 3
+                 WHEN '2nd Quarter' THEN 2
+                 WHEN '1st Quarter' THEN 1
+                 WHEN '1st Semester' THEN 1
+                 ELSE 0
+             END DESC,
              e.enrolled_at DESC NULLS LAST,
              e.id DESC
     LIMIT 1
@@ -81,6 +89,12 @@ if (!empty($schoolYears) && !in_array($selectedYear, $schoolYears, true)) {
 
 $selectedTerm = normalizeAcademicTerm($_GET['term'] ?? currentAcademicTerm());
 
+$certificateParams = [
+    ':sid' => $selectedStudent,
+    ':gid' => $guardian['id'],
+    ':sy' => $selectedYear,
+];
+$certificateTermClause = academicTermWhereClause('e.term', 'certificate_term', $certificateParams, $selectedTerm);
 $stmt = $pdo->prepare("
     SELECT e.id, e.school_year, e.term, e.status, e.enrolled_at,
            CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
@@ -94,16 +108,11 @@ $stmt = $pdo->prepare("
       AND s.guardian_id = :gid
       AND e.status = 'enrolled'
       AND e.school_year = :sy
-      AND e.term = :term
+      AND {$certificateTermClause}
     ORDER BY e.enrolled_at DESC, e.id DESC
     LIMIT 1
 ");
-$stmt->execute([
-    ':sid' => $selectedStudent,
-    ':gid' => $guardian['id'],
-    ':sy' => $selectedYear,
-    ':term' => $selectedTerm,
-]);
+$stmt->execute($certificateParams);
 $certificateRecord = $stmt->fetch();
 
 if (!$certificateRecord) {
@@ -129,7 +138,7 @@ if (!$certificateRecord) {
     $certificateRecord = $stmt->fetch();
     if ($certificateRecord) {
         $selectedYear = $certificateRecord['school_year'];
-        $selectedTerm = $certificateRecord['term'];
+        $selectedTerm = normalizeAcademicTerm($certificateRecord['term'] ?? '');
     }
 }
 
@@ -205,10 +214,11 @@ renderOfficialDocumentStyles();
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Term</label>
+                    <label class="form-label">Quarter</label>
                     <select class="form-select" name="term">
-                        <option value="1st Semester" <?= $selectedTerm === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-                        <option value="2nd Semester" <?= $selectedTerm === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
+                        <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
+                            <option value="<?= e($termValue) ?>" <?= $selectedTerm === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -226,7 +236,7 @@ renderOfficialDocumentStyles();
 
             <?php if (!$certificateRecord): ?>
                 <div class="alert alert-warning mb-0">
-                    No approved or enrolled record was found for the selected student and term.
+                    No approved or enrolled record was found for the selected student and quarter.
                     Certificates are generated only after the Registrar submits the enrollment to teachers.
                 </div>
             <?php else: ?>

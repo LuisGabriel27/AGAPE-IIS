@@ -150,8 +150,8 @@ $receiptNo = 'RCPT-' . date('Ymd', strtotime($issuedAt)) . '-' . str_pad((string
                 <div class="fw-semibold"><?= e($payment['student_name']) ?></div>
             </div>
             <div class="col-md-6">
-                <div class="receipt-label">School Year / Term</div>
-                <div><?= e($payment['school_year']) ?> / <?= e($payment['term']) ?></div>
+                <div class="receipt-label">School Year / Quarter</div>
+                <div><?= e($payment['school_year']) ?> / <?= e(normalizeAcademicTerm($payment['term'] ?? '')) ?></div>
             </div>
             <div class="col-md-6">
                 <div class="receipt-label">Status</div>

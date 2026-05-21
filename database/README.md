@@ -6,33 +6,23 @@ Do not use the legacy MySQL files for the active `w/supabase` branch unless you 
 
 ## Canonical Supabase Path
 
-Use this order for a fresh Supabase database:
+Use this single paste-ready file for the current app database:
 
-1. Run `supabase_schema.sql`.
-2. Run `supabase_upgrade_v2.sql`.
-3. Run `supabase_upgrade_v3_split_name.sql`.
-4. Run `supabase_upgrade_v4_enrollment_documents.sql`.
-5. Run `supabase_upgrade_v5_deped_grading.sql`.
-6. Run `supabase_upgrade_v6_subject_grade_levels.sql`.
-7. Run `supabase_upgrade_v7_enrollment_statuses.sql`.
-8. Run `supabase_upgrade_v8_document_review.sql`.
-9. Run `supabase_upgrade_v9_payment_assessments.sql`.
-10. Run `supabase_production_readiness_preflight.sql`.
-11. If every preflight `issue_count` is `0`, run `supabase_production_readiness_hardening.sql`.
-12. Run `supabase_email_case_hardening.sql`.
-13. Run `supabase_profile_fields_expansion.sql`.
+1. Back up/export the database first if it already has live data.
+2. Open Supabase Dashboard -> SQL Editor -> New Query.
+3. Paste and run `supabase_update_required_latest.sql`.
 
-The production readiness hardening SQL was successfully applied to the current Supabase project on 2026-05-17.
+That file is idempotent and combines the current required app updates, including enrollment document review notes, payment assessments, profile fields, quarterly settings, PSA uniqueness, and Philippine ZIP code validation.
+
+For a brand-new empty database, run `supabase_schema.sql` first, then run `supabase_update_required_latest.sql` once. Do not rerun `supabase_schema.sql` on a database that already contains live data.
 
 ## Existing Supabase Database
 
 For an existing database with data:
 
 1. Back up/export the database first.
-2. Run only missing upgrade files in order.
-3. Run `supabase_production_readiness_preflight.sql`.
-4. Clean any reported duplicate or invalid data.
-5. Run `supabase_production_readiness_hardening.sql`.
+2. Run `supabase_update_required_latest.sql`.
+3. If Supabase reports duplicate PSA or invalid ZIP values, clean those rows and rerun the same file.
 
 Do not rerun `supabase_schema.sql` on a database that already contains live data.
 
@@ -41,24 +31,13 @@ Do not rerun `supabase_schema.sql` on a database that already contains live data
 Active Supabase files:
 
 - `supabase_schema.sql`
-- `supabase_upgrade_v2.sql`
-- `supabase_upgrade_v3_split_name.sql`
-- `supabase_upgrade_v4_enrollment_documents.sql`
-- `supabase_upgrade_v5_deped_grading.sql`
-- `supabase_upgrade_v6_subject_grade_levels.sql`
-- `supabase_upgrade_v7_enrollment_statuses.sql`
-- `supabase_upgrade_v8_document_review.sql`
-- `supabase_upgrade_v9_payment_assessments.sql`
-- `supabase_production_readiness_preflight.sql`
-- `supabase_production_readiness_hardening.sql`
-- `supabase_email_case_hardening.sql`
-- `supabase_profile_fields_expansion.sql`
+- `supabase_update_required_latest.sql`
 
 Legacy or reference files:
 
 - `schema.sql` is the old MySQL schema.
 - `upgrade_v2.sql` and `upgrade_migrations.sql` are old MySQL upgrade files.
-- `supabase_update_required_latest.sql` is an older combined upgrade helper and does not replace the canonical order above.
+- `supabase_upgrade_v*.sql`, `supabase_profile_fields_expansion.sql`, `supabase_email_case_hardening.sql`, and production-readiness scripts are retained as history/reference. The combined latest file is the normal one to paste.
 - `supabase_reset.sql` is useful only for destructive local reset/testing. Do not run it on a database with data.
 - `run_v7_migration.php`, `run_v8_migration.php`, and `run_v9_migration.php` are older PHP convenience runners. Prefer Supabase SQL Editor for the canonical path.
 
@@ -70,4 +49,4 @@ After migrations, run:
 SELECT 'database_ready' AS check_name;
 ```
 
-Then run `supabase_production_readiness_preflight.sql` again. All summary `issue_count` values should be `0`.
+Optional production audits can still use `supabase_production_readiness_preflight.sql`.

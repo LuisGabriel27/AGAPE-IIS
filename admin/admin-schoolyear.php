@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
 
             // a. Update settings to next SY and reset term.
             setSettingValue('active_school_year', $nextSY);
-            setSettingValue('active_term', '1st Semester');
+            setSettingValue('active_term', '1st Quarter');
 
             // b. Archive enrollments for old SY
             $stmt = $pdo->prepare("UPDATE enrollments SET status = 'archived' WHERE school_year = :sy AND status != 'archived'");
@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
             clearAcademicPeriodCache();
 
             // e. Audit log
-            auditLog('school_year_reset', 'settings', null, ['school_year' => $oldSY, 'term' => $currentTerm], ['school_year' => $nextSY, 'term' => '1st Semester']);
+            auditLog('school_year_reset', 'settings', null, ['school_year' => $oldSY, 'term' => $currentTerm], ['school_year' => $nextSY, 'term' => '1st Quarter']);
 
             setFlash('success', 'School year has been reset from ' . $oldSY . ' to ' . $nextSY . ' successfully.');
             redirect(APP_URL . '/admin/admin-schoolyear.php');
@@ -140,8 +140,10 @@ $depedEventsCount = $pdo->prepare("SELECT COUNT(*) FROM calendar_events WHERE so
 $depedEventsCount->execute([':sy' => $currentSY]);
 $depedEventsCount = (int)$depedEventsCount->fetchColumn();
 
-$activeScheduleCountStmt = $pdo->prepare("SELECT COUNT(*) FROM schedules WHERE school_year = :sy AND term = :term");
-$activeScheduleCountStmt->execute([':sy' => $currentSY, ':term' => $currentTerm]);
+$activeScheduleParams = [':sy' => $currentSY];
+$activeScheduleTermClause = academicTermWhereClause('term', 'active_schedule_term', $activeScheduleParams, $currentTerm);
+$activeScheduleCountStmt = $pdo->prepare("SELECT COUNT(*) FROM schedules WHERE school_year = :sy AND {$activeScheduleTermClause}");
+$activeScheduleCountStmt->execute($activeScheduleParams);
 $activeScheduleCount = (int)$activeScheduleCountStmt->fetchColumn();
 
 $pageTitle = 'School Year Management';
@@ -193,7 +195,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <input type="text" class="form-control" id="active_school_year" name="active_school_year" value="<?= e($currentSY) ?>" pattern="\d{4}-\d{4}" required>
             </div>
             <div class="col-md-4">
-                <label class="form-label" for="active_term">Term</label>
+                <label class="form-label" for="active_term">Quarter</label>
                 <select class="form-select" id="active_term" name="active_term">
                     <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
                         <option value="<?= e($termValue) ?>" <?= $currentTerm === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>

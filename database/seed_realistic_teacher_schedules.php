@@ -13,7 +13,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
 $schoolYear = $argv[1] ?? currentSchoolYear();
-$term = $argv[2] ?? '1st Semester';
+$term = $argv[2] ?? '1st Quarter';
 
 $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 $periods = [

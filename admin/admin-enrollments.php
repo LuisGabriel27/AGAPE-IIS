@@ -235,8 +235,7 @@ if ($filterYear !== '') {
     $params[':year'] = $filterYear;
 }
 if ($filterTerm !== '') {
-    $where[] = 'e.term = :term';
-    $params[':term'] = $filterTerm;
+    $where[] = academicTermWhereClause('e.term', 'filter_term', $params, $filterTerm);
 }
 if ($search !== '') {
     $where[] = '(s.last_name ILIKE :search OR s.first_name ILIKE :search2 OR s.lrn ILIKE :search3)';
@@ -304,6 +303,8 @@ if (empty($years)) {
 $terms = array_keys(academicTermOptions());
 
 // Single aggregation query for KPI counts
+$statsParams = [':sy' => $filterYear];
+$statsTermClause = academicTermWhereClause('term', 'stats_term', $statsParams, $filterTerm);
 $statsStmt = $pdo->prepare("
     SELECT
         COUNT(*)                                                                  AS total,
@@ -316,9 +317,9 @@ $statsStmt = $pdo->prepare("
         COUNT(*) FILTER (WHERE status = 'submitted')                              AS submitted,
         COUNT(*) FILTER (WHERE status = 'returned')                               AS returned
     FROM enrollments
-    WHERE school_year = :sy AND term = :term
+    WHERE school_year = :sy AND {$statsTermClause}
 ");
-$statsStmt->execute([':sy' => $filterYear, ':term' => $filterTerm]);
+$statsStmt->execute($statsParams);
 $stats = $statsStmt->fetch();
 
 $totalEnrollments        = (int)$stats['total'];
@@ -471,7 +472,8 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 </select>
             </div>
             <div class="col-md-2">
-                <select class="form-select form-select-sm" name="term">
+                <label class="visually-hidden" for="enrollment-quarter-filter">Quarter</label>
+                <select class="form-select form-select-sm" name="term" id="enrollment-quarter-filter">
                     <?php foreach ($terms as $term): ?>
                         <option value="<?= e($term) ?>" <?= $filterTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
                     <?php endforeach; ?>
@@ -497,7 +499,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 <th>Student</th>
                 <th>Grade</th>
                 <th>School Year</th>
-                <th>Term</th>
+                <th>Quarter</th>
                 <th>Requirements</th>
                 <th>Payment</th>
                 <th>Registrar Step</th>
@@ -555,7 +557,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 </td>
                 <td><?= e(formatGradeLevel((string)($en['grade_level'] ?? ''))) ?></td>
                 <td><?= e($en['school_year']) ?></td>
-                <td><?= e($en['term']) ?></td>
+                <td><?= e(normalizeAcademicTerm($en['term'] ?? '')) ?></td>
                 <td>
                     <div class="mb-2">
                         <span class="badge <?= $documentsComplete ? 'badge-status-active' : 'badge-status-inactive' ?>">

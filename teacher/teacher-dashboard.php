@@ -23,6 +23,11 @@ $teacher = $stmt->fetch();
 // Get assigned schedules with subject & section info
 $assignments = [];
 if ($teacher) {
+    $assignmentParams = [
+        ':tid' => $teacher['id'],
+        ':sy' => $activeYear,
+    ];
+    $assignmentTermClause = academicTermWhereClause('sch.term', 'assignment_term', $assignmentParams, $activeTerm);
     $stmt = $pdo->prepare("
         SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
                sec.name AS section_name, sec.grade_level
@@ -31,10 +36,10 @@ if ($teacher) {
         JOIN sections sec ON sch.section_id = sec.id
         WHERE sch.teacher_id = :tid
           AND sch.school_year = :sy
-          AND sch.term = :term
+          AND {$assignmentTermClause}
         ORDER BY sub.name, sec.name
     ");
-    $stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
+    $stmt->execute($assignmentParams);
     $assignments = $stmt->fetchAll();
 }
 
@@ -62,36 +67,59 @@ $upcomingEvents = $stmt->fetchAll();
 $pendingGradeEntry = 0;
 if ($teacher) {
     // Get distinct subject-section groups assigned to this teacher.
+    $comboParams = [
+        ':tid' => $teacher['id'],
+        ':sy' => $activeYear,
+    ];
+    $comboTermClause = academicTermWhereClause('sch.term', 'combo_term', $comboParams, $activeTerm);
     $stmt = $pdo->prepare("
         SELECT DISTINCT sch.subject_id, sch.section_id, sch.school_year, sch.term
         FROM schedules sch
         WHERE sch.teacher_id = :tid
           AND sch.school_year = :sy
-          AND sch.term = :term
+          AND {$comboTermClause}
     ");
-    $stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
+    $stmt->execute($comboParams);
     $teacherCombos = $stmt->fetchAll();
 
     foreach ($teacherCombos as $combo) {
         // A student is complete only after all four DepEd grading periods are encoded.
-        $stmt = $pdo->prepare("
-            SELECT COUNT(*) FROM students s
-            WHERE s.section_id = :secid
-            AND s.id NOT IN (
-                SELECT g.student_id FROM grades g
-                WHERE g.subject_id = :subid AND g.school_year = :sy AND g.term = :term
-                AND g.quarter1 IS NOT NULL
-                AND g.quarter2 IS NOT NULL
-                AND g.quarter3 IS NOT NULL
-                AND g.quarter4 IS NOT NULL
-            )
-        ");
-        $stmt->execute([
+        $pendingParams = [
             ':secid' => $combo['section_id'],
             ':subid' => $combo['subject_id'],
             ':sy'    => $combo['school_year'],
-            ':term'  => $combo['term'],
-        ]);
+        ];
+        $pendingEnrollmentTermClause = academicTermWhereClause('e.term', 'pending_enrollment_term', $pendingParams, $activeTerm);
+        $pendingGradeTermClause = academicTermWhereClause('g.term', 'pending_grade_term', $pendingParams, $activeTerm, true);
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM students s
+            INNER JOIN enrollments e
+                ON e.student_id = s.id
+               AND e.status = 'enrolled'
+               AND e.school_year = :sy
+               AND {$pendingEnrollmentTermClause}
+            WHERE s.section_id = :secid
+            AND s.id NOT IN (
+                SELECT completed.student_id
+                FROM (
+                    SELECT g.student_id,
+                           MAX(g.quarter1) AS quarter1,
+                           MAX(g.quarter2) AS quarter2,
+                           MAX(g.quarter3) AS quarter3,
+                           MAX(g.quarter4) AS quarter4
+                    FROM grades g
+                    WHERE g.subject_id = :subid
+                      AND g.school_year = :sy
+                      AND {$pendingGradeTermClause}
+                    GROUP BY g.student_id
+                ) completed
+                WHERE completed.quarter1 IS NOT NULL
+                  AND completed.quarter2 IS NOT NULL
+                  AND completed.quarter3 IS NOT NULL
+                  AND completed.quarter4 IS NOT NULL
+            )
+        ");
+        $stmt->execute($pendingParams);
         $missing = (int)$stmt->fetchColumn();
         if ($missing > 0) {
             $pendingGradeEntry++;

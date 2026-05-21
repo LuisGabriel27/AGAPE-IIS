@@ -294,7 +294,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     <tr><th>Grade</th><td><?= e(formatGradeLevel((string)($record['grade_level'] ?: ''))) ?></td></tr>
                     <tr><th>LRN</th><td><?= e($record['lrn'] ?: 'N/A') ?></td></tr>
                     <tr><th>School Year</th><td><?= e($record['school_year']) ?></td></tr>
-                    <tr><th>Term</th><td><?= e($record['term']) ?></td></tr>
+                    <tr><th>Quarter</th><td><?= e(normalizeAcademicTerm($record['term'] ?? '')) ?></td></tr>
                     <tr><th>Enrollment Status</th><td><span class="badge <?= e(enrollmentStatusBadgeClass($record['enrollment_status'])) ?>"><?= e(enrollmentStatusLabel($record['enrollment_status'])) ?></span></td></tr>
                     <tr><th>Payment Status</th><td><span class="badge <?= e(paymentStatusBadgeClass($record['payment_status'] ?? 'pending')) ?>"><?= e(paymentStatusLabel($record['payment_status'] ?? 'pending')) ?></span></td></tr>
                 </table>
@@ -310,6 +310,12 @@ require_once __DIR__ . '/../../includes/header.php';
                     <div class="card-body py-3">
                         <h6 class="fw-bold mb-2">Assessment Breakdown</h6>
                         <?php if ($assessmentDetails && !empty($assessmentDetails['items'])): ?>
+                            <?php $assessmentNote = trim((string)($assessmentDetails['assessment']['notes'] ?? '')); ?>
+                            <?php if ($assessmentNote !== ''): ?>
+                                <div class="alert alert-info small py-2 mb-3">
+                                    <i class="bi bi-chat-left-text me-1"></i><strong>Clerk note:</strong> <?= e($assessmentNote) ?>
+                                </div>
+                            <?php endif; ?>
                             <?php $deductionCategories = assessmentDeductionCategories(); ?>
                             <table class="table table-sm mb-0">
                                 <?php foreach ($assessmentDetails['items'] as $item):

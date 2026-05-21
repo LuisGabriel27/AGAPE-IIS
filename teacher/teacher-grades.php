@@ -26,6 +26,12 @@ if (!$teacher) {
     redirect(APP_URL . '/teacher/teacher-dashboard.php');
 }
 
+$classParams = [
+    ':tid' => $teacher['id'],
+    ':sy' => $activeYear,
+];
+$classTermClause = academicTermWhereClause('sch.term', 'class_term', $classParams, $activeTerm);
+
 // Get assigned subject-section combinations
 $stmt = $pdo->prepare("
     SELECT DISTINCT sch.subject_id, sch.section_id, sch.school_year, sch.term,
@@ -36,10 +42,10 @@ $stmt = $pdo->prepare("
     JOIN sections sec ON sch.section_id = sec.id
     WHERE sch.teacher_id = :tid
       AND sch.school_year = :sy
-      AND sch.term = :term
+      AND {$classTermClause}
     ORDER BY sub.name, sec.name
 ");
-$stmt->execute([':tid' => $teacher['id'], ':sy' => $activeYear, ':term' => $activeTerm]);
+$stmt->execute($classParams);
 $classes = $stmt->fetchAll();
 
 // Selected class
@@ -57,7 +63,7 @@ foreach ($classes as $c) {
     if ($c['subject_id'] == $selSubject && $c['section_id'] == $selSection) {
         $currentClass = $c;
         $selYear = $c['school_year'];
-        $selTerm = $c['term'];
+        $selTerm = $activeTerm;
         break;
     }
 }
@@ -66,24 +72,36 @@ foreach ($classes as $c) {
 $students = [];
 $publishedStatus = 0;
 if ($currentClass) {
+    $studentParams = [
+        ':subid' => $selSubject,
+        ':secid' => $selSection,
+        ':sy' => $selYear,
+    ];
+    $enrollmentTermClause = academicTermWhereClause('e.term', 'student_enrollment_term', $studentParams, $selTerm);
+    $gradeTermClause = academicTermWhereClause('g.term', 'student_grade_term', $studentParams, $selTerm, true);
     $stmt = $pdo->prepare("
         SELECT s.id, s.first_name, s.last_name, s.lrn,
-               g.id AS grade_id, g.quarter1, g.quarter2, g.quarter3, g.quarter4, g.final_grade, g.published
+               MAX(g.id) AS grade_id,
+               MAX(g.quarter1) AS quarter1,
+               MAX(g.quarter2) AS quarter2,
+               MAX(g.quarter3) AS quarter3,
+               MAX(g.quarter4) AS quarter4,
+               MAX(COALESCE(g.published, 0)) AS published
         FROM students s
-        JOIN sections sec ON s.section_id = sec.id
+        INNER JOIN enrollments e
+            ON e.student_id = s.id
+           AND e.status = 'enrolled'
+           AND e.school_year = :sy
+           AND {$enrollmentTermClause}
         LEFT JOIN grades g ON g.student_id = s.id 
             AND g.subject_id = :subid 
             AND g.school_year = :sy 
-            AND g.term = :term
+            AND {$gradeTermClause}
         WHERE s.section_id = :secid
+        GROUP BY s.id, s.first_name, s.last_name, s.lrn
         ORDER BY s.last_name, s.first_name
     ");
-    $stmt->execute([
-        ':subid' => $selSubject,
-        ':secid' => $selSection,
-        ':sy'    => $selYear,
-        ':term'  => $selTerm,
-    ]);
+    $stmt->execute($studentParams);
     $students = $stmt->fetchAll();
 
     // Check if grades are published (use first student's record as indicator)
@@ -108,20 +126,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
     if ($postAction === 'publish' || $postAction === 'unpublish') {
         $newPublished = ($postAction === 'publish') ? 1 : 0;
 
+        $publishParams = [
+            ':pub' => $newPublished,
+            ':subid' => $selSubject,
+            ':sy' => $selYear,
+            ':secid' => $selSection,
+        ];
+        $publishTermClause = academicTermWhereClause('term', 'publish_term', $publishParams, $selTerm, true);
         $stmt = $pdo->prepare("
             UPDATE grades SET published = :pub
-            WHERE subject_id = :subid AND school_year = :sy AND term = :term
+            WHERE subject_id = :subid AND school_year = :sy AND {$publishTermClause}
             AND student_id IN (
                 SELECT s.id FROM students s WHERE s.section_id = :secid
             )
         ");
-        $stmt->execute([
-            ':pub'   => $newPublished,
-            ':subid' => $selSubject,
-            ':sy'    => $selYear,
-            ':term'  => $selTerm,
-            ':secid' => $selSection,
-        ]);
+        $stmt->execute($publishParams);
 
         auditLog($postAction === 'publish' ? 'grades_published' : 'grades_unpublished', 'grades', $selSubject, null, [
             'section_id' => $selSection,
@@ -137,6 +156,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
     $studentIds  = $_POST['student_ids'] ?? [];
     $submittedStudentIds = array_map('intval', $studentIds);
     $allowedStudentIds = array_map('intval', array_column($students, 'id'));
+    $studentQuarterSnapshots = [];
+    foreach ($students as $studentRow) {
+        $studentQuarterSnapshots[(int)$studentRow['id']] = [
+            'quarter1' => $studentRow['quarter1'],
+            'quarter2' => $studentRow['quarter2'],
+            'quarter3' => $studentRow['quarter3'],
+            'quarter4' => $studentRow['quarter4'],
+        ];
+    }
 
     if (count($submittedStudentIds) !== count(array_unique($submittedStudentIds))) {
         $errors[] = 'Submitted student list contains duplicate rows. Please reload the page and try again.';
@@ -162,17 +190,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
                     throw new InvalidArgumentException('Grades must be between 0 and 100.');
                 }
 
+                $existingParams = [
+                    ':sid' => $studentId,
+                    ':subid' => $selSubject,
+                    ':sy' => $selYear,
+                    ':term_exact' => $selTerm,
+                ];
+                $existingTermClause = academicTermWhereClause('term', 'existing_grade_term', $existingParams, $selTerm);
                 $stmt = $pdo->prepare("
                     SELECT id, quarter1, quarter2, quarter3, quarter4
                     FROM grades
-                    WHERE student_id = :sid AND subject_id = :subid AND school_year = :sy AND term = :term
+                    WHERE student_id = :sid AND subject_id = :subid AND school_year = :sy AND {$existingTermClause}
+                    ORDER BY CASE WHEN term = :term_exact THEN 0 ELSE 1 END, id DESC
                     LIMIT 1
                 ");
-                $stmt->execute([':sid' => $studentId, ':subid' => $selSubject, ':sy' => $selYear, ':term' => $selTerm]);
+                $stmt->execute($existingParams);
                 $existing = $stmt->fetch();
 
                 if ($existing) {
-                    $quarterGrades = [
+                    $quarterGrades = $studentQuarterSnapshots[$studentId] ?? [
                         'quarter1' => $existing['quarter1'],
                         'quarter2' => $existing['quarter2'],
                         'quarter3' => $existing['quarter3'],
@@ -193,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $currentClass) {
                         ':gid' => $existing['id'],
                     ]);
                 } else {
-                    $quarterGrades = [
+                    $quarterGrades = $studentQuarterSnapshots[$studentId] ?? [
                         'quarter1' => null,
                         'quarter2' => null,
                         'quarter3' => null,
@@ -351,7 +387,14 @@ require_once __DIR__ . '/../includes/header.php';
                             <th>#</th>
                             <th>Student Name</th>
                             <th>LRN</th>
-                            <th class="text-center" style="width:18%;"><?= e($selPeriodLabel) ?></th>
+                            <?php foreach ($periods as $periodKey => $periodLabel): ?>
+                                <th class="text-center" style="width:12%;">
+                                    <?= e($periodLabel) ?>
+                                    <?php if ($periodKey === $selPeriod): ?>
+                                        <span class="badge bg-primary ms-1">Editing</span>
+                                    <?php endif; ?>
+                                </th>
+                            <?php endforeach; ?>
                             <th class="text-center">Descriptor</th>
                             <th class="text-center">Remarks</th>
                             <th class="text-center" style="width:15%;">Final Rating</th>
@@ -361,19 +404,32 @@ require_once __DIR__ . '/../includes/header.php';
                         <?php foreach ($students as $idx => $stu): ?>
                         <?php
                             $periodGrade = $stu[$selPeriod] !== null ? (float)$stu[$selPeriod] : null;
-                            $finalGrade = $stu['final_grade'] !== null ? (float)$stu['final_grade'] : null;
+                            $quarterGradesForRow = [
+                                'quarter1' => $stu['quarter1'],
+                                'quarter2' => $stu['quarter2'],
+                                'quarter3' => $stu['quarter3'],
+                                'quarter4' => $stu['quarter4'],
+                            ];
+                            $finalGrade = finalRatingFromQuarterGrades($quarterGradesForRow);
                         ?>
                         <tr>
                             <td><?= e((string)($idx + 1)) ?></td>
                             <td><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></td>
                             <td><small class="text-muted"><?= e($stu['lrn'] ?? 'N/A') ?></small></td>
-                            <td>
-                                <input type="hidden" name="student_ids[]" value="<?= (int)$stu['id'] ?>">
-                                <input type="number" class="form-control form-control-sm text-center grade-input" 
-                                       name="grade[]" step="0.01" min="0" max="100"
-                                       value="<?= e($periodGrade !== null ? number_format($periodGrade, 2) : '') ?>"
-                                       data-row="<?= (int)$idx ?>">
-                            </td>
+                            <?php foreach ($periods as $periodKey => $_periodLabel): ?>
+                                <?php $quarterValue = $stu[$periodKey] !== null ? (float)$stu[$periodKey] : null; ?>
+                                <td class="text-center">
+                                    <?php if ($periodKey === $selPeriod): ?>
+                                        <input type="hidden" name="student_ids[]" value="<?= (int)$stu['id'] ?>">
+                                        <input type="number" class="form-control form-control-sm text-center grade-input"
+                                               name="grade[]" step="0.01" min="0" max="100"
+                                               value="<?= e($quarterValue !== null ? number_format($quarterValue, 2) : '') ?>"
+                                               data-row="<?= (int)$idx ?>">
+                                    <?php else: ?>
+                                        <?= e($quarterValue !== null ? number_format($quarterValue, 2) : '-') ?>
+                                    <?php endif; ?>
+                                </td>
+                            <?php endforeach; ?>
                             <td class="text-center" id="descriptor_<?= (int)$idx ?>">
                                 <?= e(depedDescriptor($periodGrade)) ?>
                             </td>

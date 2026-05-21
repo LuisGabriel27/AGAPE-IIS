@@ -265,6 +265,19 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
         $data['permanent_zip_code'] = $data['current_zip_code'];
     }
 
+    foreach ([
+        'current_zip_code' => 'Current ZIP code',
+        'permanent_zip_code' => 'Permanent ZIP code',
+    ] as $field => $label) {
+        if (($data[$field] ?? '') !== '') {
+            if (!preg_match('/^\d{4}$/', (string)$data[$field])) {
+                $addFieldError($field, zipCodeErrorMessage($label));
+            } else {
+                $data[$field] = normalizePhilippineZipCode($data[$field]);
+            }
+        }
+    }
+
     $plainTextStudentFields = [
         'first_name' => 'First name',
         'middle_name' => 'Middle name',
@@ -433,13 +446,16 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
                 $data['first_name'],
                 $data['last_name'],
                 $data['lrn'],
-                $action === 'edit' ? $id : 0
+                $action === 'edit' ? $id : 0,
+                $data['psa_birth_certificate_no']
             );
 
             if ($duplicate) {
                 $duplicateName = format_name($duplicate['first_name'] ?? '', $duplicate['last_name'] ?? '');
                 if (($duplicate['duplicate_type'] ?? '') === 'lrn') {
                     $addFieldError('lrn', 'This LRN is already assigned to ' . $duplicateName . '.');
+                } elseif (($duplicate['duplicate_type'] ?? '') === 'psa') {
+                    $addFieldError('psa_birth_certificate_no', 'This PSA birth certificate number is already assigned to ' . $duplicateName . '.');
                 } else {
                     $addFieldError('last_name', 'A student with the same full name already exists: ' . $duplicateName . '.');
                 }
@@ -598,6 +614,8 @@ if (!$isClerk && in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METH
 
             if (stripos($dbMessage, 'uq_students_lrn') !== false || stripos($dbMessage, 'chk_students_lrn') !== false) {
                 $addFieldError('lrn', 'LRN must be unique and exactly 12 digits.');
+            } elseif (stripos($dbMessage, 'uq_students_psa_birth_certificate_no') !== false || stripos($dbMessage, 'uq_students_psa') !== false) {
+                $addFieldError('psa_birth_certificate_no', 'This PSA birth certificate number is already assigned to another student.');
             } elseif (stripos($dbMessage, 'uq_students_identity_name_birthdate') !== false) {
                 $addFieldError('last_name', 'A student with the same name and birthdate already exists.');
                 $addFieldError('birthdate', 'Check the birthdate for the possible duplicate student.');
@@ -946,8 +964,8 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-2 mb-3">
                     <label class="form-label">ZIP Code</label>
-                    <input type="text" class="form-control<?= $fieldInvalidClass('current_zip_code') ?>" name="current_zip_code"
-                           value="<?= e($editStudent['current_zip_code'] ?? '') ?>">
+                    <input class="form-control<?= $fieldInvalidClass('current_zip_code') ?>" name="current_zip_code"
+                           value="<?= e($editStudent['current_zip_code'] ?? '') ?>" <?= zipInputAttributes() ?>>
                     <?= $fieldErrorHtml('current_zip_code') ?>
                 </div>
                 <div class="col-md-4 mb-3">
@@ -990,8 +1008,8 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-2 mb-3">
                     <label class="form-label">ZIP Code</label>
-                    <input type="text" class="form-control<?= $fieldInvalidClass('permanent_zip_code') ?>" name="permanent_zip_code"
-                           value="<?= e($editStudent['permanent_zip_code'] ?? '') ?>">
+                    <input class="form-control<?= $fieldInvalidClass('permanent_zip_code') ?>" name="permanent_zip_code"
+                           value="<?= e($editStudent['permanent_zip_code'] ?? '') ?>" <?= zipInputAttributes() ?>>
                     <?= $fieldErrorHtml('permanent_zip_code') ?>
                 </div>
                 <div class="col-md-4 mb-3">

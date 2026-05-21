@@ -99,11 +99,15 @@ $subjectsList = $pdo->query("
 $sectionsList = $pdo->query("SELECT id, name, grade_level FROM sections ORDER BY grade_level, name")->fetchAll();
 $teachersList = $pdo->query("SELECT id, first_name, last_name FROM teachers ORDER BY last_name, first_name")->fetchAll();
 
-$totalStmt = $pdo->prepare("SELECT COUNT(*) FROM schedules WHERE school_year = :sy AND term = :term");
-$totalStmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$scheduleListParams = [':sy' => $activeYear];
+$scheduleListTermClause = academicTermWhereClause('term', 'schedule_list_term', $scheduleListParams, $activeTerm);
+$totalStmt = $pdo->prepare("SELECT COUNT(*) FROM schedules WHERE school_year = :sy AND {$scheduleListTermClause}");
+$totalStmt->execute($scheduleListParams);
 $total = (int)$totalStmt->fetchColumn();
 [$offset, $limit, $page, $totalPages] = paginate($total, 15);
 
+$scheduleRowsParams = [':sy' => $activeYear];
+$scheduleRowsTermClause = academicTermWhereClause('sch.term', 'schedule_rows_term', $scheduleRowsParams, $activeTerm);
 $stmt = $pdo->prepare("
     SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
            sec.name AS section_name, sec.grade_level,
@@ -113,11 +117,11 @@ $stmt = $pdo->prepare("
     JOIN sections sec ON sch.section_id = sec.id
     JOIN teachers t ON sch.teacher_id = t.id
     WHERE sch.school_year = :sy
-      AND sch.term = :term
+      AND {$scheduleRowsTermClause}
     ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
     LIMIT {$limit} OFFSET {$offset}
 ");
-$stmt->execute([':sy' => $activeYear, ':term' => $activeTerm]);
+$stmt->execute($scheduleRowsParams);
 $schedules = $stmt->fetchAll();
 
 $pageTitle = 'Manage Schedules';
@@ -200,10 +204,10 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
             </div>
             <div class="row">
                 <div class="col-md-3 mb-3">
-                    <label class="form-label">Term</label>
+                    <label class="form-label">Quarter</label>
                     <select class="form-select" name="term">
                         <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
-                            <option value="<?= e($termValue) ?>" <?= ($editSched['term'] ?? $activeTerm) === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
+                            <option value="<?= e($termValue) ?>" <?= normalizeAcademicTerm($editSched['term'] ?? $activeTerm) === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

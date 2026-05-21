@@ -267,6 +267,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $step = 2;
         }
 
+        foreach ([
+            'current_zip_code' => 'Current ZIP code',
+            'permanent_zip_code' => 'Permanent ZIP code',
+        ] as $field => $label) {
+            if (($_SESSION['enroll'][$field] ?? '') !== '') {
+                if (!preg_match('/^\d{4}$/', (string)$_SESSION['enroll'][$field])) {
+                    $errors[] = zipCodeErrorMessage($label);
+                    $step = 2;
+                } else {
+                    $_SESSION['enroll'][$field] = normalizePhilippineZipCode($_SESSION['enroll'][$field]);
+                }
+            }
+        }
+
         if (!isValidNameExtension($_SESSION['enroll']['extension_name'])) {
             $errors[] = nameExtensionErrorMessage();
             $step = 2;
@@ -289,13 +303,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['enroll']['first_name'],
                     $_SESSION['enroll']['last_name'],
                     $_SESSION['enroll']['lrn'],
-                    (int)($_SESSION['enroll']['student_id'] ?? 0)
+                    (int)($_SESSION['enroll']['student_id'] ?? 0),
+                    $_SESSION['enroll']['psa_birth_certificate_no']
                 );
 
                 if ($duplicate) {
                     $duplicateName = format_name($duplicate['first_name'] ?? '', $duplicate['last_name'] ?? '');
                     if (($duplicate['duplicate_type'] ?? '') === 'lrn') {
                         $errors[] = 'A student with this LRN already exists: ' . $duplicateName . '. Please contact the registrar if this is your child.';
+                    } elseif (($duplicate['duplicate_type'] ?? '') === 'psa') {
+                        $errors[] = 'A student with this PSA birth certificate number already exists: ' . $duplicateName . '. Please contact the registrar if this is your child.';
                     } else {
                         $errors[] = 'A student with the same full name already exists: ' . $duplicateName . '. Please contact the registrar if this is your child.';
                     }
@@ -435,21 +452,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $studentId = (int)$stmt->fetchColumn();
                 }
 
+                $existingEnrollmentParams = [
+                    ':student_id' => $studentId,
+                    ':school_year' => $enrollData['school_year'],
+                ];
+                $existingEnrollmentTermClause = academicTermWhereClause('term', 'existing_enrollment_term', $existingEnrollmentParams, $enrollData['term']);
                 $existingEnrollmentStmt = $pdo->prepare("
                     SELECT id
                     FROM enrollments
                     WHERE student_id = :student_id
                       AND school_year = :school_year
-                      AND term = :term
+                      AND {$existingEnrollmentTermClause}
                     LIMIT 1
                 ");
-                $existingEnrollmentStmt->execute([
-                    ':student_id' => $studentId,
-                    ':school_year' => $enrollData['school_year'],
-                    ':term' => $enrollData['term'],
-                ]);
+                $existingEnrollmentStmt->execute($existingEnrollmentParams);
                 if ($existingEnrollmentStmt->fetchColumn()) {
-                    throw new RuntimeException('This student already has an enrollment for the selected school year and term.');
+                    throw new RuntimeException('This student already has an enrollment for the selected school year and quarter.');
                 }
 
                 $initialStatus = enrollmentStatusForDocumentCount(count($uploadedRequirements), count($requiredDocuments));
@@ -536,6 +554,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $errors[] = $e->getMessage();
                 } elseif (str_contains($e->getMessage(), 'Selected student was not found')) {
                     $errors[] = 'Selected student was not found under your guardian account.';
+                } elseif (stripos($e->getMessage(), 'uq_students_psa_birth_certificate_no') !== false || stripos($e->getMessage(), 'uq_students_psa') !== false) {
+                    $errors[] = 'A student with this PSA birth certificate number already exists. Please contact the registrar if this is your child.';
                 } else {
                     $errors[] = safeErrorMessage('An error occurred while saving enrollment.');
                 }
@@ -826,8 +846,8 @@ $stepKeys = array_keys($stepLabels);
             </div>
             <div class="col-md-2 mb-3">
                 <label class="form-label">ZIP Code</label>
-                <input type="text" class="form-control" name="current_zip_code"
-                       value="<?= e($enrollData['current_zip_code'] ?? '') ?>">
+                <input class="form-control" name="current_zip_code"
+                       value="<?= e($enrollData['current_zip_code'] ?? '') ?>" <?= zipInputAttributes() ?>>
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Province</label>
@@ -864,8 +884,8 @@ $stepKeys = array_keys($stepLabels);
             </div>
             <div class="col-md-2 mb-3">
                 <label class="form-label">ZIP Code</label>
-                <input type="text" class="form-control" name="permanent_zip_code"
-                       value="<?= e($enrollData['permanent_zip_code'] ?? '') ?>">
+                <input class="form-control" name="permanent_zip_code"
+                       value="<?= e($enrollData['permanent_zip_code'] ?? '') ?>" <?= zipInputAttributes() ?>>
             </div>
             <div class="col-md-4 mb-3">
                 <label class="form-label">Province</label>
@@ -1052,7 +1072,7 @@ $stepKeys = array_keys($stepLabels);
                        value="<?= e($enrollData['school_year'] ?? currentSchoolYear()) ?>" readonly>
             </div>
             <div class="col-md-6 mb-3">
-                <label class="form-label">Term</label>
+                <label class="form-label">Quarter</label>
                 <select class="form-select" name="term">
                     <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
                         <option value="<?= e($termValue) ?>" <?= normalizeAcademicTerm($enrollData['term'] ?? currentAcademicTerm()) === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>

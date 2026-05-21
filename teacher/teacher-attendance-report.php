@@ -17,6 +17,8 @@ if (!attendanceModuleEnabled()) {
 
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 $stmt = $pdo->prepare("SELECT * FROM teachers WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
@@ -27,15 +29,23 @@ if (!$teacher) {
     redirect(APP_URL . '/teacher/teacher-dashboard.php');
 }
 
+$sectionParams = [
+    ':tid' => $teacher['id'],
+    ':sy' => $activeYear,
+];
+$sectionTermClause = academicTermWhereClause('sch.term', 'report_section_term', $sectionParams, $activeTerm);
+
 // Get assigned sections
 $stmt = $pdo->prepare("
     SELECT DISTINCT sec.id, sec.name, sec.grade_level
     FROM schedules sch
     JOIN sections sec ON sch.section_id = sec.id
     WHERE sch.teacher_id = :tid
+      AND sch.school_year = :sy
+      AND {$sectionTermClause}
     ORDER BY sec.grade_level, sec.name
 ");
-$stmt->execute([':tid' => $teacher['id']]);
+$stmt->execute($sectionParams);
 $sections = $stmt->fetchAll();
 
 // Filters
@@ -63,13 +73,23 @@ if ($currentSection) {
     $monthEnd    = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $daysInMonth);
 
     // Students in section, sorted by last name
+    $studentParams = [
+        ':secid' => $selSection,
+        ':sy' => $activeYear,
+    ];
+    $studentTermClause = academicTermWhereClause('e.term', 'report_student_term', $studentParams, $activeTerm);
     $stmt = $pdo->prepare("
-        SELECT id, first_name, last_name, lrn
-        FROM students
-        WHERE section_id = :secid
-        ORDER BY last_name, first_name
+        SELECT s.id, s.first_name, s.last_name, s.lrn
+        FROM students s
+        INNER JOIN enrollments e
+            ON e.student_id = s.id
+           AND e.status = 'enrolled'
+           AND e.school_year = :sy
+           AND {$studentTermClause}
+        WHERE s.section_id = :secid
+        ORDER BY s.last_name, s.first_name
     ");
-    $stmt->execute([':secid' => $selSection]);
+    $stmt->execute($studentParams);
     $students = $stmt->fetchAll();
 
     // Attendance logs for the month

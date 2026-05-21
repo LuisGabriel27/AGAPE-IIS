@@ -187,10 +187,44 @@ function phoneInputAttributes(bool $required = false): string
         . ($required ? ' required' : '');
 }
 
+function normalizePhilippineZipCode(?string $value): string
+{
+    return preg_replace('/\D+/', '', (string)$value) ?? '';
+}
+
+function isValidPhilippineZipCode(?string $value, bool $required = false): bool
+{
+    $digits = normalizePhilippineZipCode($value);
+    if ($digits === '') {
+        return !$required;
+    }
+
+    return preg_match('/^\d{4}$/', $digits) === 1;
+}
+
+function zipCodeErrorMessage(string $label): string
+{
+    return $label . ' must contain exactly 4 numbers.';
+}
+
+function zipInputAttributes(bool $required = false): string
+{
+    return 'type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" '
+        . 'autocomplete="postal-code" data-zip-field placeholder="0000"'
+        . ($required ? ' required' : '');
+}
+
 /**
- * Find an existing student with the same LRN or exact full name.
+ * Find an existing student with the same LRN, PSA certificate number, or exact full name.
  */
-function findDuplicateStudent(PDO $pdo, string $firstName, string $lastName, string $lrn = '', int $excludeStudentId = 0): ?array
+function findDuplicateStudent(
+    PDO $pdo,
+    string $firstName,
+    string $lastName,
+    string $lrn = '',
+    int $excludeStudentId = 0,
+    string $psaBirthCertificateNo = ''
+): ?array
 {
     $excludeSql = $excludeStudentId > 0 ? ' AND id <> :exclude_id' : '';
 
@@ -211,6 +245,28 @@ function findDuplicateStudent(PDO $pdo, string $firstName, string $lastName, str
         $student = $stmt->fetch();
         if ($student) {
             $student['duplicate_type'] = 'lrn';
+            return $student;
+        }
+    }
+
+    $psaBirthCertificateNo = trim($psaBirthCertificateNo);
+    if ($psaBirthCertificateNo !== '') {
+        $params = [':psa' => $psaBirthCertificateNo];
+        if ($excludeStudentId > 0) {
+            $params[':exclude_id'] = $excludeStudentId;
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT id, first_name, last_name, lrn, psa_birth_certificate_no
+            FROM students
+            WHERE LOWER(TRIM(COALESCE(psa_birth_certificate_no, ''))) = LOWER(TRIM(:psa))
+              {$excludeSql}
+            LIMIT 1
+        ");
+        $stmt->execute($params);
+        $student = $stmt->fetch();
+        if ($student) {
+            $student['duplicate_type'] = 'psa';
             return $student;
         }
     }
@@ -744,15 +800,111 @@ function attendanceModuleEnabled(): bool
 function academicTermOptions(): array
 {
     return [
-        '1st Semester' => '1st Semester',
-        '2nd Semester' => '2nd Semester',
+        '1st Quarter' => '1st Quarter',
+        '2nd Quarter' => '2nd Quarter',
+        '3rd Quarter' => '3rd Quarter',
+        '4th Quarter' => '4th Quarter',
     ];
 }
 
 function normalizeAcademicTerm(?string $term): string
 {
     $term = trim((string)$term);
-    return array_key_exists($term, academicTermOptions()) ? $term : '1st Semester';
+    if (array_key_exists($term, academicTermOptions())) {
+        return $term;
+    }
+
+    $normalized = strtolower(preg_replace('/\s+/', ' ', $term) ?? '');
+    $aliases = [
+        'quarter1' => '1st Quarter',
+        'q1' => '1st Quarter',
+        '1st grading period' => '1st Quarter',
+        'first grading period' => '1st Quarter',
+        '1st quarter' => '1st Quarter',
+        'first quarter' => '1st Quarter',
+        '1st semester' => '1st Quarter',
+        'first semester' => '1st Quarter',
+        'quarter2' => '2nd Quarter',
+        'q2' => '2nd Quarter',
+        '2nd grading period' => '2nd Quarter',
+        'second grading period' => '2nd Quarter',
+        '2nd quarter' => '2nd Quarter',
+        'second quarter' => '2nd Quarter',
+        'quarter3' => '3rd Quarter',
+        'q3' => '3rd Quarter',
+        '3rd grading period' => '3rd Quarter',
+        'third grading period' => '3rd Quarter',
+        '3rd quarter' => '3rd Quarter',
+        'third quarter' => '3rd Quarter',
+        '2nd semester' => '3rd Quarter',
+        'second semester' => '3rd Quarter',
+        'quarter4' => '4th Quarter',
+        'q4' => '4th Quarter',
+        '4th grading period' => '4th Quarter',
+        'fourth grading period' => '4th Quarter',
+        '4th quarter' => '4th Quarter',
+        'fourth quarter' => '4th Quarter',
+    ];
+
+    return $aliases[$normalized] ?? '1st Quarter';
+}
+
+/**
+ * Values that may exist in old rows for the same quarterly period.
+ * New writes use quarters; reads include legacy semester rows so existing data
+ * still appears until the database is migrated.
+ *
+ * @return list<string>
+ */
+function academicTermStorageValues(?string $term): array
+{
+    $term = normalizeAcademicTerm($term);
+    $values = [$term];
+    if (in_array($term, ['1st Quarter', '2nd Quarter'], true)) {
+        $values[] = '1st Semester';
+    } elseif (in_array($term, ['3rd Quarter', '4th Quarter'], true)) {
+        $values[] = '2nd Semester';
+    }
+
+    return array_values(array_unique($values));
+}
+
+/**
+ * For grade views, include previous quarters in the same school year.
+ *
+ * @return list<string>
+ */
+function academicTermStorageValuesThrough(?string $term): array
+{
+    $term = normalizeAcademicTerm($term);
+    $quarters = array_keys(academicTermOptions());
+    $endIndex = array_search($term, $quarters, true);
+    if ($endIndex === false) {
+        $endIndex = 0;
+    }
+
+    $values = [];
+    foreach (array_slice($quarters, 0, $endIndex + 1) as $quarter) {
+        $values = array_merge($values, academicTermStorageValues($quarter));
+    }
+
+    return array_values(array_unique($values));
+}
+
+function academicTermWhereClause(string $columnSql, string $paramPrefix, array &$params, ?string $term, bool $throughSelectedQuarter = false): string
+{
+    $values = $throughSelectedQuarter
+        ? academicTermStorageValuesThrough($term)
+        : academicTermStorageValues($term);
+    $prefix = ltrim($paramPrefix, ':');
+    $placeholders = [];
+    foreach ($values as $idx => $value) {
+        $param = ':' . $prefix . '_' . $idx;
+        $placeholders[] = $param;
+        $params[$param] = $value;
+    }
+
+    return $columnSql . ' IN (' . implode(', ', $placeholders) . ')';
 }
 
 function clearAcademicPeriodCache(): void
@@ -796,7 +948,7 @@ function currentAcademicTerm(): string
         return normalizeAcademicTerm($_SESSION['_cached_academic_term']);
     }
 
-    $term = normalizeAcademicTerm(getSettingValue('active_term', '1st Semester'));
+    $term = normalizeAcademicTerm(getSettingValue('active_term', '1st Quarter'));
     $_SESSION['_cached_academic_term'] = $term;
     return $term;
 }
@@ -1254,6 +1406,12 @@ function summarizeEnrollmentDocumentsByType(array $documentsByType, ?array $requ
         'pending' => [],
         'missing' => [],
     ];
+    $notesByStatus = [
+        'accepted' => [],
+        'needs_replacement' => [],
+        'pending' => [],
+        'missing' => [],
+    ];
     $uploadedCount = 0;
 
     foreach ($requiredDocuments as $docKey => $docLabel) {
@@ -1272,6 +1430,14 @@ function summarizeEnrollmentDocumentsByType(array $documentsByType, ?array $requ
 
         $counts[$status]++;
         $labelsByStatus[$status][] = $docLabel;
+        $reviewerNote = trim((string)($doc['reviewer_note'] ?? ''));
+        if ($reviewerNote !== '') {
+            $notesByStatus[$status][] = [
+                'document_type' => $docKey,
+                'label' => $docLabel,
+                'note' => $reviewerNote,
+            ];
+        }
     }
 
     return [
@@ -1279,6 +1445,9 @@ function summarizeEnrollmentDocumentsByType(array $documentsByType, ?array $requ
         'uploaded_count' => $uploadedCount,
         'counts' => $counts,
         'labels_by_status' => $labelsByStatus,
+        'notes_by_status' => $notesByStatus,
+        'reviewer_notes' => array_merge(...array_values($notesByStatus)),
+        'needs_replacement_notes' => $notesByStatus['needs_replacement'],
         'missing_labels' => $labelsByStatus['missing'],
         'pending_labels' => $labelsByStatus['pending'],
         'needs_replacement_labels' => $labelsByStatus['needs_replacement'],
@@ -1814,13 +1983,13 @@ function generateSchoolYearCalendar(string $schoolYear): array
             'type' => 'holiday',
             'description' => 'New Year\'s Day national holiday'
         ],
-        // First Semester Examinations
+        // Second Quarter Examinations
         [
-            'title' => 'First Semester Final Examinations',
+            'title' => 'Second Quarter Final Examinations',
             'date_start' => sprintf('%04d-01-19', $endYear),
             'date_end' => sprintf('%04d-01-21', $endYear),
             'type' => 'exam',
-            'description' => 'Final examinations for the first semester'
+            'description' => 'Final examinations for the second quarter'
         ],
         // Valentine's / Friendship Day
         [
@@ -1854,13 +2023,13 @@ function generateSchoolYearCalendar(string $schoolYear): array
             'type' => 'holiday',
             'description' => 'Holy Week observance - Maundy Thursday, Good Friday, Black Saturday'
         ],
-        // Second Semester Examinations
+        // Fourth Quarter Examinations
         [
-            'title' => 'Second Semester Final Examinations',
+            'title' => 'Fourth Quarter Final Examinations',
             'date_start' => sprintf('%04d-03-30', $endYear),
             'date_end' => sprintf('%04d-04-01', $endYear),
             'type' => 'exam',
-            'description' => 'Final examinations for the second semester'
+            'description' => 'Final examinations for the fourth quarter'
         ],
         // Foundation Day placeholder
         [

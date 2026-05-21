@@ -41,14 +41,13 @@ $schoolYears = $yearsStmt->fetchAll(PDO::FETCH_COLUMN);
 $schoolYear = $requestedSchoolYear !== '' ? $requestedSchoolYear : (in_array($activeYear, $schoolYears, true) ? $activeYear : (string)($schoolYears[0] ?? $activeYear));
 $schoolTerm = $requestedTerm;
 
+$params = [
+    ':teacher_id' => (int)$teacher['id'],
+];
 $where = [
     'sec.adviser_id = :teacher_id',
     "e.status = 'enrolled'",
-    'e.term = :term',
-];
-$params = [
-    ':teacher_id' => (int)$teacher['id'],
-    ':term' => $schoolTerm,
+    academicTermWhereClause('e.term', 'student_term', $params, $schoolTerm),
 ];
 if ($schoolYear !== '') {
     $where[] = 'e.school_year = :school_year';
@@ -61,6 +60,7 @@ if ($search !== '') {
     $params[':search_lrn'] = '%' . $search . '%';
 }
 $whereSql = implode(' AND ', $where);
+$scheduleTermClause = academicTermWhereClause('sch.term', 'schedule_term', $params, $schoolTerm);
 
 $stmt = $pdo->prepare("
     SELECT s.id AS student_id,
@@ -82,7 +82,7 @@ $stmt = $pdo->prepare("
         ON sch.section_id = sec.id
        AND sch.teacher_id = :teacher_id
        AND sch.school_year = e.school_year
-       AND sch.term = e.term
+       AND {$scheduleTermClause}
     LEFT JOIN subjects sub ON sub.id = sch.subject_id
     WHERE {$whereSql}
     GROUP BY s.id, s.first_name, s.middle_name, s.last_name, s.lrn, s.grade_level,
@@ -149,7 +149,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <th>LRN</th>
                     <th>Grade / Section</th>
                     <th>Subjects With You</th>
-                    <th>School Year / Term</th>
+                    <th>School Year / Quarter</th>
                     <th>Submitted</th>
                 </tr>
             </thead>
@@ -166,7 +166,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <div class="small text-muted"><?= e((string)$student['section_name']) ?></div>
                             </td>
                             <td><?= e((string)($student['subjects'] ?: 'Section adviser')) ?></td>
-                            <td><?= e((string)$student['school_year']) ?> / <?= e((string)$student['term']) ?></td>
+                            <td><?= e((string)$student['school_year']) ?> / <?= e(normalizeAcademicTerm($student['term'] ?? '')) ?></td>
                             <td><?= e(!empty($student['enrolled_at']) ? date('M d, Y h:i A', strtotime((string)$student['enrolled_at'])) : '-') ?></td>
                         </tr>
                     <?php endforeach; ?>

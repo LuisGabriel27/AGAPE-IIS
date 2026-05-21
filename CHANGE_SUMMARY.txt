@@ -1,0 +1,72 @@
+  AGAPE-IIS Change Summary
+========================
+
+This file summarizes the recent fixes and database updates added to the system.
+
+1. PSA Birth Certificate Duplicate Prevention
+---------------------------------------------
+- Added duplicate checking for PSA birth certificate numbers when creating or updating students.
+- Added guardian enrollment validation so the same PSA number cannot be reused.
+- Added a Supabase unique index for PSA birth certificate numbers, ignoring blank values.
+- Added friendlier error handling when a duplicate PSA number is detected.
+
+2. Guardian Clerk Notes Visibility
+----------------------------------
+- Added support for summarizing document reviewer notes.
+- Guardian dashboard now shows clerk notes for requirements that need replacement.
+- Guardian payment page now shows clerk assessment notes when available.
+
+3. Adviser/Enrollment Gating for Class Lists
+--------------------------------------------
+- Teacher grades, attendance, attendance reports, student lists, schedules, and dashboard counts now check enrolled enrollment records.
+- Students assigned to a section but not yet finalized/enrolled by the adviser or registrar should no longer appear in teacher class and grading lists.
+
+4. Previous Quarter Grades Display
+----------------------------------
+- Teacher grades page now shows all four quarter columns.
+- The selected quarter remains editable, while previous quarters are displayed for reference.
+- Guardian grades and report card pages now aggregate and show previous quarter grades through the selected quarter.
+- Final ratings are recalculated from available quarter values.
+
+5. Quarterly System Cleanup
+---------------------------
+- Replaced visible semester/term wording with quarter-based wording across admin, teacher, and guardian modules.
+- Active academic term defaults to 1st Quarter.
+- Added compatibility helpers so older rows saved as 1st Semester or 2nd Semester can still be read while the UI uses quarters.
+- Updated enrollment requirement/upload pages to use quarterly labels instead of semester labels.
+
+6. Philippine ZIP Code Validation
+---------------------------------
+- Added helper functions for Philippine ZIP code validation.
+- Student admin form now requires ZIP codes to be numeric 4-digit values.
+- Guardian enrollment form now requires ZIP codes to be numeric 4-digit values.
+- Added Supabase database check constraints for current and permanent ZIP codes.
+
+7. Single Supabase SQL File
+---------------------------
+- Consolidated the required Supabase changes into one paste-ready file:
+  database/supabase_update_required_latest.sql
+- The combined SQL now includes:
+  - profile field expansion
+  - enrollment document review fields
+  - payment assessment tables
+  - quarterly setting migration
+  - PSA uniqueness
+  - Philippine ZIP code validation
+  - enrollment status updates
+  - subject grade-level seed data
+- Updated database/README.md so the normal setup path points to the single combined SQL file.
+
+8. Documentation and Helper Message Updates
+-------------------------------------------
+- Updated database README instructions to reduce confusion about which SQL files to run.
+- Updated helper messages that previously pointed to the old profile expansion SQL file.
+- Updated production readiness notes to mention the combined SQL file.
+
+Verification Performed
+----------------------
+- Ran PHP syntax checks on the changed PHP files using XAMPP PHP.
+- Ran git diff whitespace checks.
+- Only normal CRLF line-ending warnings appeared.
+- Local psql was not installed, so the SQL file was not live-parsed locally.
+

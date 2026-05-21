@@ -44,23 +44,35 @@ $selectedTerm = normalizeAcademicTerm($_GET['term'] ?? currentAcademicTerm());
 $grades = [];
 $generalAverage = null;
 if ($selectedStudent && !$accessDenied) {
+    $gradeParams = [
+        ':sid' => $selectedStudent,
+        ':sy' => $selectedYear,
+    ];
+    $gradeTermClause = academicTermWhereClause('g.term', 'grade_term', $gradeParams, $selectedTerm, true);
     $stmt = $pdo->prepare("
-        SELECT g.*, sub.code, sub.name AS subject_name
+        SELECT sub.id AS subject_id, sub.code, sub.name AS subject_name,
+               MAX(g.quarter1) AS quarter1,
+               MAX(g.quarter2) AS quarter2,
+               MAX(g.quarter3) AS quarter3,
+               MAX(g.quarter4) AS quarter4
         FROM grades g
         JOIN subjects sub ON g.subject_id = sub.id
         WHERE g.student_id = :sid
           AND g.school_year = :sy
-          AND g.term = :term
+          AND {$gradeTermClause}
           AND g.published = 1
+        GROUP BY sub.id, sub.code, sub.name
         ORDER BY sub.name
     ");
-    $stmt->execute([':sid' => $selectedStudent, ':sy' => $selectedYear, ':term' => $selectedTerm]);
+    $stmt->execute($gradeParams);
     $grades = $stmt->fetchAll();
 
     $finalRatings = [];
-    foreach ($grades as $g) {
-        if ($g['final_grade'] !== null) {
-            $finalRatings[] = (float)$g['final_grade'];
+    foreach ($grades as $idx => $g) {
+        $finalRating = finalRatingFromQuarterGrades($g);
+        $grades[$idx]['final_grade'] = $finalRating;
+        if ($finalRating !== null) {
+            $finalRatings[] = $finalRating;
         }
     }
     $generalAverage = !empty($finalRatings) ? round(array_sum($finalRatings) / count($finalRatings), 2) : null;
@@ -119,7 +131,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </select>
             </div>
             <div class="col-md-2">
-                <label for="term" class="form-label">Term</label>
+                <label for="term" class="form-label">Quarter</label>
                 <select class="form-select" name="term" id="term">
                     <?php foreach ($terms as $term): ?>
                         <option value="<?= e($term) ?>" <?= $selectedTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
@@ -151,7 +163,7 @@ require_once __DIR__ . '/../includes/header.php';
             </thead>
             <tbody>
                 <?php if (empty($grades)): ?>
-                    <?= emptyStateRow(9, 'No grades to show for the selected student and school year.', 'Grades become visible here once the class teacher encodes and publishes them. If you expect grades this term, please follow up with the school.', 'bi-card-checklist') ?>
+                    <?= emptyStateRow(9, 'No grades to show for the selected student and school year.', 'Grades become visible here once the class teacher encodes and publishes them. If you expect grades this quarter, please follow up with the school.', 'bi-card-checklist') ?>
                 <?php else: ?>
                     <?php foreach ($grades as $g): ?>
                     <?php $final = $g['final_grade'] !== null ? (float)$g['final_grade'] : null; ?>

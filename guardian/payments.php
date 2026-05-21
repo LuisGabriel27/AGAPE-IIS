@@ -74,7 +74,7 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
                     <th><?= sortLink('paid_at', 'Date', $currentSort, $currentDir) ?></th>
                     <th>Student</th>
                     <th>Description</th>
-                    <th>School Year</th>
+                    <th>School Year / Quarter</th>
                     <th class="text-end"><?= sortLink('amount', 'Amount', $currentSort, $currentDir) ?></th>
                     <th>Method</th>
                     <th>Reference No.</th>
@@ -93,7 +93,7 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
                         <td><?= e($pay['paid_at'] ? date('M d, Y', strtotime($pay['paid_at'])) : '-') ?></td>
                         <td><?= e($pay['student_name']) ?></td>
                         <td><?= e($pay['description'] ?? 'Payment') ?></td>
-                        <td><?= e($pay['school_year']) ?> - <?= e($pay['term']) ?></td>
+                        <td><?= e($pay['school_year']) ?> - <?= e(normalizeAcademicTerm($pay['term'] ?? '')) ?></td>
                         <td class="text-end fw-bold">&#8369;<?= e(number_format($pay['amount'], 2)) ?></td>
                         <td><?= e(ucfirst($pay['method'])) ?></td>
                         <td><?= e($pay['reference_no'] ?? 'N/A') ?></td>

@@ -372,7 +372,7 @@ require_once __DIR__ . '/../includes/header.php';
             <?= e($enrollment['student_name']) ?>
             <?php if (!empty($enrollment['lrn'])): ?> &middot; LRN: <?= e($enrollment['lrn']) ?><?php endif; ?>
             &middot; <?= e(formatGradeLevel((string)$enrollment['grade_level'])) ?>
-            &middot; <?= e($enrollment['school_year']) ?> <?= e($enrollment['term']) ?>
+            &middot; <?= e($enrollment['school_year']) ?> <?= e(normalizeAcademicTerm($enrollment['term'] ?? '')) ?>
         </div>
     </div>
     <div class="d-flex gap-2 align-items-center">

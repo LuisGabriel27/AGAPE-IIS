@@ -30,8 +30,11 @@ if ($action === 'export') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=payments_export_' . date('Ymd') . '.csv');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['ID', 'Student', 'School Year', 'Term', 'Amount', 'Method', 'Reference No', 'Description', 'Status', 'Paid At']);
-    foreach ($rows as $r) { fputcsv($out, $r); }
+    fputcsv($out, ['ID', 'Student', 'School Year', 'Quarter', 'Amount', 'Method', 'Reference No', 'Description', 'Status', 'Paid At']);
+    foreach ($rows as $r) {
+        $r['term'] = normalizeAcademicTerm($r['term'] ?? '');
+        fputcsv($out, $r);
+    }
     fclose($out);
     exit;
 }
@@ -231,7 +234,11 @@ $enrollmentStmt = $pdo->prepare("
     SELECT e.id,
            CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
            e.school_year, e.term, e.status,
-           p.amount AS latest_payment_amount, p.status AS latest_payment_status
+           p.amount AS latest_payment_amount,
+           p.method AS latest_payment_method,
+           p.reference_no AS latest_payment_reference_no,
+           p.description AS latest_payment_description,
+           p.status AS latest_payment_status
     FROM enrollments e
     JOIN students s ON e.student_id = s.id
     LEFT JOIN payments p ON p.id = (
@@ -306,8 +313,14 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="enrollment_id" id="enrollment_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($enrollmentsList as $en): ?>
-                            <option value="<?= (int)$en['id'] ?>" data-amount="<?= e((string)($en['latest_payment_amount'] ?? '')) ?>" <?= $selectedEnrollmentId === (int)$en['id'] ? 'selected' : '' ?>>
-                                <?= e($en['student_name']) ?> - <?= e($en['school_year']) ?> (<?= e($en['term']) ?>)
+                            <option value="<?= (int)$en['id'] ?>"
+                                    data-amount="<?= e((string)($en['latest_payment_amount'] ?? '')) ?>"
+                                    data-method="<?= e((string)($en['latest_payment_method'] ?? '')) ?>"
+                                    data-reference="<?= e((string)($en['latest_payment_reference_no'] ?? '')) ?>"
+                                    data-description="<?= e((string)($en['latest_payment_description'] ?? '')) ?>"
+                                    data-status="<?= e((string)($en['latest_payment_status'] ?? '')) ?>"
+                                    <?= $selectedEnrollmentId === (int)$en['id'] ? 'selected' : '' ?>>
+                                <?= e($en['student_name']) ?> - <?= e($en['school_year']) ?> (<?= e(normalizeAcademicTerm($en['term'] ?? '')) ?>)
                                 / <?= e(enrollmentStatusLabel((string)$en['status'])) ?>
                                 <?php if (!empty($en['latest_payment_amount'])): ?>
                                     / &#8369;<?= e(number_format((float)$en['latest_payment_amount'], 2)) ?>
@@ -322,25 +335,27 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Method</label>
-                    <select class="form-select" name="method">
-                        <option value="cash">Cash</option>
-                        <option value="online">Online</option>
-                        <option value="bank">Bank Transfer</option>
+                    <select class="form-select" name="method" id="payment_method">
+                        <?php foreach ($paymentMethods as $methodValue => $methodLabel): ?>
+                            <option value="<?= e($methodValue) ?>" <?= ($_POST['method'] ?? '') === $methodValue ? 'selected' : '' ?>>
+                                <?= e($methodLabel) ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Reference No.</label>
-                    <input type="text" class="form-control" name="reference_no">
+                    <input type="text" class="form-control" name="reference_no" id="payment_reference_no" value="<?= e($_POST['reference_no'] ?? '') ?>">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Description</label>
-                    <input type="text" class="form-control" name="description" value="Enrollment Assessment Payment">
+                    <input type="text" class="form-control" name="description" id="payment_description" value="<?= e($_POST['description'] ?? 'Enrollment Assessment Payment') ?>">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Status</label>
-                    <select class="form-select" name="status">
+                    <select class="form-select" name="status" id="payment_status">
                         <?php foreach ($paymentStatuses as $st => $label): ?>
-                            <option value="<?= e($st) ?>" <?= $st === 'paid' ? 'selected' : '' ?>><?= e($label) ?></option>
+                            <option value="<?= e($st) ?>" <?= ($_POST['status'] ?? 'paid') === $st ? 'selected' : '' ?>><?= e($label) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -356,25 +371,48 @@ require_once __DIR__ . '/../includes/header.php';
 (function () {
     const enrollmentSelect = document.getElementById('enrollment_id');
     const amountInput = document.getElementById('payment_amount');
+    const methodSelect = document.getElementById('payment_method');
+    const referenceInput = document.getElementById('payment_reference_no');
+    const descriptionInput = document.getElementById('payment_description');
     if (!enrollmentSelect || !amountInput) return;
 
-    function syncAssessedAmount() {
+    function setSelectValue(select, value) {
+        if (!select || !value) return;
+        const hasOption = Array.from(select.options).some(option => option.value === value);
+        if (hasOption) {
+            select.value = value;
+        }
+    }
+
+    function syncSelectedPayment() {
         const option = enrollmentSelect.selectedOptions[0];
         const amount = option ? parseFloat(option.dataset.amount || '0') : 0;
         if (amount > 0) {
             amountInput.value = amount.toFixed(2);
         }
+
+        if (!option) return;
+
+        setSelectValue(methodSelect, option.dataset.method || '');
+
+        if (referenceInput) {
+            referenceInput.value = option.dataset.reference || '';
+        }
+
+        if (descriptionInput) {
+            descriptionInput.value = option.dataset.description || 'Enrollment Assessment Payment';
+        }
     }
 
-    enrollmentSelect.addEventListener('change', syncAssessedAmount);
-    syncAssessedAmount();
+    enrollmentSelect.addEventListener('change', syncSelectedPayment);
+    syncSelectedPayment();
 })();
 </script>
 <?php endif; ?>
 
 <div class="table-container"><div class="table-responsive">
     <table class="table table-hover mb-0" id="payments-table">
-        <thead><tr><th>#</th><th>Student</th><th>Year/Term</th><th>Description</th><th class="text-end">Amount</th><th>Method</th><th>Ref No.</th><th>Status</th><th>Date</th></tr></thead>
+        <thead><tr><th>#</th><th>Student</th><th>Year/Quarter</th><th>Description</th><th class="text-end">Amount</th><th>Method</th><th>Ref No.</th><th>Status</th><th>Date</th></tr></thead>
         <tbody>
             <?php if (empty($payments)): ?>
                 <?= emptyStateRow(9, 'No payments match the current view.', 'Payments are created when the enrollment clerk assesses fees and payment is recorded or verified. Clear any filters above, or check back after a fee assessment is issued.', 'bi-receipt') ?>
@@ -382,7 +420,7 @@ require_once __DIR__ . '/../includes/header.php';
             <tr>
                 <td><?= e((string)($offset + $i + 1)) ?></td>
                 <td class="fw-bold"><?= e($p['student_name']) ?></td>
-                <td><?= e($p['school_year']) ?> - <?= e($p['term']) ?></td>
+                <td><?= e($p['school_year']) ?> - <?= e(normalizeAcademicTerm($p['term'] ?? '')) ?></td>
                 <td><?= e($p['description'] ?? '') ?></td>
                 <td class="text-end">&#8369;<?= e(number_format($p['amount'], 2)) ?></td>
                 <td><?= e(ucfirst($p['method'])) ?></td>

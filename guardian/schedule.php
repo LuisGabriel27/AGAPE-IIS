@@ -68,37 +68,20 @@ if ($requestedYear !== '' && in_array($requestedYear, $years, true)) {
     $selectedYear = in_array($activeYear, $years, true) ? $activeYear : (string)$years[0];
 }
 
-// Build available Term options based on selected section + school year
-$terms = [];
-if ($sectionId > 0) {
-    $stmt = $pdo->prepare('
-        SELECT DISTINCT term
-        FROM schedules
-        WHERE section_id = :secid AND school_year = :sy
-        ORDER BY term
-    ');
-    $stmt->execute([
-        ':secid' => $sectionId,
-        ':sy' => $selectedYear,
-    ]);
-    $terms = $stmt->fetchAll(PDO::FETCH_COLUMN);
-}
-if (empty($terms)) {
-    $terms = ['1st Semester', '2nd Semester'];
-}
-
+$terms = array_keys(academicTermOptions());
 $requestedTerm = trim((string)($_GET['term'] ?? ''));
-if ($requestedTerm !== '' && in_array($requestedTerm, $terms, true)) {
-    $selectedTerm = $requestedTerm;
-} else {
-    $selectedTerm = in_array($activeTerm, $terms, true) ? $activeTerm : (in_array('1st Semester', $terms, true) ? '1st Semester' : (string)$terms[0]);
-}
+$selectedTerm = $requestedTerm !== '' ? normalizeAcademicTerm($requestedTerm) : $activeTerm;
 
 // Fetch weekly schedule
 $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 $slots = [];
 
 if ($sectionId > 0) {
+    $scheduleParams = [
+        ':secid' => $sectionId,
+        ':sy' => $selectedYear,
+    ];
+    $scheduleTermClause = academicTermWhereClause('sch.term', 'guardian_schedule_term', $scheduleParams, $selectedTerm);
     $stmt = $pdo->prepare("
         SELECT sch.*, sub.name AS subject_name,
                CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS teacher_name
@@ -107,7 +90,7 @@ if ($sectionId > 0) {
         LEFT JOIN teachers t ON sch.teacher_id = t.id
         WHERE sch.section_id = :secid
           AND sch.school_year = :sy
-          AND sch.term = :term
+          AND {$scheduleTermClause}
         ORDER BY CASE sch.day_of_week
             WHEN 'Monday' THEN 1
             WHEN 'Tuesday' THEN 2
@@ -116,11 +99,7 @@ if ($sectionId > 0) {
             WHEN 'Friday' THEN 5
         END, sch.time_start
     ");
-    $stmt->execute([
-        ':secid' => $sectionId,
-        ':sy' => $selectedYear,
-        ':term' => $selectedTerm,
-    ]);
+    $stmt->execute($scheduleParams);
     $scheduleRows = $stmt->fetchAll();
 
     foreach ($scheduleRows as $row) {
@@ -248,7 +227,7 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
 
             <div class="col-md-3">
-                <label for="term" class="form-label">Term</label>
+                <label for="term" class="form-label">Quarter</label>
                 <select class="form-select" name="term" id="term">
                     <?php foreach ($terms as $term): ?>
                         <option value="<?= e((string)$term) ?>" <?= $selectedTerm === (string)$term ? 'selected' : '' ?>>
