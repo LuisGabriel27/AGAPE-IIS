@@ -24,7 +24,7 @@ if ($guardian) {
     $dir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 
     $stmt = $pdo->prepare("
-        SELECT p.*, e.school_year, e.term,
+        SELECT p.*, e.id AS enrollment_id, e.status AS enrollment_status, e.school_year, e.term,
                CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name
         FROM payments p
         JOIN enrollments e ON p.enrollment_id = e.id
@@ -79,7 +79,7 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
                     <th>Method</th>
                     <th>Reference No.</th>
                     <th class="text-center"><?= sortLink('status', 'Status', $currentSort, $currentDir) ?></th>
-                    <th class="text-center">Receipt</th>
+                    <th class="text-center">Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -105,7 +105,12 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
                                 <a class="btn btn-sm btn-outline-primary"
                                    href="<?= e(APP_URL . '/guardian/payment-receipt.php?' . http_build_query(['payment_id' => (int)$pay['id']])) ?>"
                                    target="_blank" rel="noopener">
-                                    <i class="bi bi-receipt"></i>
+                                    <i class="bi bi-receipt me-1"></i>Receipt
+                                </a>
+                            <?php elseif (canGuardianSubmitEnrollmentPayment((string)($pay['enrollment_status'] ?? ''))): ?>
+                                <a class="btn btn-sm btn-success"
+                                   href="<?= e(APP_URL . '/guardian/enrollment/payment.php?' . http_build_query(['enrollment_id' => (int)$pay['enrollment_id']])) ?>">
+                                    <i class="bi bi-send-check me-1"></i><?= $pay['status'] === 'failed' ? 'Resubmit' : 'Submit Reference' ?>
                                 </a>
                             <?php else: ?>
                                 <span class="text-muted">-</span>

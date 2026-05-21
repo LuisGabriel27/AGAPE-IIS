@@ -169,6 +169,9 @@ require_once __DIR__ . '/../includes/header.php';
                     <a href="<?= APP_URL ?>/teacher/teacher-dashboard.php" class="btn btn-outline-primary">
                         <i class="bi bi-grid-1x2-fill me-1"></i>My Classes
                     </a>
+                    <a href="<?= APP_URL ?>/teacher/teacher-students.php" class="btn btn-outline-primary">
+                        <i class="bi bi-people-fill me-1"></i>My Students
+                    </a>
                     <a href="<?= APP_URL ?>/teacher/teacher-grades.php" class="btn btn-outline-primary">
                         <i class="bi bi-pencil-square me-1"></i>Enter Grades
                     </a>

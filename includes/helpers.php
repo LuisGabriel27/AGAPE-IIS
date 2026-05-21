@@ -310,6 +310,42 @@ function getOrCreateGuardianProfile(PDO $pdo, int $userId): ?array
     return $guardian ?: null;
 }
 
+function getOrCreateUserProfile(PDO $pdo, int $userId): ?array
+{
+    $stmt = $pdo->prepare("SELECT * FROM user_profiles WHERE user_id = :uid LIMIT 1");
+    $stmt->execute([':uid' => $userId]);
+    $profile = $stmt->fetch();
+    if ($profile) {
+        return $profile;
+    }
+
+    $stmt = $pdo->prepare("SELECT email FROM users WHERE id = :uid LIMIT 1");
+    $stmt->execute([':uid' => $userId]);
+    $email = (string)($stmt->fetchColumn() ?: '');
+    if ($email === '') {
+        return null;
+    }
+
+    $emailName = trim((string)strtok($email, '@'));
+    $fallbackLastName = $emailName !== ''
+        ? ucwords(str_replace(['.', '_', '-'], ' ', $emailName))
+        : 'Staff';
+
+    $stmt = $pdo->prepare("
+        INSERT INTO user_profiles (user_id, first_name, middle_name, last_name)
+        VALUES (:user_id, '', '', :last_name)
+        ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
+        RETURNING *
+    ");
+    $stmt->execute([
+        ':user_id' => $userId,
+        ':last_name' => $fallbackLastName,
+    ]);
+    $profile = $stmt->fetch();
+
+    return $profile ?: null;
+}
+
 /**
  * Find a likely duplicate teacher by identity details.
  * Same name alone is not enough; same contact or same linked email is.
@@ -1025,11 +1061,50 @@ function documentReviewStatusBadgeClass(?string $status): string
 function requiredEnrollmentDocuments(): array
 {
     return [
-        'psa'             => 'PSA Birth Certificate',
-        'medical'         => 'Medical Records',
-        'previous_school' => 'Previous School Records',
-        'parent_data'     => 'Parent / Guardian Data',
+        'psa'             => 'PSA / Local Civil Registrar Birth Certificate',
+        'medical'         => 'Medical Clearance / Immunization Record',
+        'previous_school' => 'SF9 Report Card / Previous School Transfer Record',
+        'parent_data'     => 'Signed Parent / Guardian Data and Consent Form',
     ];
+}
+
+/**
+ * Extra upload guidance shown to guardians and clerks.
+ *
+ * @return array<string, string>
+ */
+function requiredEnrollmentDocumentDescriptions(): array
+{
+    return [
+        'psa'             => 'Accept PSA, local civil registrar birth certificate, late registration, or barangay certification when PSA is not yet available.',
+        'medical'         => 'Upload the clinic/physician medical clearance, immunization record, or school health form required by the school.',
+        'previous_school' => 'For transferees or returning learners: upload SF9/report card, certificate of completion, good moral, or transfer credential from the last school.',
+        'parent_data'     => 'Upload the signed parent/guardian information and consent form with emergency contact details.',
+    ];
+}
+
+function enrollmentGradeSkipsPreviousSchoolRecord(?string $gradeLevel): bool
+{
+    $normalized = strtolower(trim((string)$gradeLevel));
+    return in_array($normalized, ['preschool', 'pre-school', 'kindergarten', 'kinder'], true);
+}
+
+/**
+ * Required documents for a specific enrollment grade.
+ *
+ * Preschool and Kindergarten learners usually have no previous school record,
+ * so that requirement is omitted unless the school adds a transferee-specific
+ * workflow later.
+ *
+ * @return array<string, string>
+ */
+function requiredEnrollmentDocumentsForGrade(?string $gradeLevel): array
+{
+    $documents = requiredEnrollmentDocuments();
+    if (enrollmentGradeSkipsPreviousSchoolRecord($gradeLevel)) {
+        unset($documents['previous_school']);
+    }
+    return $documents;
 }
 
 /**
@@ -1154,6 +1229,252 @@ function enrollmentDocumentUrl(array $document, bool $download = false): string
         $query['download'] = '1';
     }
     return APP_URL . '/enrollment-document.php?' . http_build_query($query);
+}
+
+function enrollmentDocumentStorageDriver(): string
+{
+    $driver = strtolower(trim((string)(defined('ENROLLMENT_DOCUMENT_STORAGE_DRIVER') ? ENROLLMENT_DOCUMENT_STORAGE_DRIVER : 'local')));
+    return $driver === 'supabase' ? 'supabase' : 'local';
+}
+
+function supabaseStorageConfigured(): bool
+{
+    return trim((string)(defined('SUPABASE_URL') ? SUPABASE_URL : '')) !== ''
+        && trim((string)(defined('SUPABASE_SERVICE_ROLE_KEY') ? SUPABASE_SERVICE_ROLE_KEY : '')) !== ''
+        && trim((string)(defined('SUPABASE_STORAGE_BUCKET') ? SUPABASE_STORAGE_BUCKET : '')) !== '';
+}
+
+function enrollmentDocumentStorageObjectPath(int $enrollmentId, string $storedName): string
+{
+    $storedName = basename(str_replace('\\', '/', $storedName));
+    return 'enrollments/' . $enrollmentId . '/' . $storedName;
+}
+
+function enrollmentDocumentSupabaseReference(string $objectPath): string
+{
+    return 'supabase://' . trim((string)SUPABASE_STORAGE_BUCKET, '/') . '/' . ltrim($objectPath, '/');
+}
+
+/**
+ * @return array{bucket:string,path:string}|null
+ */
+function parseEnrollmentDocumentSupabaseReference(?string $filePath): ?array
+{
+    $filePath = trim((string)$filePath);
+    if (!str_starts_with($filePath, 'supabase://')) {
+        return null;
+    }
+
+    $withoutScheme = substr($filePath, strlen('supabase://'));
+    $parts = explode('/', $withoutScheme, 2);
+    $bucket = trim($parts[0] ?? '');
+    $path = trim($parts[1] ?? '');
+
+    if ($bucket === '' || $path === '') {
+        return null;
+    }
+
+    return ['bucket' => $bucket, 'path' => $path];
+}
+
+function supabaseStorageObjectUrl(string $bucket, string $objectPath, bool $authenticated = false): string
+{
+    $encodedPath = implode('/', array_map('rawurlencode', explode('/', ltrim($objectPath, '/'))));
+    $prefix = $authenticated ? '/storage/v1/object/authenticated/' : '/storage/v1/object/';
+    return rtrim((string)SUPABASE_URL, '/') . $prefix . rawurlencode($bucket) . '/' . $encodedPath;
+}
+
+/**
+ * @return array{status:int,headers:array<int,string>,body:string}
+ */
+function supabaseStorageRequest(string $method, string $url, array $headers = [], ?string $body = null): array
+{
+    $requestHeaders = array_merge([
+        'apikey: ' . SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization: Bearer ' . SUPABASE_SERVICE_ROLE_KEY,
+    ], $headers);
+
+    $options = [
+        'http' => [
+            'method' => $method,
+            'header' => implode("\r\n", $requestHeaders),
+            'ignore_errors' => true,
+            'timeout' => 60,
+        ],
+    ];
+    if ($body !== null) {
+        $options['http']['content'] = $body;
+    }
+
+    $response = @file_get_contents($url, false, stream_context_create($options));
+    $responseHeaders = $http_response_header ?? [];
+
+    $status = 0;
+    foreach ($responseHeaders as $header) {
+        if (preg_match('/^HTTP\/\S+\s+(\d+)/', $header, $matches)) {
+            $status = (int)$matches[1];
+            break;
+        }
+    }
+
+    if ($response === false && $status === 0) {
+        throw new RuntimeException('Unable to contact Supabase Storage.');
+    }
+
+    return [
+        'status' => $status,
+        'headers' => $responseHeaders,
+        'body' => (string)$response,
+    ];
+}
+
+function uploadEnrollmentDocumentToSupabase(string $tmpName, int $enrollmentId, string $storedName, string $mimeType): string
+{
+    if (!supabaseStorageConfigured()) {
+        throw new RuntimeException('Supabase Storage is enabled but SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_STORAGE_BUCKET is missing.');
+    }
+
+    $contents = file_get_contents($tmpName);
+    if ($contents === false) {
+        throw new RuntimeException('Unable to read uploaded file before sending it to Supabase Storage.');
+    }
+
+    $objectPath = enrollmentDocumentStorageObjectPath($enrollmentId, $storedName);
+    $response = supabaseStorageRequest(
+        'POST',
+        supabaseStorageObjectUrl((string)SUPABASE_STORAGE_BUCKET, $objectPath),
+        [
+            'Content-Type: ' . $mimeType,
+            'Content-Length: ' . strlen($contents),
+            'x-upsert: true',
+        ],
+        $contents
+    );
+
+    if ($response['status'] < 200 || $response['status'] >= 300) {
+        throw new RuntimeException('Supabase Storage upload failed with HTTP ' . $response['status'] . '.');
+    }
+
+    return enrollmentDocumentSupabaseReference($objectPath);
+}
+
+function storeEnrollmentDocumentUpload(string $tmpName, int $enrollmentId, string $storedName, string $mimeType): string
+{
+    if (enrollmentDocumentStorageDriver() === 'supabase') {
+        return uploadEnrollmentDocumentToSupabase($tmpName, $enrollmentId, $storedName, $mimeType);
+    }
+
+    $uploadDir = dirname(__DIR__) . '/uploads/enrollment-documents/' . $enrollmentId;
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+        throw new RuntimeException('Unable to create enrollment document upload directory.');
+    }
+
+    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . basename($storedName);
+    if (!move_uploaded_file($tmpName, $targetPath)) {
+        throw new RuntimeException('Unable to save uploaded file.');
+    }
+
+    return 'uploads/enrollment-documents/' . $enrollmentId . '/' . basename($storedName);
+}
+
+function enrollmentDocumentLocalFilePath(array $document): ?string
+{
+    $relativePath = ltrim(str_replace('\\', '/', (string)($document['file_path'] ?? '')), '/');
+    if (!str_starts_with($relativePath, 'uploads/enrollment-documents/')) {
+        return null;
+    }
+
+    $rootDir = dirname(__DIR__);
+    $baseDir = realpath($rootDir . '/uploads/enrollment-documents');
+    $filePath = realpath($rootDir . '/' . $relativePath);
+    if ($baseDir === false || $filePath === false) {
+        return null;
+    }
+
+    $basePrefix = rtrim($baseDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    if (!str_starts_with($filePath, $basePrefix) || !is_file($filePath)) {
+        return null;
+    }
+
+    return $filePath;
+}
+
+function enrollmentDocumentIsLocallyAvailable(array $document): bool
+{
+    return enrollmentDocumentLocalFilePath($document) !== null;
+}
+
+function enrollmentDocumentIsSupabaseStored(array $document): bool
+{
+    return parseEnrollmentDocumentSupabaseReference((string)($document['file_path'] ?? '')) !== null;
+}
+
+function enrollmentDocumentIsAvailable(array $document): bool
+{
+    if (enrollmentDocumentIsSupabaseStored($document)) {
+        return supabaseStorageConfigured();
+    }
+
+    return enrollmentDocumentIsLocallyAvailable($document);
+}
+
+/**
+ * @return array{body:string,size:int}
+ */
+function downloadEnrollmentDocumentFromSupabase(array $document): array
+{
+    if (!supabaseStorageConfigured()) {
+        throw new RuntimeException('Supabase Storage credentials are not configured on this server.');
+    }
+
+    $reference = parseEnrollmentDocumentSupabaseReference((string)($document['file_path'] ?? ''));
+    if ($reference === null) {
+        throw new RuntimeException('Document is not stored in Supabase Storage.');
+    }
+
+    $response = supabaseStorageRequest(
+        'GET',
+        supabaseStorageObjectUrl($reference['bucket'], $reference['path'], true)
+    );
+
+    if ($response['status'] < 200 || $response['status'] >= 300) {
+        throw new RuntimeException('Supabase Storage download failed with HTTP ' . $response['status'] . '.');
+    }
+
+    return [
+        'body' => $response['body'],
+        'size' => strlen($response['body']),
+    ];
+}
+
+function deleteEnrollmentDocumentStoredFile(?string $filePath): void
+{
+    $filePath = trim((string)$filePath);
+    if ($filePath === '') {
+        return;
+    }
+
+    $remote = parseEnrollmentDocumentSupabaseReference($filePath);
+    if ($remote !== null) {
+        if (!supabaseStorageConfigured()) {
+            return;
+        }
+
+        try {
+            supabaseStorageRequest(
+                'DELETE',
+                supabaseStorageObjectUrl($remote['bucket'], $remote['path'])
+            );
+        } catch (Throwable $e) {
+            error_log('Supabase Storage delete failed: ' . $e->getMessage());
+        }
+        return;
+    }
+
+    $path = enrollmentDocumentLocalFilePath(['file_path' => $filePath]);
+    if ($path !== null && is_file($path)) {
+        @unlink($path);
+    }
 }
 
 /**

@@ -53,7 +53,8 @@ if (in_array($enrollment['status'], enrollmentLockedForGuardianStatuses(), true)
     redirect(APP_URL . '/guardian/dashboard.php');
 }
 
-$requiredDocuments = requiredEnrollmentDocuments();
+$requiredDocuments = requiredEnrollmentDocumentsForGrade((string)($enrollment['grade_level'] ?? ''));
+$requirementDescriptions = requiredEnrollmentDocumentDescriptions();
 $allowedRequirementExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
 $allowedRequirementMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 $maxRequirementFileSize = 5 * 1024 * 1024;
@@ -131,12 +132,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->beginTransaction();
 
-            $uploadDir = __DIR__ . '/../../uploads/enrollment-documents/' . $enrollmentId;
-            $relativeDir = 'uploads/enrollment-documents/' . $enrollmentId;
-            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-                throw new RuntimeException('Unable to create enrollment document upload directory.');
-            }
-
             $docStmt = $pdo->prepare("
                 INSERT INTO enrollment_documents
                     (enrollment_id, document_type, original_name, file_path, mime_type, file_size, uploaded_by, review_status, reviewer_note, reviewed_by, reviewed_at)
@@ -158,35 +153,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             foreach ($uploadedRequirements as $docKey => $file) {
                 $storedName = $docKey . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $file['extension'];
-                $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $storedName;
-                if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-                    throw new RuntimeException('Unable to save uploaded file: ' . $file['label']);
-                }
-                $movedRequirementFiles[] = $targetPath;
+                $storedPath = storeEnrollmentDocumentUpload(
+                    $file['tmp_name'],
+                    $enrollmentId,
+                    $storedName,
+                    $file['mime_type']
+                );
+                $movedRequirementFiles[] = $storedPath;
                 if (!empty($documentsByType[$docKey]['file_path'])) {
-                    $oldFilesToDelete[] = __DIR__ . '/../../' . ltrim((string)$documentsByType[$docKey]['file_path'], '/');
+                    $oldFilesToDelete[] = (string)$documentsByType[$docKey]['file_path'];
                 }
 
                 $docStmt->execute([
                     ':enrollment_id' => $enrollmentId,
                     ':document_type' => $docKey,
                     ':original_name' => $file['original_name'],
-                    ':file_path' => $relativeDir . '/' . $storedName,
+                    ':file_path' => $storedPath,
                     ':mime_type' => $file['mime_type'],
                     ':file_size' => $file['size'],
                     ':uploaded_by' => $userId,
                 ]);
             }
 
-            // Recompute status based on the new total document count.
-            $countStmt = $pdo->prepare("
-                SELECT COUNT(DISTINCT document_type)
-                FROM enrollment_documents
-                WHERE enrollment_id = :id
-                  AND document_type IN ('psa', 'medical', 'previous_school', 'parent_data')
-            ");
-            $countStmt->execute([':id' => $enrollmentId]);
-            $newDocCount = (int)$countStmt->fetchColumn();
+            // Recompute status based only on the documents required for this grade level.
+            $documentKeysAfterUpload = array_unique(array_merge(
+                array_keys($documentsByType),
+                array_keys($uploadedRequirements)
+            ));
+            $newDocCount = count(array_intersect(array_keys($requiredDocuments), $documentKeysAfterUpload));
 
             $resubmittableStatuses = [
                 'returned',
@@ -197,7 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'awaiting_payment',
             ];
             if (in_array($enrollment['status'], $resubmittableStatuses, true)) {
-                $newStatus = enrollmentStatusForDocumentCount($newDocCount);
+                $newStatus = enrollmentStatusForDocumentCount($newDocCount, count($requiredDocuments));
                 $resubmitRemark = $enrollment['status'] === 'returned'
                     ? 'Requirements resubmitted by guardian after return; awaiting clerk review.'
                     : 'Requirements updated by guardian; awaiting clerk review.';
@@ -217,9 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $committed = true;
 
             foreach ($oldFilesToDelete as $path) {
-                if (is_file($path)) {
-                    @unlink($path);
-                }
+                deleteEnrollmentDocumentStoredFile($path);
             }
 
             try {
@@ -238,9 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (!$committed) {
                 foreach ($movedRequirementFiles as $path) {
-                    if (is_file($path)) {
-                        @unlink($path);
-                    }
+                    deleteEnrollmentDocumentStoredFile($path);
                 }
             }
             error_log('Enrollment requirements upload error: ' . $e->getMessage());
@@ -300,7 +290,7 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="card">
             <div class="card-body p-4">
                 <div class="alert alert-info small">
-                    Upload clear copies of the required documents. Accepted files are locked; only missing, pending, or replacement-needed files can be changed.
+                    Upload clear copies of the required documents for this grade level. Accepted files are locked; only missing, pending, or replacement-needed files can be changed.
                 </div>
 
                 <?php if (!$hasReplaceableDocuments): ?>
@@ -332,9 +322,16 @@ require_once __DIR__ . '/../../includes/header.php';
                                 </div>
                                 <?php if ($existing): ?>
                                     <div class="small mb-2">
-                                        <a href="<?= e(enrollmentDocumentUrl($existing)) ?>" target="_blank" rel="noopener">
-                                            <i class="bi bi-file-earmark-text me-1"></i><?= e($existing['original_name']) ?>
-                                        </a>
+                                        <?php if (enrollmentDocumentIsAvailable($existing)): ?>
+                                            <a href="<?= e(enrollmentDocumentUrl($existing)) ?>" target="_blank" rel="noopener">
+                                                <i class="bi bi-file-earmark-text me-1"></i><?= e($existing['original_name']) ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <span class="text-warning">
+                                                <i class="bi bi-exclamation-triangle me-1"></i><?= e($existing['original_name']) ?>
+                                            </span>
+                                            <span class="text-muted ms-1">File is not available from this server. Please contact the school office.</span>
+                                        <?php endif; ?>
                                     </div>
                                 <?php endif; ?>
                                 <?php if ($reviewerNote !== ''): ?>
@@ -343,7 +340,10 @@ require_once __DIR__ . '/../../includes/header.php';
                                     </div>
                                 <?php endif; ?>
                                 <input type="file" class="form-control" name="requirements[<?= e($docKey) ?>]" accept=".pdf,.jpg,.jpeg,.png" <?= $existing ? '' : 'required' ?> <?= $isAccepted ? 'disabled' : '' ?>>
-                                <div class="form-text"><?= $isAccepted ? 'Accepted documents are locked.' : 'PDF, JPG, JPEG, or PNG. Max 5MB.' ?></div>
+                                <div class="form-text">
+                                    <?= e($requirementDescriptions[$docKey] ?? '') ?>
+                                    <?= $isAccepted ? ' Accepted documents are locked.' : ' PDF, JPG, JPEG, or PNG. Max 5MB.' ?>
+                                </div>
                             </div>
                         <?php endforeach; ?>
                     </div>

@@ -77,6 +77,11 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute($pipelineStatuses);
 $recentPending = $stmt->fetchAll();
+foreach ($recentPending as &$row) {
+    $row['required_doc_count'] = count(requiredEnrollmentDocumentsForGrade((string)($row['grade_level'] ?? '')));
+    $row['doc_count_display'] = min((int)($row['doc_count'] ?? 0), (int)$row['required_doc_count']);
+}
+unset($row);
 
 $pageTitle = 'Clerk Dashboard';
 require_once __DIR__ . '/../includes/header.php';
@@ -219,7 +224,7 @@ $pipelineStage = static function (array $row): array {
                                             </div>
                                         </td>
                                         <td><?= e(formatGradeLevel((string)($row['grade_level'] ?? ''))) ?></td>
-                                        <td><?= e((string)$row['doc_count']) ?>/4</td>
+                                        <td><?= e((string)($row['doc_count_display'] ?? $row['doc_count'])) ?>/<?= e((string)($row['required_doc_count'] ?? 4)) ?></td>
                                         <td><span class="badge <?= e($stageBadge) ?>"><?= e($stageLabel) ?></span></td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -265,13 +270,22 @@ $pipelineStage = static function (array $row): array {
                         <div class="qa-sub"><?= e((string)$readyForAssessment) ?> under document review, <?= e((string)$awaitingCashier) ?> awaiting verification</div>
                     </div>
                 </a>
+                <a href="<?= APP_URL ?>/admin/admin-payments.php?action=record" class="quick-action">
+                    <div class="qa-icon" style="background:var(--success-light);color:var(--success);">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
+                    <div>
+                        <div class="qa-text">Verify Payments</div>
+                        <div class="qa-sub"><?= e((string)$awaitingCashier) ?> assessment/payment record<?= $awaitingCashier === 1 ? '' : 's' ?> waiting</div>
+                    </div>
+                </a>
                 <a href="<?= APP_URL ?>/admin/admin-enrollments.php?status=paid_for_registrar" class="quick-action">
                     <div class="qa-icon" style="background:var(--success-light);color:var(--success);">
                         <i class="bi bi-send-check-fill"></i>
                     </div>
                     <div>
-                        <div class="qa-text">Submit to Registrar</div>
-                        <div class="qa-sub"><?= e((string)$readyForRegistrar) ?> awaiting submission</div>
+                        <div class="qa-text">Submit to Adviser</div>
+                        <div class="qa-sub"><?= e((string)$readyForRegistrar) ?> awaiting adviser handoff</div>
                     </div>
                 </a>
             </div>

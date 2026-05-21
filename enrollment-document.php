@@ -2,8 +2,8 @@
 /**
  * Protected enrollment document viewer.
  *
- * Documents are stored under uploads/enrollment-documents but must never be
- * linked directly. This route enforces role and ownership checks before
+ * Documents may be stored in local uploads or Supabase Storage, but must never
+ * be linked directly. This route enforces role and ownership checks before
  * streaming the file.
  */
 
@@ -55,19 +55,24 @@ if (!$isPrivilegedStaff && !$isOwnerGuardian) {
     exit;
 }
 
-$relativePath = ltrim(str_replace('\\', '/', (string)$document['file_path']), '/');
-if (!str_starts_with($relativePath, 'uploads/enrollment-documents/')) {
-    http_response_code(404);
-    echo 'Document not found.';
-    exit;
-}
-
-$baseDir = realpath(__DIR__ . '/uploads/enrollment-documents');
-$filePath = realpath(__DIR__ . '/' . $relativePath);
-if ($baseDir === false || $filePath === false || !str_starts_with($filePath, $baseDir . DIRECTORY_SEPARATOR) || !is_file($filePath)) {
-    http_response_code(404);
-    echo 'Document file not found.';
-    exit;
+$filePath = null;
+$remoteFile = null;
+if (enrollmentDocumentIsSupabaseStored($document)) {
+    try {
+        $remoteFile = downloadEnrollmentDocumentFromSupabase($document);
+    } catch (Throwable $e) {
+        error_log('Supabase enrollment document download failed: ' . $e->getMessage());
+        http_response_code(404);
+        echo 'Document file is stored in Supabase Storage, but this server is not configured to open it. Please check SUPABASE_SERVICE_ROLE_KEY and the storage bucket setup.';
+        exit;
+    }
+} else {
+    $filePath = enrollmentDocumentLocalFilePath($document);
+    if ($filePath === null) {
+        http_response_code(404);
+        echo 'Document file is not available on this device. The database record exists, but the uploaded file must be opened from the device where it was uploaded or restored into the local uploads folder.';
+        exit;
+    }
 }
 
 try {
@@ -100,11 +105,15 @@ header('X-Content-Type-Options: nosniff');
 header('Cache-Control: private, no-store, max-age=0');
 header('Pragma: no-cache');
 header('Content-Type: ' . $mimeType);
-header('Content-Length: ' . filesize($filePath));
+header('Content-Length: ' . ($remoteFile !== null ? $remoteFile['size'] : filesize((string)$filePath)));
 header(
     'Content-Disposition: ' . ($forceDownload ? 'attachment' : 'inline')
     . '; filename="' . addcslashes($safeName, "\\\"") . '"'
 );
 
-readfile($filePath);
+if ($remoteFile !== null) {
+    echo $remoteFile['body'];
+} else {
+    readfile((string)$filePath);
+}
 exit;

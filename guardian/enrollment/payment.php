@@ -213,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'reference_no' => $referenceNo !== '' ? $referenceNo : null,
             ]);
 
-            setFlash('success', 'Payment reference submitted. Admin can now verify the payment.');
+            setFlash('success', 'Payment reference submitted. School staff can now verify the payment.');
             redirect(APP_URL . '/guardian/dashboard.php');
         } catch (Exception $e) {
             $pdo->rollBack();
@@ -243,7 +243,7 @@ require_once __DIR__ . '/../../includes/header.php';
 <div class="row mb-4">
     <div class="col-md-8">
         <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Payment Reference</h4>
-        <p class="text-muted mb-0">Submit payment details after the Registrar issues the assessment.</p>
+        <p class="text-muted mb-0">Submit payment details after the Enrollment Clerk issues the assessment.</p>
     </div>
     <div class="col-md-4 text-md-end mt-3 mt-md-0">
         <a class="btn btn-outline-secondary" href="<?= APP_URL ?>/guardian/enrollment/"><i class="bi bi-arrow-left me-1"></i>Back to Enrollment</a>
@@ -384,7 +384,7 @@ require_once __DIR__ . '/../../includes/header.php';
 
                     <div class="alert alert-info mb-3">
                         <i class="bi bi-shield-check me-1"></i>
-                        Submitting this reference sends it for payment verification. Enrollment is not final until admin marks the payment as paid.
+                        Submitting this reference sends it for payment verification. Enrollment is not final until school staff marks the payment as paid.
                     </div>
 
                     <button type="submit" class="btn btn-success" <?= $canSubmitPayment ? '' : 'disabled' ?>>

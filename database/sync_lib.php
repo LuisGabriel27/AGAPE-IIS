@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/helpers.php';
 
 function syncRequireCli(): void
 {
@@ -354,6 +355,66 @@ function syncDeleteRow(PDO $pdo, string $table, array $rowData): void
     $stmt->execute($values);
 }
 
+function syncPrepareEnrollmentDocumentFileForSupabase(PDO $local, array $rowData, ?callable $logger = null): array
+{
+    $filePath = (string)($rowData['file_path'] ?? '');
+    if ($filePath === '' || parseEnrollmentDocumentSupabaseReference($filePath) !== null) {
+        return $rowData;
+    }
+
+    if (!str_starts_with(ltrim(str_replace('\\', '/', $filePath), '/'), 'uploads/enrollment-documents/')) {
+        return $rowData;
+    }
+
+    if (!supabaseStorageConfigured()) {
+        throw new RuntimeException(
+            'Enrollment document file sync requires SUPABASE_SERVICE_ROLE_KEY and SUPABASE_STORAGE_BUCKET. '
+            . 'Set them in .env before syncing local uploaded files.'
+        );
+    }
+
+    $localPath = enrollmentDocumentLocalFilePath(['file_path' => $filePath]);
+    if ($localPath === null) {
+        throw new RuntimeException('Local enrollment document file is missing: ' . $filePath);
+    }
+
+    $enrollmentId = (int)($rowData['enrollment_id'] ?? 0);
+    if ($enrollmentId < 1) {
+        throw new RuntimeException('Enrollment document row is missing enrollment_id.');
+    }
+
+    $storedName = basename(str_replace('\\', '/', $filePath));
+    $mimeType = (string)($rowData['mime_type'] ?? 'application/octet-stream');
+    $remotePath = uploadEnrollmentDocumentToSupabase($localPath, $enrollmentId, $storedName, $mimeType);
+    $rowData['file_path'] = $remotePath;
+
+    if (isset($rowData['id'])) {
+        try {
+            $local->beginTransaction();
+            $local->exec("SELECT set_config('agape.sync_disabled', 'on', true)");
+            $stmt = $local->prepare("
+                UPDATE enrollment_documents
+                SET file_path = :file_path
+                WHERE id = :id
+            ");
+            $stmt->execute([
+                ':file_path' => $remotePath,
+                ':id' => $rowData['id'],
+            ]);
+            $local->commit();
+        } catch (Throwable $e) {
+            if ($local->inTransaction()) {
+                $local->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    syncLog($logger, 'uploaded enrollment document file to Supabase Storage: ' . $remotePath);
+
+    return $rowData;
+}
+
 function syncPendingOutboxCount(PDO $pdo): int
 {
     if (!syncTableExists($pdo, 'sync_outbox')) {
@@ -483,6 +544,8 @@ function syncStatusSnapshot(): array
         'db_host' => (string)syncEnv('DB_HOST', ''),
         'db_name' => (string)syncEnv('DB_NAME', ''),
         'supabase_db_host_configured' => syncEnv('SUPABASE_DB_HOST', '') !== '',
+        'document_storage_driver' => enrollmentDocumentStorageDriver(),
+        'supabase_storage_configured' => supabaseStorageConfigured(),
         'pending_changes' => $mode === 'offline_local' ? syncPendingOutboxCount($pdo) : 0,
         'outbox_summary' => $mode === 'offline_local' ? syncOutboxSummary($pdo) : [],
         'counts' => $counts,
@@ -683,6 +746,9 @@ function syncPushToSupabaseOperation(
             }
 
             $rowData = syncDecodeRowData($outbox['row_data']);
+            if ($table === 'enrollment_documents' && ($operation === 'INSERT' || $operation === 'UPDATE')) {
+                $rowData = syncPrepareEnrollmentDocumentFileForSupabase($local, $rowData, $logger);
+            }
 
             $remote->beginTransaction();
             $remote->exec("SELECT set_config('agape.sync_disabled', 'on', true)");

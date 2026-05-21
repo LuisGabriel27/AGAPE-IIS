@@ -243,8 +243,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ── List with search & pagination ───────────────────────
 $where = ''; $params = [];
 if ($search) {
+    $roleSearchSql = "
+        u.role::text ILIKE :role_search
+        OR CASE
+            WHEN u.role::text = 'clerk' THEN 'Enrollment Clerk'
+            ELSE initcap(u.role::text)
+        END ILIKE :role_search
+        OR EXISTS (
+            SELECT 1
+            FROM user_roles ur_search
+            WHERE ur_search.user_id = u.id
+              AND (
+                ur_search.role::text ILIKE :role_search
+                OR CASE
+                    WHEN ur_search.role::text = 'clerk' THEN 'Enrollment Clerk'
+                    ELSE initcap(ur_search.role::text)
+                END ILIKE :role_search
+              )
+        )
+    ";
     $where = "WHERE u.email ILIKE :s
-        OR u.role::text ILIKE :s2
+        OR {$roleSearchSql}
         OR up.last_name ILIKE :s3 OR up.first_name ILIKE :s4
         OR g.last_name ILIKE :s3 OR g.first_name ILIKE :s4
         OR t.last_name ILIKE :s3 OR t.first_name ILIKE :s4
@@ -252,7 +271,7 @@ if ($search) {
         OR up.position_title ILIKE :s6 OR t.position_title ILIKE :s6
         OR up.office ILIKE :s7 OR t.department ILIKE :s7";
     $params[':s'] = "%{$search}%";
-    $params[':s2'] = "%{$search}%";
+    $params[':role_search'] = "%{$search}%";
     $params[':s3'] = "{$search}%";
     $params[':s4'] = "%{$search}%";
     $params[':s5'] = "%{$search}%";

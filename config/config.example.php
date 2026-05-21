@@ -29,6 +29,9 @@ define('DB_SSLMODE', $env('DB_SSLMODE', 'disable'));
 
 define('SUPABASE_URL', $env('SUPABASE_URL', ''));
 define('SUPABASE_ANON_KEY', $env('SUPABASE_ANON_KEY', ''));
+define('SUPABASE_SERVICE_ROLE_KEY', $env('SUPABASE_SERVICE_ROLE_KEY', ''));
+define('SUPABASE_STORAGE_BUCKET', $env('SUPABASE_STORAGE_BUCKET', 'enrollment-documents'));
+define('ENROLLMENT_DOCUMENT_STORAGE_DRIVER', $env('ENROLLMENT_DOCUMENT_STORAGE_DRIVER', 'local'));
 define('SUPABASE_DB_HOST', $env('SUPABASE_DB_HOST', ''));
 define('SUPABASE_DB_PORT', $env('SUPABASE_DB_PORT', '6543'));
 define('SUPABASE_DB_NAME', $env('SUPABASE_DB_NAME', 'postgres'));

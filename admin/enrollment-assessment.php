@@ -39,7 +39,7 @@ if (!$enrollment) {
 
 $categories = assessmentItemCategories();
 $deductionCategories = assessmentDeductionCategories();
-$requiredDocuments = requiredEnrollmentDocuments();
+$requiredDocuments = requiredEnrollmentDocumentsForGrade((string)($enrollment['grade_level'] ?? ''));
 $documentReviewSummary = loadEnrollmentDocumentReviewSummary($pdo, $enrollmentId, $requiredDocuments);
 $documentsReadyForAssessment = (bool)$documentReviewSummary['all_accepted'];
 $documentReviewBlockers = enrollmentDocumentReviewBlockerText($documentReviewSummary);
@@ -281,15 +281,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $assessmentParams[$param] = $stageStatus;
                     }
                     $assessmentPlaceholdersSql = implode(',', $assessmentPlaceholders);
+                    $assessmentRemark = 'Payment assessment issued (PHP ' . number_format($total, 2) . ').';
                     $stmt = $pdo->prepare("
                         UPDATE enrollments
                         SET status = 'assessed_for_payment',
-                            remarks = 'Payment assessment issued (PHP ' || to_char(:total, 'FM999,999,999.00') || ').'
+                            remarks = :remarks
                         WHERE id = :id
                           AND status::text IN ({$assessmentPlaceholdersSql})
                     ");
                     $stmt->execute(array_merge([
-                        ':total' => $total,
+                        ':remarks' => $assessmentRemark,
                         ':id'    => $enrollmentId,
                     ], $assessmentParams));
                 }

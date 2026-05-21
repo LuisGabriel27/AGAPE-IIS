@@ -65,18 +65,17 @@ if (!empty($students)) {
 $latestPayment = null;
 if (!empty($students)) {
     $stmt = $pdo->prepare("
-        SELECT p.* FROM payments p
+        SELECT p.*, e.id AS enrollment_id, e.status AS enrollment_status
+        FROM payments p
         JOIN enrollments e ON p.enrollment_id = e.id
         WHERE e.student_id = :sid
-        ORDER BY p.paid_at DESC
+        ORDER BY p.id DESC
         LIMIT 1
     ");
     $stmt->execute([':sid' => $students[0]['id']]);
     $latestPayment = $stmt->fetch();
 }
 
-$requiredEnrollmentDocuments = requiredEnrollmentDocuments();
-$requiredEnrollmentDocumentCount = count($requiredEnrollmentDocuments);
 $enrollmentRequirementStatus = [];
 if (!empty($students)) {
     $studentIds = array_map(static fn(array $student): int => (int)$student['id'], $students);
@@ -85,8 +84,10 @@ if (!empty($students)) {
         SELECT DISTINCT ON (e.student_id)
                e.student_id,
                e.id AS enrollment_id,
-               e.status
+               e.status,
+               s.grade_level
         FROM enrollments e
+        INNER JOIN students s ON s.id = e.student_id
         WHERE e.student_id IN ({$placeholders})
         ORDER BY e.student_id, e.id DESC
     ");
@@ -109,12 +110,14 @@ if (!empty($students)) {
     }
 
     foreach ($latestEnrollmentRows as $row) {
+        $requiredEnrollmentDocuments = requiredEnrollmentDocumentsForGrade((string)($row['grade_level'] ?? ''));
         $summary = summarizeEnrollmentDocumentsByType(
             $documentsByEnrollment[(int)$row['enrollment_id']] ?? [],
             $requiredEnrollmentDocuments
         );
         $row['document_summary'] = $summary;
         $row['document_count'] = $summary['uploaded_count'];
+        $row['required_document_count'] = count($requiredEnrollmentDocuments);
         $enrollmentRequirementStatus[(int)$row['student_id']] = $row;
     }
 }
@@ -182,7 +185,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <i class="bi bi-credit-card-fill"></i>
             </div>
             <div class="qa-label">Payments</div>
-            <div class="qa-sub">Payment history</div>
+            <div class="qa-sub">Submit reference or view history</div>
         </a>
     </div>
     <div class="col-md-3 col-6">
@@ -221,16 +224,17 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php
                                 $requirementStatus = $enrollmentRequirementStatus[(int)$stu['id']] ?? null;
                                 $documentCount = $requirementStatus ? (int)$requirementStatus['document_count'] : 0;
+                                $requiredDocumentCount = $requirementStatus ? (int)$requirementStatus['required_document_count'] : count(requiredEnrollmentDocumentsForGrade((string)($stu['grade_level'] ?? '')));
                                 $documentSummary = $requirementStatus['document_summary'] ?? null;
                                 $needsReplacement = $documentSummary && !empty($documentSummary['needs_replacement_labels']);
                                 $hasPendingReview = $documentSummary && !empty($documentSummary['pending_labels']);
                                 $documentsAccepted = $documentSummary && !empty($documentSummary['all_accepted']);
                                 $canUploadRequirements = $requirementStatus
                                     && !in_array($requirementStatus['status'], enrollmentLockedForGuardianStatuses(), true)
-                                    && ($documentCount < $requiredEnrollmentDocumentCount || $needsReplacement);
+                                    && ($documentCount < $requiredDocumentCount || $needsReplacement);
                                 $hasInProgressUpload = $requirementStatus
                                     && !$canUploadRequirements
-                                    && $documentCount >= $requiredEnrollmentDocumentCount;
+                                    && $documentCount >= $requiredDocumentCount;
                                 $uploadButtonLabel = $needsReplacement ? 'Replace Requirements' : 'Upload Requirements';
                             ?>
                             <?php if ($requirementStatus): ?>
@@ -314,6 +318,13 @@ require_once __DIR__ . '/../includes/header.php';
                             <th>Reference</th><td colspan="3"><?= e($latestPayment['reference_no'] ?? 'N/A') ?></td>
                         </tr>
                     </table>
+                    <?php if ($latestPayment['status'] !== 'paid' && canGuardianSubmitEnrollmentPayment((string)($latestPayment['enrollment_status'] ?? ''))): ?>
+                        <div class="mt-3">
+                            <a class="btn btn-success btn-sm" href="<?= e(APP_URL . '/guardian/enrollment/payment.php?' . http_build_query(['enrollment_id' => (int)$latestPayment['enrollment_id']])) ?>">
+                                <i class="bi bi-send-check me-1"></i>Submit Payment Reference
+                            </a>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <?php else: ?>
                     <p class="text-muted mb-0">No payment records found.</p>

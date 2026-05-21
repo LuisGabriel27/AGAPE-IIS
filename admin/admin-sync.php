@@ -49,6 +49,9 @@ $status = syncStatusSnapshot();
 $isOfflineMode = $status['mode'] === 'offline_local';
 $pendingChanges = (int)$status['pending_changes'];
 $lastSnapshotAt = $status['last_snapshot_at'] ? date('M d, Y g:i A', strtotime((string)$status['last_snapshot_at'])) : 'Not recorded';
+$storageLabel = ($status['document_storage_driver'] ?? 'local') === 'supabase'
+    ? 'Supabase Storage'
+    : 'Local uploads';
 
 $pageTitle = 'Manual Sync';
 require_once __DIR__ . '/../includes/header.php';
@@ -104,6 +107,15 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
         </div>
     </div>
+</div>
+
+<div class="alert alert-light border">
+    <strong>Document storage:</strong> <?= e($storageLabel) ?>.
+    <?php if (!($status['supabase_storage_configured'] ?? false)): ?>
+        Add the Supabase service role key before syncing local enrollment document uploads to Supabase Storage.
+    <?php else: ?>
+        Supabase Storage credentials are configured for protected document access and file sync.
+    <?php endif; ?>
 </div>
 
 <?php if (!$isOfflineMode): ?>

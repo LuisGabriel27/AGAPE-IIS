@@ -7,6 +7,11 @@ AGAPE AIIS can run in two database modes:
 - **Online mode**: the Docker app connects directly to Supabase.
 - **Offline mode**: the Docker app connects to the local PostgreSQL container.
 
+Enrollment document files can also run in two storage modes:
+
+- **Local file mode**: uploaded files stay in `uploads/enrollment-documents`.
+- **Supabase Storage mode**: uploaded files are stored in a private Supabase Storage bucket and opened through the protected `enrollment-document.php` route.
+
 For offline work, run a Supabase-to-local snapshot while internet is available.
 Users can then keep using the local Docker app without internet. Local inserts,
 updates, and deletes are recorded in `sync_outbox`. When internet returns, run
@@ -22,6 +27,7 @@ the sync command to push those local changes back to Supabase.
 - `database/sync_to_supabase.php` pushes local `sync_outbox` changes back to Supabase.
 - `database/sync_status.php` shows whether the app is in online or offline mode.
 - `docker/postgres/init/90_local_seed.sql` seeds local sections and fixes the local admin password.
+- `database/supabase_storage_bucket_setup.sql` creates the private Supabase Storage bucket for enrollment requirement files.
 
 ## Recommended Operating Rule
 
@@ -50,6 +56,28 @@ Switch online:
 Copy-Item .env.online .env -Force
 docker compose up -d --build app
 ```
+
+For hosted/home-user online mode, set these in `.env.online` before rebuilding:
+
+```text
+DB_HOST=<Supabase pooler host>
+DB_PORT=6543
+DB_NAME=postgres
+DB_USER=<Supabase pooler user>
+DB_PASS=<Supabase database password>
+DB_SSLMODE=require
+SUPABASE_URL=<Supabase project URL>
+SUPABASE_SERVICE_ROLE_KEY=<server-side service role key>
+SUPABASE_STORAGE_BUCKET=enrollment-documents
+ENROLLMENT_DOCUMENT_STORAGE_DRIVER=supabase
+```
+
+Do not put the service role key in browser JavaScript. It belongs only in the server `.env`.
+
+If offline users upload enrollment documents, also set `SUPABASE_SERVICE_ROLE_KEY`
+in `.env.offline`. During Manual Sync, local files under
+`uploads/enrollment-documents` are uploaded to Supabase Storage first, then the
+database row is pushed with its `supabase://...` file path.
 
 Switch offline:
 
@@ -146,5 +174,12 @@ multi-master sync system.
 Remaining limits:
 
 - Avoid editing the same record in Supabase and local Docker at the same time.
-- Database records are synced; uploaded files in `uploads/` still need a file-sync process.
+- In `ENROLLMENT_DOCUMENT_STORAGE_DRIVER=local`, uploaded files stay on that device until Manual Sync uploads enrollment documents to Supabase Storage.
+- In `ENROLLMENT_DOCUMENT_STORAGE_DRIVER=supabase`, uploaded enrollment documents are shared through Supabase Storage and can be opened from other devices after login.
 - If Supabase rejects a local change because of a constraint or duplicate, the row remains pending in `sync_outbox` with an error message.
+
+## Recommended Real Deployment Shape
+
+- School office/admin and enrollment clerk devices can run Docker offline mode when the internet is unreliable.
+- Guardians and teachers should use a hosted online deployment connected directly to Supabase Postgres and Supabase Storage.
+- Before the school office goes offline, pull the latest Supabase snapshot. After offline work, use Manual Sync before making more online admin changes.

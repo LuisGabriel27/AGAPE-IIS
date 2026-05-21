@@ -4,7 +4,7 @@
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
-requireRole('admin');
+requireRole(['admin', 'clerk']);
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
@@ -14,6 +14,7 @@ $action = $_GET['action'] ?? '';
 $errors = [];
 $paymentMethods = paymentMethods();
 $paymentStatuses = paymentStatuses();
+$selectedEnrollmentId = (int)($_GET['enrollment_id'] ?? $_POST['enrollment_id'] ?? 0);
 
 // â”€â”€ Export CSV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ($action === 'export') {
@@ -305,7 +306,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="enrollment_id" id="enrollment_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($enrollmentsList as $en): ?>
-                            <option value="<?= (int)$en['id'] ?>" data-amount="<?= e((string)($en['latest_payment_amount'] ?? '')) ?>">
+                            <option value="<?= (int)$en['id'] ?>" data-amount="<?= e((string)($en['latest_payment_amount'] ?? '')) ?>" <?= $selectedEnrollmentId === (int)$en['id'] ? 'selected' : '' ?>>
                                 <?= e($en['student_name']) ?> - <?= e($en['school_year']) ?> (<?= e($en['term']) ?>)
                                 / <?= e(enrollmentStatusLabel((string)$en['status'])) ?>
                                 <?php if (!empty($en['latest_payment_amount'])): ?>

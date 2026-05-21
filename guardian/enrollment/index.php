@@ -31,12 +31,8 @@ $step    = (int)($_POST['step'] ?? $_GET['step'] ?? ($profileComplete ? 2 : 1));
 $errors  = [];
 $readPostedBool = static fn(string $key): bool => ($_POST[$key] ?? '0') === '1';
 $sections = $pdo->query("SELECT id, name, grade_level, capacity FROM sections ORDER BY grade_level, name")->fetchAll();
-$requiredDocuments = [
-    'psa' => 'PSA Birth Certificate',
-    'medical' => 'Medical Records',
-    'previous_school' => 'Previous School Records',
-    'parent_data' => 'Parent / Guardian Data',
-];
+$requiredDocuments = requiredEnrollmentDocuments();
+$requirementDescriptions = requiredEnrollmentDocumentDescriptions();
 $allowedRequirementExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
 $allowedRequirementMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 $maxRequirementFileSize = 5 * 1024 * 1024;
@@ -319,6 +315,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['enroll']['section_id']  = (int)($_POST['section_id'] ?? 0);
         $_SESSION['enroll']['school_year'] = trim($_POST['school_year'] ?? currentSchoolYear());
         $_SESSION['enroll']['term']        = trim($_POST['term'] ?? '1st Semester');
+        $requiredDocuments = requiredEnrollmentDocumentsForGrade($_SESSION['enroll']['grade_level'] ?? '');
         $uploadedRequirements = [];
 
         $enrollData = $_SESSION['enroll'] ?? [];
@@ -455,7 +452,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('This student already has an enrollment for the selected school year and term.');
                 }
 
-                $initialStatus = enrollmentStatusForDocumentCount(count($uploadedRequirements));
+                $initialStatus = enrollmentStatusForDocumentCount(count($uploadedRequirements), count($requiredDocuments));
                 $stmt = $pdo->prepare("
                     INSERT INTO enrollments (student_id, school_year, term, status, payment_submitted_at)
                     VALUES (:sid, :sy, :term, :status, NULL) RETURNING id
@@ -467,12 +464,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':status' => $initialStatus,
                 ]);
                 $enrollmentId = (int)$stmt->fetchColumn();
-
-                $uploadDir = __DIR__ . '/../../uploads/enrollment-documents/' . $enrollmentId;
-                $relativeDir = 'uploads/enrollment-documents/' . $enrollmentId;
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-                    throw new RuntimeException('Unable to create enrollment document upload directory.');
-                }
 
                 $docStmt = $pdo->prepare("
                     INSERT INTO enrollment_documents
@@ -495,17 +486,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 foreach ($uploadedRequirements as $docKey => $file) {
                     $storedName = $docKey . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $file['extension'];
-                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $storedName;
-                    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-                        throw new RuntimeException('Unable to save uploaded file: ' . $file['label']);
-                    }
-                    $movedRequirementFiles[] = $targetPath;
+                    $storedPath = storeEnrollmentDocumentUpload(
+                        $file['tmp_name'],
+                        $enrollmentId,
+                        $storedName,
+                        $file['mime_type']
+                    );
+                    $movedRequirementFiles[] = $storedPath;
 
                     $docStmt->execute([
                         ':enrollment_id' => $enrollmentId,
                         ':document_type' => $docKey,
                         ':original_name' => $file['original_name'],
-                        ':file_path' => $relativeDir . '/' . $storedName,
+                        ':file_path' => $storedPath,
                         ':mime_type' => $file['mime_type'],
                         ':file_size' => $file['size'],
                         ':uploaded_by' => $userId,
@@ -535,9 +528,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if (!$committed) {
                     foreach ($movedRequirementFiles as $path) {
-                        if (is_file($path)) {
-                            @unlink($path);
-                        }
+                        deleteEnrollmentDocumentStoredFile($path);
                     }
                 }
                 error_log('Enrollment creation error: ' . $e->getMessage());
@@ -555,6 +546,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $enrollData = $_SESSION['enroll'] ?? [];
+$stepRequiredDocuments = requiredEnrollmentDocumentsForGrade($enrollData['grade_level'] ?? '');
 $hasMeaningfulStudentData = isset($enrollData['student_id'])
     || trim((string)($enrollData['last_name'] ?? '')) !== ''
     || trim((string)($enrollData['first_name'] ?? '')) !== ''
@@ -1074,11 +1066,11 @@ $stepKeys = array_keys($stepLabels);
         </div>
 
         <div class="row">
-            <?php foreach ($requiredDocuments as $docKey => $docLabel): ?>
-                <div class="col-md-6 mb-3">
+            <?php foreach ($stepRequiredDocuments as $docKey => $docLabel): ?>
+                <div class="col-md-6 mb-3 requirement-upload" data-requirement-key="<?= e($docKey) ?>">
                     <label class="form-label"><?= e($docLabel) ?> <span class="text-danger">*</span></label>
                     <input type="file" class="form-control" name="requirements[<?= e($docKey) ?>]" accept=".pdf,.jpg,.jpeg,.png" required>
-                    <div class="form-text">PDF, JPG, JPEG, or PNG. Max 5MB.</div>
+                    <div class="form-text"><?= e($requirementDescriptions[$docKey] ?? '') ?> PDF, JPG, JPEG, or PNG. Max 5MB.</div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -1188,6 +1180,38 @@ document.getElementById('existing-student-select')?.addEventListener('change', f
         }
     });
 });
+
+function refreshEnrollmentRequirementUploads() {
+    const gradeSelect = document.querySelector('select[name="grade_level"]');
+    const requirementCards = document.querySelectorAll('.requirement-upload');
+    if (!gradeSelect || requirementCards.length === 0) {
+        return;
+    }
+
+    const selectedGrade = String(gradeSelect.value || '').toLowerCase();
+    const skipPrevious = ['preschool', 'pre-school', 'kindergarten', 'kinder'].includes(selectedGrade);
+
+    requirementCards.forEach((card) => {
+        const key = card.dataset.requirementKey || '';
+        const input = card.querySelector('input[type="file"]');
+        if (key === 'previous_school' && skipPrevious) {
+            card.classList.add('d-none');
+            if (input) {
+                input.required = false;
+                input.value = '';
+            }
+            return;
+        }
+
+        card.classList.remove('d-none');
+        if (input) {
+            input.required = true;
+        }
+    });
+}
+
+document.querySelector('select[name="grade_level"]')?.addEventListener('change', refreshEnrollmentRequirementUploads);
+refreshEnrollmentRequirementUploads();
 </script>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

@@ -119,6 +119,10 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
             </a>
 
             <div class="sidebar-section">Settings</div>
+            <a class="sidebar-link <?= e($currentPage === 'staff-profile.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/staff-profile.php">
+                <i class="bi bi-person-circle"></i> My Profile
+            </a>
             <a class="sidebar-link <?= e($currentPage === 'admin-schoolyear.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/admin-schoolyear.php">
                 <i class="bi bi-calendar-range"></i> School Year
@@ -145,6 +149,16 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                href="<?= APP_URL ?>/admin/admin-students.php">
                 <i class="bi bi-people-fill"></i> Students
             </a>
+            <a class="sidebar-link <?= e($currentPage === 'admin-payments.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/admin-payments.php">
+                <i class="bi bi-cash-stack"></i> Payment Verification
+            </a>
+
+            <div class="sidebar-section">Account</div>
+            <a class="sidebar-link <?= e($currentPage === 'staff-profile.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/staff-profile.php">
+                <i class="bi bi-person-circle"></i> My Profile
+            </a>
 
             <?php endif; ?>
 
@@ -158,6 +172,10 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
             </a>
 
             <div class="sidebar-section">Teaching</div>
+            <a class="sidebar-link <?= e($currentPage === 'teacher-students.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/teacher/teacher-students.php">
+                <i class="bi bi-people-fill"></i> My Students
+            </a>
             <a class="sidebar-link <?= e($currentPage === 'teacher-grades.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/teacher/teacher-grades.php">
                 <i class="bi bi-pencil-square"></i> Grades
@@ -254,7 +272,7 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                 </div>
                 <div class="header-user-info d-none d-sm-block">
                     <div class="header-user-name"><?= e($userEmail) ?></div>
-                    <div class="header-user-role"><?= e(ucfirst($userRole)) ?></div>
+                    <div class="header-user-role"><?= e($userRole === 'clerk' ? 'Enrollment Clerk' : ucfirst($userRole)) ?></div>
                 </div>
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
@@ -282,6 +300,9 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                 <?php endif; ?>
 
                 <li><hr class="dropdown-divider"></li>
+                <?php if ($userRole === 'admin' || $userRole === 'clerk'): ?>
+                    <li><a class="dropdown-item" href="<?= APP_URL ?>/admin/staff-profile.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
+                <?php endif; ?>
                 <?php if ($userRole === 'guardian'): ?>
                     <li><a class="dropdown-item" href="<?= APP_URL ?>/guardian/profile-view.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
                 <?php endif; ?>

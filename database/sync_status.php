@@ -15,6 +15,8 @@ syncOut('Mode: ' . $status['mode']);
 syncOut('DB_HOST: ' . $status['db_host']);
 syncOut('DB_NAME: ' . $status['db_name']);
 syncOut('SUPABASE_DB_HOST configured: ' . ($status['supabase_db_host_configured'] ? 'yes' : 'no'));
+syncOut('Document storage driver: ' . $status['document_storage_driver']);
+syncOut('Supabase Storage configured: ' . ($status['supabase_storage_configured'] ? 'yes' : 'no'));
 
 if ($status['mode'] === 'online_supabase') {
     syncOut('The app is reading/writing Supabase directly. This is online mode, not offline mode.');

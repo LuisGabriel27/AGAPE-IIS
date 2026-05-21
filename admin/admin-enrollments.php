@@ -2,7 +2,7 @@
 /**
  * Admin Enrollments
  * Registrar enrollment queue: intake, document requirements, payment assessment,
- * payment verification, and final submission to teachers.
+ * payment verification, and final submission to the section adviser.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -24,10 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $enrollId = (int)($_POST['enrollment_id'] ?? 0);
     $decision = trim($_POST['decision'] ?? '');
     $remarks = trim($_POST['remarks'] ?? '');
+    $targetAdviserName = '';
 
     // Decisions:
     //   save_reviews - persist per-doc reviews without changing enrollment status
-    //   submit       - registrar submits paid enrollee to teachers
+    //   submit       - registrar submits paid enrollee to the section adviser
     //   return       - bounce back to guardian (any open stage)
     $validDecisions = ['save_reviews', 'submit', 'return'];
     if ($enrollId < 1) {
@@ -62,9 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $stmt = $pdo->prepare("
-            SELECT id, status, payment_submitted_at
-            FROM enrollments
-            WHERE id = :id
+            SELECT e.id, e.status, e.remarks, e.payment_submitted_at, e.school_year, e.term,
+                   s.id AS student_id, s.section_id, s.grade_level
+            FROM enrollments e
+            INNER JOIN students s ON s.id = e.student_id
+            WHERE e.id = :id
             LIMIT 1
         ");
         $stmt->execute([':id' => $enrollId]);
@@ -73,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$enrollment) {
             $errors[] = 'Enrollment record was not found.';
         } else {
+            $enrollmentRequiredDocuments = requiredEnrollmentDocumentsForGrade((string)($enrollment['grade_level'] ?? ''));
             $documentsForValidation = loadEnrollmentDocumentsByType($pdo, $enrollId);
             foreach ($docReviewUpdates as $docKey => $update) {
                 if (isset($documentsForValidation[$docKey])) {
@@ -80,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $documentsForValidation[$docKey]['reviewer_note'] = $update['note'];
                 }
             }
-            $documentReviewSummary = summarizeEnrollmentDocumentsByType($documentsForValidation, $requiredDocuments);
+            $documentReviewSummary = summarizeEnrollmentDocumentsByType($documentsForValidation, $enrollmentRequiredDocuments);
             $documentReviewBlockers = enrollmentDocumentReviewBlockerText($documentReviewSummary);
 
             if ($decision === 'submit') {
@@ -90,6 +94,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$documentReviewSummary['all_accepted']) {
                     $errors[] = 'Required documents must all be accepted before registrar submission.'
                         . ($documentReviewBlockers !== '' ? ' ' . $documentReviewBlockers : '');
+                }
+                if (empty($enrollment['section_id'])) {
+                    $errors[] = 'Student must be assigned to a section before submitting to the section adviser.';
+                } else {
+                    $adviserCheck = $pdo->prepare("
+                        SELECT sec.name AS section_name,
+                               sec.adviser_id,
+                               CASE
+                                   WHEN t.id IS NULL THEN NULL
+                                   WHEN t.first_name = '' THEN t.last_name
+                                   ELSE t.last_name || ', ' || t.first_name
+                               END AS adviser_name
+                        FROM sections sec
+                        LEFT JOIN teachers t ON t.id = sec.adviser_id
+                        WHERE sec.id = :section_id
+                        LIMIT 1
+                    ");
+                    $adviserCheck->execute([
+                        ':section_id' => (int)$enrollment['section_id'],
+                    ]);
+                    $sectionAdviser = $adviserCheck->fetch();
+                    if (!$sectionAdviser) {
+                        $errors[] = 'The selected section was not found. Reassign the student to a valid section first.';
+                    } elseif (empty($sectionAdviser['adviser_id'])) {
+                        $errors[] = 'Assign a section adviser to '
+                            . ($sectionAdviser['section_name'] ?: 'this section')
+                            . ' before submitting this enrollment.';
+                    } else {
+                        $targetAdviserName = (string)($sectionAdviser['adviser_name'] ?? '');
+                    }
                 }
             } elseif ($decision === 'return') {
                 if (in_array($enrollment['status'], enrollmentTerminalStatuses(), true)) {
@@ -136,8 +170,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $newStatus = 'enrolled';
                     $enrolledAt = date('Y-m-d H:i:s');
                     $auditAction = 'enrollment_enrolled';
-                    $flashMessage = 'Enrollment has been submitted to teachers.';
-                    $defaultRemarks = 'Registrar submitted enrollee to teachers.';
+                    $flashMessage = 'Enrollment has been submitted to the section adviser.';
+                    $defaultRemarks = 'Registrar submitted enrollee to '
+                        . ($targetAdviserName !== '' ? $targetAdviserName : 'the section adviser') . '.';
                     break;
                 case 'return':
                 default:
@@ -150,6 +185,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($statusChange) {
+                $currentRemarks = trim((string)($enrollment['remarks'] ?? ''));
+                $finalRemarks = $remarks;
+                if ($finalRemarks === '' || ($decision === 'submit' && $finalRemarks === $currentRemarks)) {
+                    $finalRemarks = $defaultRemarks;
+                }
+
                 $stmt = $pdo->prepare("
                     UPDATE enrollments
                     SET status = :status,
@@ -160,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([
                     ':status' => $newStatus,
                     ':status2' => $newStatus,
-                    ':remarks' => $remarks !== '' ? $remarks : $defaultRemarks,
+                    ':remarks' => $finalRemarks,
                     ':enrolled_at' => $enrolledAt,
                     ':id' => $enrollId,
                 ]);
@@ -170,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             auditLog($auditAction, 'enrollments', $enrollId, null, [
                 'decision' => $decision,
-                'remarks' => $remarks,
+                'remarks' => $statusChange ? ($finalRemarks ?? $remarks) : $remarks,
                 'doc_reviews' => array_keys($docReviewUpdates),
             ]);
 
@@ -206,10 +247,18 @@ $stmt = $pdo->prepare("
     SELECT e.*,
            CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name,
            s.lrn AS student_lrn, s.grade_level,
+           sec.name AS section_name,
+           CASE
+               WHEN adv.id IS NULL THEN NULL
+               WHEN adv.first_name = '' THEN adv.last_name
+               ELSE adv.last_name || ', ' || adv.first_name
+           END AS adviser_name,
            p.id AS payment_id, p.amount AS payment_amount, p.method AS payment_method,
            p.reference_no AS payment_reference_no, p.status AS payment_status, p.paid_at AS payment_paid_at
     FROM enrollments e
     INNER JOIN students s ON e.student_id = s.id
+    LEFT JOIN sections sec ON sec.id = s.section_id
+    LEFT JOIN teachers adv ON adv.id = sec.adviser_id
     LEFT JOIN payments p ON p.id = (
         SELECT p2.id
         FROM payments p2
@@ -282,9 +331,9 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
     <div class="fw-semibold mb-2"><i class="bi bi-diagram-3 me-1"></i>Enrollment Chain</div>
     <div class="row g-3 small">
         <div class="col-md-3"><strong>1. Guardian Uploads</strong><br><span class="text-muted">Guardian submits enrollment and uploads all required files.</span></div>
-        <div class="col-md-3"><strong>2. Clerk Assessment</strong><br><span class="text-muted">Enrollment Clerk checks PSA, medical records, previous school records, and parent data, then assesses payment.</span></div>
+        <div class="col-md-3"><strong>2. Clerk Assessment</strong><br><span class="text-muted">Enrollment Clerk checks birth certificate, health clearance, applicable transfer record, and signed guardian data before payment assessment.</span></div>
         <div class="col-md-3"><strong>3. Payment Verification</strong><br><span class="text-muted">Enrollee pays through the school treasurer process, then payment is verified.</span></div>
-        <div class="col-md-3"><strong>4. Submit to Teachers</strong><br><span class="text-muted">After payment, registrar submits the enrollee to teachers.</span></div>
+        <div class="col-md-3"><strong>4. Submit to Adviser</strong><br><span class="text-muted">After payment, registrar submits the enrollee to the section adviser.</span></div>
     </div>
 </div>
 
@@ -441,7 +490,9 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 foreach ($docs as $doc) {
                     $docsByType[(string)$doc['document_type']] = $doc;
                 }
-                $documentSummary = summarizeEnrollmentDocumentsByType($docsByType, $requiredDocuments);
+                $rowRequiredDocuments = requiredEnrollmentDocumentsForGrade((string)($en['grade_level'] ?? ''));
+                $requirementDescriptions = requiredEnrollmentDocumentDescriptions();
+                $documentSummary = summarizeEnrollmentDocumentsByType($docsByType, $rowRequiredDocuments);
                 $missingDocumentLabels = $documentSummary['missing_labels'];
                 $reviewCounts = $documentSummary['counts'];
                 $documentsComplete = (bool)$documentSummary['all_uploaded'];
@@ -455,6 +506,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                 $canReturn = !in_array($statusValue, enrollmentTerminalStatuses(), true);
                 $canSaveReviews = !in_array($statusValue, enrollmentTerminalStatuses(), true);
                 $canReview = $canCreateAssessment || $canSubmitToTeachers || $canReturn || $canSaveReviews;
+                $adviserName = trim((string)($en['adviser_name'] ?? ''));
+                $adviserTargetLabel = $adviserName !== '' ? $adviserName : 'section adviser';
+                $displayRemarks = (string)($en['remarks'] ?? '');
+                if ($statusValue === 'enrolled' && $displayRemarks === 'Payment verified; ready for registrar submission.') {
+                    $displayRemarks = 'Registrar submitted enrollee to ' . $adviserTargetLabel . '.';
+                }
             ?>
             <tr>
                 <td><?= e((string)($offset + $i + 1)) ?></td>
@@ -488,7 +545,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         <?php endif; ?>
                     </div>
                     <div class="small">
-                        <?php foreach ($requiredDocuments as $docKey => $docLabel):
+                        <?php foreach ($rowRequiredDocuments as $docKey => $docLabel):
                             $doc = $docsByType[$docKey] ?? null;
                             $reviewStatus = $doc ? (string)($doc['review_status'] ?? 'pending') : 'missing';
                         ?>
@@ -525,6 +582,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     <?php elseif (!$allAccepted): ?>
                         <span class="badge badge-doc-review-pending">Document Review Required</span>
                         <div class="small text-muted mt-1"><?= e($documentBlockerText) ?></div>
+                    <?php elseif ($statusValue === 'enrolled'): ?>
+                        <span class="badge badge-status-enrolled">Submitted to Adviser</span>
+                        <div class="small text-muted mt-1"><?= e($adviserTargetLabel) ?></div>
+                        <?php if (!empty($en['enrolled_at'])): ?>
+                            <div class="small text-muted mt-1"><?= e(date('M d, Y h:i A', strtotime((string)$en['enrolled_at']))) ?></div>
+                        <?php endif; ?>
                     <?php elseif ($statusValue === 'paid_for_registrar'): ?>
                         <span class="badge badge-status-active">Paid - Ready for Registrar</span>
                         <?php if (!empty($en['payment_submitted_at'])): ?>
@@ -532,7 +595,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                         <?php endif; ?>
                     <?php elseif ($statusValue === 'awaiting_payment'): ?>
                         <span class="badge badge-status-awaiting-payment">Awaiting Verification</span>
-                        <div class="small text-muted mt-1">Guardian submitted payment proof. Admin needs to verify.</div>
+                        <div class="small text-muted mt-1">Guardian submitted payment proof. Verify the payment next.</div>
+                        <div class="mt-2">
+                            <a class="btn btn-sm btn-outline-success" href="<?= APP_URL ?>/admin/admin-payments.php?action=record&enrollment_id=<?= (int)$en['id'] ?>">
+                                <i class="bi bi-cash-stack me-1"></i>Verify Payment
+                            </a>
+                        </div>
                     <?php elseif ($statusValue === 'assessed_for_payment'): ?>
                         <span class="badge badge-status-assessed-for-payment">Assessed - Awaiting Guardian Payment</span>
                         <div class="small text-muted mt-1">Payment assessment issued. Guardian to pay.</div>
@@ -544,11 +612,19 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                     <?php endif; ?>
                 </td>
                 <td><span class="badge <?= e(enrollmentStatusBadgeClass($statusValue)) ?>"><?= e(enrollmentStatusLabel($statusValue)) ?></span></td>
-                <td><small class="text-muted"><?= e($en['remarks'] ?? '') ?></small></td>
+                <td><small class="text-muted"><?= e($displayRemarks) ?></small></td>
                 <td>
                     <?php if ($canReview): ?>
                         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#reviewModal<?= (int)$en['id'] ?>" title="Review Requirements">
                             <i class="bi bi-clipboard-check me-1"></i>Review
+                        </button>
+                    <?php elseif ($statusValue === 'enrolled'): ?>
+                        <button class="btn btn-sm btn-outline-success" disabled>
+                            <i class="bi bi-check-circle me-1"></i>Completed
+                        </button>
+                    <?php elseif ($statusValue === 'archived'): ?>
+                        <button class="btn btn-sm btn-outline-secondary" disabled>
+                            <i class="bi bi-archive me-1"></i>Archived
                         </button>
                     <?php else: ?>
                         <button class="btn btn-sm btn-outline-secondary" disabled>
@@ -577,12 +653,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                                 </div>
 
                                 <div class="alert alert-info small">
-                                    Review the uploaded requirements. Payment assessment and final submission are available only after every required document is marked accepted.
+                                    Review the uploaded requirements for this grade level. Payment assessment and final submission are available only after every required document is marked accepted.
                                 </div>
 
                                 <?php if ($canSubmitToTeachers): ?>
                                     <div class="alert alert-success small">
-                                        Payment is verified. This enrollment is ready to be submitted to teachers.
+                                        Payment is verified. This enrollment is ready to be submitted to the section adviser.
                                     </div>
                                 <?php elseif ($canCreateAssessment): ?>
                                     <div class="alert alert-warning small">
@@ -597,7 +673,12 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                                     </div>
                                 <?php elseif ($statusValue === 'awaiting_payment'): ?>
                                     <div class="alert alert-warning small">
-                                        Guardian has submitted payment proof. Waiting for payment verification before this enrollment can be submitted to teachers.
+                                        Guardian has submitted payment proof. Verify payment before this enrollment can be submitted to the section adviser.
+                                        <div class="mt-2">
+                                            <a class="btn btn-sm btn-outline-success" href="<?= APP_URL ?>/admin/admin-payments.php?action=record&enrollment_id=<?= (int)$en['id'] ?>">
+                                                <i class="bi bi-cash-stack me-1"></i>Open Payment Verification
+                                            </a>
+                                        </div>
                                     </div>
                                 <?php elseif ($statusValue === 'assessed_for_payment'): ?>
                                     <div class="alert alert-warning small">
@@ -608,7 +689,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Document Review Checklist</label>
                                     <div class="small text-muted mb-2">Mark each requirement as <strong>Accepted</strong> or <strong>Needs Replacement</strong>. Add a note if the guardian needs guidance on what to fix.</div>
-                                    <?php foreach ($requiredDocuments as $docKey => $docLabel):
+                                    <?php foreach ($rowRequiredDocuments as $docKey => $docLabel):
                                         $doc = $docsByType[$docKey] ?? null;
                                         $reviewStatus = $doc ? (string)($doc['review_status'] ?? 'pending') : 'missing';
                                         $reviewerNote = $doc ? (string)($doc['reviewer_note'] ?? '') : '';
@@ -624,11 +705,21 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                                                 </div>
                                                 <?php if ($doc): ?>
                                                     <div class="small mb-2">
-                                                        <a href="<?= e(enrollmentDocumentUrl($doc)) ?>" target="_blank" rel="noopener">
-                                                            <i class="bi bi-box-arrow-up-right me-1"></i><?= e($doc['original_name']) ?>
-                                                        </a>
+                                                        <?php if (enrollmentDocumentIsAvailable($doc)): ?>
+                                                            <a href="<?= e(enrollmentDocumentUrl($doc)) ?>" target="_blank" rel="noopener">
+                                                                <i class="bi bi-box-arrow-up-right me-1"></i><?= e($doc['original_name']) ?>
+                                                            </a>
+                                                        <?php else: ?>
+                                                            <span class="text-warning">
+                                                                <i class="bi bi-exclamation-triangle me-1"></i><?= e($doc['original_name']) ?>
+                                                            </span>
+                                                            <span class="text-muted ms-1">File is not available from this server. Check local uploads or Supabase Storage setup.</span>
+                                                        <?php endif; ?>
                                                         <span class="text-muted ms-2">Uploaded <?= e(date('M d, Y', strtotime((string)$doc['uploaded_at']))) ?></span>
                                                     </div>
+                                                    <?php if (!empty($requirementDescriptions[$docKey])): ?>
+                                                        <div class="small text-muted mb-2"><?= e($requirementDescriptions[$docKey]) ?></div>
+                                                    <?php endif; ?>
                                                 <?php else: ?>
                                                     <div class="small text-muted mb-2">
                                                         <i class="bi bi-exclamation-triangle me-1"></i>This document has not been uploaded yet.
@@ -688,7 +779,7 @@ $avatarColors = ['bg-blue', 'bg-green', 'bg-red', 'bg-purple', 'bg-orange'];
                                 <?php endif; ?>
                                 <?php if ($canSubmitToTeachers): ?>
                                     <button type="submit" name="decision" value="submit" class="btn btn-success">
-                                        <i class="bi bi-send-check me-1"></i>Submit to Teachers
+                                        <i class="bi bi-send-check me-1"></i>Submit to Adviser
                                     </button>
                                 <?php endif; ?>
                             </div>
