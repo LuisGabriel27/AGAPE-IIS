@@ -6,6 +6,8 @@
 >
 > Online/offline scope: only **Administrator** and **Enrollment Clerk** should use the school-premises local/offline database path. **Teacher** and **Guardian** must remain online and route directly to Supabase. Use `APP_DEPLOYMENT_MODE=hybrid_role_routed`, keep `DB_*` pointed at the local school database, and keep `SUPABASE_DB_*` pointed at Supabase.
 >
+> Enrollment document storage: use `ENROLLMENT_DOCUMENT_STORAGE_DRIVER=local` unless `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` are all configured and the bucket exists. Missing Supabase Storage credentials fall back to local uploads so guardian enrollment will not fail during development.
+>
 > Docker note for group work: `docker-compose.yml` bind-mounts the PHP source folders into the app container, so normal code pulls are reflected after `docker compose up -d`. The local PostgreSQL volume is separate from Git; if dashboard enrollment/revenue data looks stale, open **Admin -> Manual Sync** and refresh the local copy from Supabase.
 
 - **XAMPP** installed with Apache + MySQL running

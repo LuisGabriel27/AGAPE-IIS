@@ -1506,13 +1506,17 @@ function enrollmentDocumentUrl(array $document, bool $download = false): string
 function enrollmentDocumentStorageDriver(): string
 {
     $driver = strtolower(trim((string)(defined('ENROLLMENT_DOCUMENT_STORAGE_DRIVER') ? ENROLLMENT_DOCUMENT_STORAGE_DRIVER : 'local')));
+    if ($driver === 'local') {
+        return 'local';
+    }
+
     if ($driver === 'supabase') {
-        return 'supabase';
+        return supabaseStorageConfigured() ? 'supabase' : 'local';
     }
 
     $role = strtolower(trim((string)($_SESSION['role'] ?? '')));
     if (databaseDeploymentMode() === 'hybrid_role_routed' && in_array($role, ['teacher', 'guardian'], true)) {
-        return 'supabase';
+        return supabaseStorageConfigured() ? 'supabase' : 'local';
     }
 
     return 'local';
