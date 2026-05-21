@@ -19,12 +19,12 @@ function databaseDeploymentMode(): string
 {
     $mode = defined('APP_DEPLOYMENT_MODE')
         ? (string)APP_DEPLOYMENT_MODE
-        : (string)(getenv('APP_DEPLOYMENT_MODE') ?: 'development');
+        : (string)(getenv('APP_DEPLOYMENT_MODE') ?: 'hybrid_role_routed');
     $mode = strtolower(trim($mode));
 
     return in_array($mode, ['development', 'local_school', 'online_portal', 'hybrid_role_routed'], true)
         ? $mode
-        : 'development';
+        : 'hybrid_role_routed';
 }
 
 function normalizeDatabaseScope(?string $scope): string

@@ -30,6 +30,18 @@ services:
       db:
         condition: service_healthy
     volumes:
+      # Local development bind mounts. These keep pulled PHP/CSS/JS changes
+      # visible in the running container without rebuilding the image.
+      - ./admin:/var/www/html/admin
+      - ./assets:/var/www/html/assets
+      - ./auth:/var/www/html/auth
+      - ./database:/var/www/html/database
+      - ./guardian:/var/www/html/guardian
+      - ./includes:/var/www/html/includes
+      - ./models:/var/www/html/models
+      - ./teacher:/var/www/html/teacher
+      - ./enrollment-document.php:/var/www/html/enrollment-document.php
+      - ./index.php:/var/www/html/index.php
       - ./logs:/var/www/html/logs
       - ./uploads:/var/www/html/uploads
     restart: unless-stopped

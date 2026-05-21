@@ -526,7 +526,7 @@ function syncStatusSnapshot(): array
     $mode = syncAppMode();
     $counts = [];
 
-    foreach (['users', 'students', 'guardians', 'teachers', 'enrollments'] as $table) {
+    foreach (['users', 'students', 'guardians', 'teachers', 'enrollments', 'payments', 'enrollment_assessments'] as $table) {
         if (syncTableExists($pdo, $table)) {
             $counts[$table] = (int)$pdo->query('SELECT COUNT(*) FROM ' . syncTableSql($table))->fetchColumn();
         }

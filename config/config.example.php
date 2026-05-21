@@ -43,7 +43,7 @@ define('APP_NAME', $env('APP_NAME', 'Academy Information System'));
 define('APP_URL', rtrim((string)$env('APP_URL', 'http://localhost:8080'), '/'));
 define('APP_VERSION', $env('APP_VERSION', '1.0.0'));
 // development, local_school, online_portal, or hybrid_role_routed.
-define('APP_DEPLOYMENT_MODE', $env('APP_DEPLOYMENT_MODE', 'development'));
+define('APP_DEPLOYMENT_MODE', $env('APP_DEPLOYMENT_MODE', 'hybrid_role_routed'));
 
 define('GOOGLE_CLIENT_ID', $env('GOOGLE_CLIENT_ID', ''));
 define('GOOGLE_CLIENT_SECRET', $env('GOOGLE_CLIENT_SECRET', ''));

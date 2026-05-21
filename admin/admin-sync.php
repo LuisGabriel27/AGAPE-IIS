@@ -1,11 +1,11 @@
 <?php
 /**
- * Admin Manual Sync
- * Lets non-technical administrators preview and run offline/local DB sync.
+ * Manual Sync
+ * Lets school staff preview and run offline/local DB sync.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
-requireRole('admin');
+requireRole(['admin', 'clerk']);
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../database/sync_lib.php';

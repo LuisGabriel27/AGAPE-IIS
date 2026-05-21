@@ -154,6 +154,12 @@ $isGuardianCertificatePage = str_contains($currentPath, '/guardian/enrollment/ce
                 <i class="bi bi-cash-stack"></i> Payment Verification
             </a>
 
+            <div class="sidebar-section">Sync</div>
+            <a class="sidebar-link <?= e($currentPage === 'admin-sync.php' ? 'active' : '') ?>"
+               href="<?= APP_URL ?>/admin/admin-sync.php">
+                <i class="bi bi-cloud-arrow-up-fill"></i> Manual Sync
+            </a>
+
             <div class="sidebar-section">Account</div>
             <a class="sidebar-link <?= e($currentPage === 'staff-profile.php' ? 'active' : '') ?>"
                href="<?= APP_URL ?>/admin/staff-profile.php">

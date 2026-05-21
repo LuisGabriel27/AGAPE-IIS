@@ -331,7 +331,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['enroll']['grade_level'] = trim($_POST['grade_level'] ?? '');
         $_SESSION['enroll']['section_id']  = (int)($_POST['section_id'] ?? 0);
         $_SESSION['enroll']['school_year'] = trim($_POST['school_year'] ?? currentSchoolYear());
-        $_SESSION['enroll']['term']        = normalizeAcademicTerm($_POST['term'] ?? currentAcademicTerm());
+        $_SESSION['enroll']['term']        = currentAcademicTerm();
         $requiredDocuments = requiredEnrollmentDocumentsForGrade($_SESSION['enroll']['grade_level'] ?? '');
         $uploadedRequirements = [];
 
@@ -452,22 +452,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $studentId = (int)$stmt->fetchColumn();
                 }
 
-                $existingEnrollmentParams = [
-                    ':student_id' => $studentId,
-                    ':school_year' => $enrollData['school_year'],
-                ];
-                $existingEnrollmentTermClause = academicTermWhereClause('term', 'existing_enrollment_term', $existingEnrollmentParams, $enrollData['term']);
                 $existingEnrollmentStmt = $pdo->prepare("
                     SELECT id
                     FROM enrollments
                     WHERE student_id = :student_id
                       AND school_year = :school_year
-                      AND {$existingEnrollmentTermClause}
                     LIMIT 1
                 ");
-                $existingEnrollmentStmt->execute($existingEnrollmentParams);
+                $existingEnrollmentStmt->execute([
+                    ':student_id' => $studentId,
+                    ':school_year' => $enrollData['school_year'],
+                ]);
                 if ($existingEnrollmentStmt->fetchColumn()) {
-                    throw new RuntimeException('This student already has an enrollment for the selected school year and quarter.');
+                    throw new RuntimeException('This student already has an enrollment for the selected school year.');
                 }
 
                 $initialStatus = enrollmentStatusForDocumentCount(count($uploadedRequirements), count($requiredDocuments));
@@ -1065,20 +1062,10 @@ $stepKeys = array_keys($stepLabels);
             </select>
         </div>
 
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label">School Year</label>
-                <input type="text" class="form-control" name="school_year"
-                       value="<?= e($enrollData['school_year'] ?? currentSchoolYear()) ?>" readonly>
-            </div>
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Quarter</label>
-                <select class="form-select" name="term">
-                    <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
-                        <option value="<?= e($termValue) ?>" <?= normalizeAcademicTerm($enrollData['term'] ?? currentAcademicTerm()) === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
+        <div class="mb-3">
+            <label class="form-label">School Year</label>
+            <input type="text" class="form-control" name="school_year"
+                   value="<?= e($enrollData['school_year'] ?? currentSchoolYear()) ?>" readonly>
         </div>
 
         <div class="alert alert-info mb-4">

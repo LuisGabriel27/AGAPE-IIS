@@ -238,7 +238,7 @@ renderOfficialDocumentStyles();
                     </thead>
                     <tbody>
                         <?php if (empty($grades)): ?>
-                            <?= emptyStateRow(9, 'No grades to show for this school year and term.', 'Grades appear on the report card once the class teacher encodes and publishes them.', 'bi-card-checklist') ?>
+                            <?= emptyStateRow(9, 'No grades to show for this school year and quarter.', 'Grades appear on the report card once the class teacher encodes and publishes them.', 'bi-card-checklist') ?>
                         <?php else: ?>
                             <?php foreach ($grades as $grade): ?>
                                 <?php $final = $grade['final_grade'] !== null ? (float)$grade['final_grade'] : null; ?>
