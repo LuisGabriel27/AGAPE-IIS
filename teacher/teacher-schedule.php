@@ -11,6 +11,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 $stmt = $pdo->prepare("SELECT * FROM teachers WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
@@ -20,6 +22,11 @@ $days  = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 $slots = [];
 
 if ($teacher) {
+    $scheduleParams = [
+        ':tid' => $teacher['id'],
+        ':sy' => $activeYear,
+    ];
+    $scheduleTermClause = academicTermWhereClause('sch.term', 'schedule_term', $scheduleParams, $activeTerm);
     $stmt = $pdo->prepare("
         SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
                sec.name AS section_name, sec.grade_level
@@ -27,9 +34,11 @@ if ($teacher) {
         JOIN subjects sub ON sch.subject_id = sub.id
         JOIN sections sec ON sch.section_id = sec.id
         WHERE sch.teacher_id = :tid
-        ORDER BY FIELD(sch.day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday'), sch.time_start
+          AND sch.school_year = :sy
+          AND {$scheduleTermClause}
+        ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
     ");
-    $stmt->execute([':tid' => $teacher['id']]);
+    $stmt->execute($scheduleParams);
     $rows = $stmt->fetchAll();
 
     foreach ($rows as $row) {
@@ -46,12 +55,13 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="row mb-4">
     <div class="col-12">
         <h4 class="fw-bold"><i class="bi bi-calendar-week me-2"></i>My Weekly Schedule</h4>
-        <p class="text-muted"><?= e($teacher['full_name'] ?? 'Teacher') ?> — <?= e($teacher['department'] ?? '') ?></p>
+        <p class="text-muted mb-1"><?= e(format_name($teacher['first_name'] ?? '', $teacher['last_name'] ?? 'Teacher')) ?> - <?= e($teacher['department'] ?? '') ?></p>
+        <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
     </div>
 </div>
 
 <?php if (empty($slots)): ?>
-    <div class="alert alert-info">No schedule entries found for your account.</div>
+    <?= emptyStateHtml('You have no class schedule for ' . formatAcademicPeriod($activeYear, $activeTerm) . '.', 'Class schedules are created by the school administrator. Please contact the admin or registrar if you expect to be assigned classes this quarter.', 'bi-calendar-week') ?>
 <?php else: ?>
 <div class="card">
     <div class="card-body p-0">
@@ -61,7 +71,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr>
                         <th style="width:12%;">Time</th>
                         <?php foreach ($days as $day): ?>
-                            <th><?= $day ?></th>
+                            <th><?= e($day) ?></th>
                         <?php endforeach; ?>
                     </tr>
                 </thead>
@@ -74,7 +84,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <?php if (isset($dayCells[$day])): $c = $dayCells[$day]; ?>
                                     <div class="slot-filled p-1">
                                         <strong><?= e($c['subject_name']) ?></strong><br>
-                                        <small><?= e($c['section_name']) ?> (Gr. <?= e($c['grade_level']) ?>)</small><br>
+                                        <small><?= e($c['section_name']) ?> (<?= e(formatGradeLevel((string)$c['grade_level'])) ?>)</small><br>
                                         <small class="text-muted">Room <?= e($c['room'] ?? 'TBD') ?></small>
                                     </div>
                                 <?php endif; ?>

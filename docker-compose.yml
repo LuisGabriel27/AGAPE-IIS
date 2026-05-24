@@ -1,0 +1,76 @@
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "${APP_PORT:-8080}:80"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "${APP_DEBUG:-0}"
+      APP_URL: "${APP_URL:-http://localhost:8080}"
+      APP_DEPLOYMENT_MODE: "${APP_DEPLOYMENT_MODE:-hybrid_role_routed}"
+      DB_HOST: "${DB_HOST:-db}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-agape_iis}"
+      DB_USER: "${DB_USER:-agape}"
+      DB_PASS: "${DB_PASS:-agape_local_password}"
+      DB_SSLMODE: "${DB_SSLMODE:-disable}"
+      SUPABASE_URL: "${SUPABASE_URL:-}"
+      SUPABASE_ANON_KEY: "${SUPABASE_ANON_KEY:-}"
+      SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"
+      SUPABASE_STORAGE_BUCKET: "${SUPABASE_STORAGE_BUCKET:-enrollment-documents}"
+      ENROLLMENT_DOCUMENT_STORAGE_DRIVER: "${ENROLLMENT_DOCUMENT_STORAGE_DRIVER:-local}"
+      SUPABASE_DB_HOST: "${SUPABASE_DB_HOST:-}"
+      SUPABASE_DB_PORT: "${SUPABASE_DB_PORT:-6543}"
+      SUPABASE_DB_NAME: "${SUPABASE_DB_NAME:-postgres}"
+      SUPABASE_DB_USER: "${SUPABASE_DB_USER:-}"
+      SUPABASE_DB_PASS: "${SUPABASE_DB_PASS:-}"
+      SUPABASE_DB_SSLMODE: "${SUPABASE_DB_SSLMODE:-require}"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Local development bind mounts. These keep pulled PHP/CSS/JS changes
+      # visible in the running container without rebuilding the image.
+      - ./admin:/var/www/html/admin
+      - ./assets:/var/www/html/assets
+      - ./auth:/var/www/html/auth
+      - ./database:/var/www/html/database
+      - ./guardian:/var/www/html/guardian
+      - ./includes:/var/www/html/includes
+      - ./models:/var/www/html/models
+      - ./teacher:/var/www/html/teacher
+      - ./enrollment-document.php:/var/www/html/enrollment-document.php
+      - ./index.php:/var/www/html/index.php
+      - ./logs:/var/www/html/logs
+      - ./uploads:/var/www/html/uploads
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-agape_iis}"
+      POSTGRES_USER: "${POSTGRES_USER:-agape}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-agape_local_password}"
+    ports:
+      - "${POSTGRES_PORT:-54320}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agape} -d ${POSTGRES_DB:-agape_iis}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - agape_pgdata:/var/lib/postgresql/data
+      - ./database/supabase_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/supabase_update_required_latest.sql:/docker-entrypoint-initdb.d/02_latest_updates.sql:ro
+      - ./database/supabase_upgrade_v6_subject_grade_levels.sql:/docker-entrypoint-initdb.d/03_subject_seed.sql:ro
+      - ./database/supabase_profile_fields_expansion.sql:/docker-entrypoint-initdb.d/04_profile_fields.sql:ro
+      - ./database/supabase_production_readiness_hardening.sql:/docker-entrypoint-initdb.d/05_hardening.sql:ro
+      - ./database/supabase_email_case_hardening.sql:/docker-entrypoint-initdb.d/06_email_case.sql:ro
+      - ./database/supabase_guardian_profile_repair.sql:/docker-entrypoint-initdb.d/07_guardian_profile_repair.sql:ro
+      - ./docker/postgres/init/90_local_seed.sql:/docker-entrypoint-initdb.d/90_local_seed.sql:ro
+      - ./database/offline_sync_foundation.sql:/docker-entrypoint-initdb.d/99_offline_sync.sql:ro
+    restart: unless-stopped
+
+volumes:
+  agape_pgdata:

@@ -1,7 +1,6 @@
 <?php
 /**
  * Guardian Profile View — Read-only display of personal and student info.
- * Shows Google account link status.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -17,10 +16,8 @@ $stmt = $pdo->prepare("SELECT * FROM users WHERE id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
 $user = $stmt->fetch();
 
-// Get guardian profile
-$stmt = $pdo->prepare("SELECT * FROM guardians WHERE user_id = :uid LIMIT 1");
-$stmt->execute([':uid' => $userId]);
-$guardian = $stmt->fetch();
+// Get or repair guardian profile
+$guardian = getOrCreateGuardianProfile($pdo, (int)$userId);
 
 // Get students
 $students = [];
@@ -34,7 +31,6 @@ if ($guardian) {
     $students = $stmt->fetchAll();
 }
 
-$hasGoogle   = !empty($user['google_id']);
 $hasPassword = !empty($user['password_hash']);
 
 $pageTitle = 'My Profile';
@@ -59,7 +55,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <img src="<?= e($user['google_avatar']) ?>" class="rounded-circle mb-2" width="80" height="80" alt="Avatar">
                     <?php else: ?>
                         <div class="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-2" style="width:80px;height:80px;font-size:2rem;">
-                            <?= strtoupper(substr($guardian['full_name'] ?? 'G', 0, 1)) ?>
+                            <?= strtoupper(substr($guardian['last_name'] ?? 'G', 0, 1)) ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -70,25 +66,12 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr><th>Member Since</th><td><?= e(date('M d, Y', strtotime($user['created_at']))) ?></td></tr>
                     <tr><th>Last Login</th><td><?= $user['last_login'] ? e(date('M d, Y g:i A', strtotime($user['last_login']))) : 'Never' ?></td></tr>
                     <tr>
-                        <th>Login Method</th>
+                        <th>Password Login</th>
                         <td>
-                            <?php if ($hasPassword && $hasGoogle): ?>
-                                <span class="badge bg-success">Email & Google</span>
-                            <?php elseif ($hasGoogle): ?>
-                                <span class="badge bg-info">Google Only</span>
+                            <?php if ($hasPassword): ?>
+                                <span class="badge bg-secondary">Enabled</span>
                             <?php else: ?>
-                                <span class="badge bg-secondary">Email/Password</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th>Google Account</th>
-                        <td>
-                            <?php if ($hasGoogle): ?>
-                                <span class="text-success"><i class="bi bi-check-circle me-1"></i>Linked</span>
-                            <?php else: ?>
-                                <span class="text-muted"><i class="bi bi-x-circle me-1"></i>Not Linked</span>
-                                — <a href="<?= APP_URL ?>/auth/login.php" class="small">Link Google Account</a>
+                                <span class="badge bg-warning text-dark">Not Set</span>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -103,7 +86,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card-header bg-white"><i class="bi bi-person-vcard me-2"></i>Personal Information</div>
             <div class="card-body">
                 <table class="table table-sm">
-                    <tr><th width="40%">Full Name</th><td><?= e($guardian['full_name'] ?? 'N/A') ?></td></tr>
+                    <tr><th width="40%">Full Name</th><td><?= e(trim(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? '') . ' ' . ($guardian['middle_name'] ?? '') . ' ' . ($guardian['extension_name'] ?? ''))) ?></td></tr>
                     <tr><th>Contact Number</th><td><?= e($guardian['contact_number'] ?? 'N/A') ?></td></tr>
                     <tr><th>Address</th><td><?= e($guardian['address'] ?? 'N/A') ?></td></tr>
                     <tr><th>Relationship</th><td><?= e($guardian['relationship_to_student'] ?? 'N/A') ?></td></tr>
@@ -130,8 +113,8 @@ require_once __DIR__ . '/../includes/header.php';
                         <tbody>
                             <?php foreach ($students as $stu): ?>
                             <tr>
-                                <td><?= e($stu['full_name']) ?></td>
-                                <td>Grade <?= e($stu['grade_level'] ?? 'N/A') ?></td>
+                                <td><?= e(trim(format_name($stu['first_name'], $stu['last_name']) . ' ' . ($stu['middle_name'] ?? '') . ' ' . ($stu['extension_name'] ?? ''))) ?></td>
+                                <td><?= e(formatGradeLevel((string)($stu['grade_level'] ?? ''))) ?></td>
                                 <td><?= e($stu['section_name'] ?? 'N/A') ?></td>
                                 <td><?= e($stu['lrn'] ?? 'N/A') ?></td>
                                 <td><?= $stu['birthdate'] ? e(date('M d, Y', strtotime($stu['birthdate']))) : 'N/A' ?></td>

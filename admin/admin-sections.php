@@ -34,9 +34,9 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
 
     if (empty($errors)) {
         if ($action === 'create') {
-            $stmt = $pdo->prepare("INSERT INTO sections (name, grade_level, adviser_id, capacity) VALUES (:n, :g, :a, :c)");
+            $stmt = $pdo->prepare("INSERT INTO sections (name, grade_level, adviser_id, capacity) VALUES (:n, :g, :a, :c) RETURNING id");
             $stmt->execute([':n' => $name, ':g' => $gradeLevel, ':a' => $adviserId, ':c' => $capacity]);
-            auditLog('create_section', 'sections', (int)$pdo->lastInsertId());
+            auditLog('create_section', 'sections', (int)$stmt->fetchColumn());
             setFlash('success', 'Section created.');
         } else {
             $stmt = $pdo->prepare("UPDATE sections SET name=:n, grade_level=:g, adviser_id=:a, capacity=:c WHERE id=:id");
@@ -55,10 +55,10 @@ if ($action === 'edit' && $id) {
     $editSection = $stmt->fetch();
 }
 
-$teachersList = $pdo->query("SELECT id, full_name FROM teachers ORDER BY full_name")->fetchAll();
+$teachersList = $pdo->query("SELECT id, first_name, last_name FROM teachers ORDER BY last_name, first_name")->fetchAll();
 
 $stmt = $pdo->query("
-    SELECT s.*, t.full_name AS adviser_name,
+    SELECT s.*, CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS adviser_name,
            (SELECT COUNT(*) FROM students st WHERE st.section_id = s.id) AS enrolled
     FROM sections s LEFT JOIN teachers t ON s.adviser_id = t.id
     ORDER BY s.grade_level, s.name
@@ -80,10 +80,10 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add Section' : 'Edit Section' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add Section' : 'Edit Section') ?></div>
     <div class="card-body">
         <form method="POST" id="section-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Name <span class="text-danger">*</span></label>
@@ -93,9 +93,9 @@ require_once __DIR__ . '/../includes/header.php';
                     <label class="form-label">Grade Level <span class="text-danger">*</span></label>
                     <select class="form-select" name="grade_level" required>
                         <option value="">Select...</option>
-                        <?php for ($g = 7; $g <= 12; $g++): ?>
-                            <option value="<?= $g ?>" <?= ($editSection['grade_level'] ?? '') == $g ? 'selected' : '' ?>>Grade <?= $g ?></option>
-                        <?php endfor; ?>
+                        <?php foreach (basicEducationGradeLevels() as $g => $label): ?>
+                            <option value="<?= e($g) ?>" <?= e(($editSection['grade_level'] ?? '') == $g ? 'selected' : '') ?>><?= e($label) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-4 mb-3">
@@ -103,13 +103,13 @@ require_once __DIR__ . '/../includes/header.php';
                     <select class="form-select" name="adviser_id">
                         <option value="0">None</option>
                         <?php foreach ($teachersList as $t): ?>
-                            <option value="<?= $t['id'] ?>" <?= ($editSection['adviser_id'] ?? 0) == $t['id'] ? 'selected' : '' ?>><?= e($t['full_name']) ?></option>
+                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSection['adviser_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e(format_name($t['first_name'], $t['last_name'])) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2 mb-3">
                     <label class="form-label">Capacity</label>
-                    <input type="number" class="form-control" name="capacity" value="<?= $editSection['capacity'] ?? 40 ?>" min="1">
+                    <input type="number" class="form-control" name="capacity" value="<?= e((string)($editSection['capacity'] ?? 40)) ?>" min="1">
                 </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save</button>
@@ -124,19 +124,19 @@ require_once __DIR__ . '/../includes/header.php';
         <thead><tr><th>Name</th><th>Grade Level</th><th>Adviser</th><th class="text-center">Capacity</th><th class="text-center">Enrolled</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($sections)): ?>
-                <tr><td colspan="6" class="text-center text-muted py-3">No sections found.</td></tr>
+                <?= emptyStateRow(6, 'No sections created yet.', 'Use the "Add Section" form above to create sections for each grade level before enrolling or scheduling students.', 'bi-diagram-3') ?>
             <?php else: foreach ($sections as $s): ?>
             <tr>
                 <td class="fw-bold"><?= e($s['name']) ?></td>
-                <td>Grade <?= e($s['grade_level']) ?></td>
+                <td><?= e(formatGradeLevel((string)$s['grade_level'])) ?></td>
                 <td><?= e($s['adviser_name'] ?? 'None') ?></td>
-                <td class="text-center"><?= $s['capacity'] ?></td>
-                <td class="text-center"><?= $s['enrolled'] ?></td>
+                <td class="text-center"><?= e((string)$s['capacity']) ?></td>
+                <td class="text-center"><?= e((string)$s['enrolled']) ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= $s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= $s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
-                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit section" aria-label="Edit section"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" data-confirm="Delete this section? This cannot be undone." data-confirm-variant="danger">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                        <button class="btn btn-sm btn-outline-danger" title="Delete section" aria-label="Delete section"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>
             </tr>

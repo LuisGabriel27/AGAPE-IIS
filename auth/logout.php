@@ -1,23 +1,23 @@
 <?php
 /**
  * Logout
- * Destroys session, revokes Google token if applicable, redirects to role selection.
+ * Destroys the active session and redirects to role selection.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
+require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
-// Attempt to revoke Google token if it exists
-if (!empty($_SESSION['google_access_token'])) {
-    try {
-        require_once __DIR__ . '/../config/google.php';
-        $client = getGoogleClient();
-        $client->setAccessToken($_SESSION['google_access_token']);
-        $client->revokeToken();
-    } catch (Exception $e) {
-        error_log('Google token revoke failed: ' . $e->getMessage());
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    if (isLoggedIn()) {
+        setFlash('warning', 'Use the logout button to sign out.');
+        redirect(getRoleDashboardUrl());
     }
+
+    redirect(APP_URL . '/auth/select-role.php');
 }
+
+validateCsrf();
 
 // Audit before destroying session
 if (isset($_SESSION['user_id'])) {

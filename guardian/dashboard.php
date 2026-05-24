@@ -1,7 +1,7 @@
 <?php
 /**
  * Guardian Dashboard
- * Shows student info, GWA, attendance summary, upcoming schedule, latest payment.
+ * Shows student info, general average, attendance summary, upcoming schedule, latest payment.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -11,6 +11,8 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 $pdo = getDB();
 $userId = $_SESSION['user_id'];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 // Get guardian info
 $stmt = $pdo->prepare("SELECT * FROM guardians WHERE user_id = :uid LIMIT 1");
@@ -32,7 +34,7 @@ if ($guardian) {
     $students = $stmt->fetchAll();
     $studentCount = count($students);
 
-    // Calculate GWA for first student
+    // Calculate General Average for first student
     if (!empty($students)) {
         $firstStudent = $students[0];
         $stmt = $pdo->prepare("
@@ -48,16 +50,23 @@ if ($guardian) {
 // Upcoming schedules (next 3)
 $upcomingSchedules = [];
 if (!empty($students)) {
+    $scheduleParams = [
+        ':secid' => $students[0]['section_id'] ?? 0,
+        ':sy' => $activeYear,
+    ];
+    $scheduleTermClause = academicTermWhereClause('sch.term', 'dashboard_schedule_term', $scheduleParams, $activeTerm);
     $stmt = $pdo->prepare("
         SELECT sch.day_of_week, sch.time_start, sch.time_end, sub.name AS subject_name, sch.room
         FROM schedules sch
         JOIN subjects sub ON sch.subject_id = sub.id
         JOIN sections sec ON sch.section_id = sec.id
         WHERE sec.id = :secid
-        ORDER BY FIELD(sch.day_of_week, 'Monday','Tuesday','Wednesday','Thursday','Friday'), sch.time_start
+          AND sch.school_year = :sy
+          AND {$scheduleTermClause}
+        ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
         LIMIT 3
     ");
-    $stmt->execute([':secid' => $students[0]['section_id'] ?? 0]);
+    $stmt->execute($scheduleParams);
     $upcomingSchedules = $stmt->fetchAll();
 }
 
@@ -65,14 +74,61 @@ if (!empty($students)) {
 $latestPayment = null;
 if (!empty($students)) {
     $stmt = $pdo->prepare("
-        SELECT p.* FROM payments p
+        SELECT p.*, e.id AS enrollment_id, e.status AS enrollment_status
+        FROM payments p
         JOIN enrollments e ON p.enrollment_id = e.id
         WHERE e.student_id = :sid
-        ORDER BY p.paid_at DESC
+        ORDER BY p.id DESC
         LIMIT 1
     ");
     $stmt->execute([':sid' => $students[0]['id']]);
     $latestPayment = $stmt->fetch();
+}
+
+$enrollmentRequirementStatus = [];
+if (!empty($students)) {
+    $studentIds = array_map(static fn(array $student): int => (int)$student['id'], $students);
+    $placeholders = implode(',', array_fill(0, count($studentIds), '?'));
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT ON (e.student_id)
+               e.student_id,
+               e.id AS enrollment_id,
+               e.status,
+               s.grade_level
+        FROM enrollments e
+        INNER JOIN students s ON s.id = e.student_id
+        WHERE e.student_id IN ({$placeholders})
+        ORDER BY e.student_id, e.id DESC
+    ");
+    $stmt->execute($studentIds);
+    $latestEnrollmentRows = $stmt->fetchAll();
+
+    $documentsByEnrollment = [];
+    if (!empty($latestEnrollmentRows)) {
+        $enrollmentIds = array_map(static fn(array $row): int => (int)$row['enrollment_id'], $latestEnrollmentRows);
+        $docPlaceholders = implode(',', array_fill(0, count($enrollmentIds), '?'));
+        $docStmt = $pdo->prepare("
+            SELECT *
+            FROM enrollment_documents
+            WHERE enrollment_id IN ({$docPlaceholders})
+        ");
+        $docStmt->execute($enrollmentIds);
+        foreach ($docStmt->fetchAll() as $doc) {
+            $documentsByEnrollment[(int)$doc['enrollment_id']][(string)$doc['document_type']] = $doc;
+        }
+    }
+
+    foreach ($latestEnrollmentRows as $row) {
+        $requiredEnrollmentDocuments = requiredEnrollmentDocumentsForGrade((string)($row['grade_level'] ?? ''));
+        $summary = summarizeEnrollmentDocumentsByType(
+            $documentsByEnrollment[(int)$row['enrollment_id']] ?? [],
+            $requiredEnrollmentDocuments
+        );
+        $row['document_summary'] = $summary;
+        $row['document_count'] = $summary['uploaded_count'];
+        $row['required_document_count'] = count($requiredEnrollmentDocuments);
+        $enrollmentRequirementStatus[(int)$row['student_id']] = $row;
+    }
 }
 
 // Attendance summary (simple count from audit log as placeholder)
@@ -83,42 +139,72 @@ $pageTitle = 'Guardian Dashboard';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="row mb-4">
-    <div class="col-12">
-        <h4 class="fw-bold"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h4>
-        <p class="text-muted">Welcome back, <?= e($guardian['full_name'] ?? 'Guardian') ?>!</p>
+<!-- Guardian Hero Banner -->
+<div class="guardian-hero">
+    <div class="d-flex align-items-center gap-4 flex-wrap">
+        <div class="hero-icon">
+            <i class="bi bi-person-heart"></i>
+        </div>
+        <div class="flex-grow-1">
+            <?php if (!empty($students)): ?>
+                <div class="hero-title"><?= e(format_name($students[0]['first_name'], $students[0]['last_name'])) ?></div>
+                <div class="hero-subtitle">
+                    <?= e(formatGradeLevel((string)($students[0]['grade_level'] ?? ''))) ?> — Section <?= e($students[0]['section_name'] ?? 'N/A') ?>
+                    <?php if ($students[0]['lrn']): ?> | LRN: <?= e($students[0]['lrn']) ?><?php endif; ?>
+                </div>
+            <?php else: ?>
+                <div class="hero-title">Welcome, <?= e(format_name($guardian['first_name'] ?? '', $guardian['last_name'] ?? 'Guardian')) ?>!</div>
+                <div class="hero-subtitle">No students linked yet. <a href="<?= APP_URL ?>/guardian/enrollment/" style="color:white;text-decoration:underline;">Enroll a student</a>.</div>
+            <?php endif; ?>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <?php if ($gwa > 0): ?>
+                <span class="hero-badge"><i class="bi bi-trophy me-1"></i>General Average: <?= e(number_format((float)$gwa, 2)) ?></span>
+            <?php endif; ?>
+            <?php if ($studentCount > 1): ?>
+                <span class="hero-badge"><i class="bi bi-people me-1"></i><?= e((string)$studentCount) ?> Students</span>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 
-<!-- KPI Row -->
+<!-- Quick Action Cards (2×2) -->
 <div class="row g-3 mb-4">
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-primary">
-            <div class="kpi-icon"><i class="bi bi-people"></i></div>
-            <div class="kpi-label">Students</div>
-            <div class="kpi-value"><?= $studentCount ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/grades.php" class="quick-action-card">
+            <div class="qa-icon" style="background:#CCFBF1;color:#0D9488;">
+                <i class="bi bi-card-checklist"></i>
+            </div>
+            <div class="qa-label">View Grades</div>
+            <div class="qa-sub">Academic performance</div>
+        </a>
     </div>
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-success">
-            <div class="kpi-icon"><i class="bi bi-trophy"></i></div>
-            <div class="kpi-label">GWA</div>
-            <div class="kpi-value"><?= $gwa > 0 ? $gwa : 'N/A' ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/schedule.php" class="quick-action-card">
+            <div class="qa-icon" style="background:#D1FAE5;color:#059669;">
+                <i class="bi bi-calendar2-week-fill"></i>
+            </div>
+            <div class="qa-label">View Schedule</div>
+            <div class="qa-sub">Weekly timetable</div>
+        </a>
     </div>
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-info">
-            <div class="kpi-icon"><i class="bi bi-calendar-check"></i></div>
-            <div class="kpi-label">Days Present</div>
-            <div class="kpi-value"><?= $attendanceDays ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/payments.php" class="quick-action-card">
+            <div class="qa-icon" style="background:#FEF3C7;color:#D97706;">
+                <i class="bi bi-credit-card-fill"></i>
+            </div>
+            <div class="qa-label">Payments</div>
+            <div class="qa-sub">Submit reference or view history</div>
+        </a>
     </div>
     <div class="col-md-3 col-6">
-        <div class="kpi-card bg-gradient-warning">
-            <div class="kpi-icon"><i class="bi bi-calendar-x"></i></div>
-            <div class="kpi-label">Days Absent</div>
-            <div class="kpi-value"><?= $absentDays ?></div>
-        </div>
+        <a href="<?= APP_URL ?>/guardian/report-card.php<?= !empty($students) ? '?student_id=' . (int)$students[0]['id'] : '' ?>" class="quick-action-card">
+            <div class="qa-icon" style="background:#FFE4E6;color:#E11D48;">
+                <i class="bi bi-printer-fill"></i>
+            </div>
+            <div class="qa-label">Report Card</div>
+            <div class="qa-sub">Print records</div>
+        </a>
     </div>
 </div>
 
@@ -129,21 +215,74 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card-header bg-white"><i class="bi bi-person-badge me-2"></i>Student Information</div>
             <div class="card-body">
                 <?php if (empty($students)): ?>
-                    <p class="text-muted">No students linked to your account yet. <a href="<?= APP_URL ?>/guardian/enrollment.php">Enroll a student</a>.</p>
+                    <p class="text-muted">No students linked to your account yet. <a href="<?= APP_URL ?>/guardian/enrollment/">Enroll a student</a>.</p>
                 <?php else: ?>
                     <?php foreach ($students as $stu): ?>
                     <div class="d-flex align-items-center mb-3 p-2 rounded bg-light">
                         <div class="me-3">
                             <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:1.2rem;">
-                                <?= strtoupper(substr($stu['full_name'], 0, 1)) ?>
+                                <?= strtoupper(substr($stu['last_name'], 0, 1)) ?>
                             </div>
                         </div>
                         <div>
-                            <h6 class="mb-0 fw-bold"><?= e($stu['full_name']) ?></h6>
+                            <h6 class="mb-0 fw-bold"><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></h6>
                             <small class="text-muted">
-                                Grade <?= e($stu['grade_level'] ?? 'N/A') ?> — Section <?= e($stu['section_name'] ?? 'N/A') ?>
+                                <?= e(formatGradeLevel((string)($stu['grade_level'] ?? ''))) ?> — Section <?= e($stu['section_name'] ?? 'N/A') ?>
                                 <?php if ($stu['lrn']): ?> | LRN: <?= e($stu['lrn']) ?><?php endif; ?>
                             </small>
+                            <?php
+                                $requirementStatus = $enrollmentRequirementStatus[(int)$stu['id']] ?? null;
+                                $documentCount = $requirementStatus ? (int)$requirementStatus['document_count'] : 0;
+                                $requiredDocumentCount = $requirementStatus ? (int)$requirementStatus['required_document_count'] : count(requiredEnrollmentDocumentsForGrade((string)($stu['grade_level'] ?? '')));
+                                $documentSummary = $requirementStatus['document_summary'] ?? null;
+                                $needsReplacement = $documentSummary && !empty($documentSummary['needs_replacement_labels']);
+                                $needsReplacementNotes = $documentSummary['needs_replacement_notes'] ?? [];
+                                $hasPendingReview = $documentSummary && !empty($documentSummary['pending_labels']);
+                                $documentsAccepted = $documentSummary && !empty($documentSummary['all_accepted']);
+                                $canUploadRequirements = $requirementStatus
+                                    && !in_array($requirementStatus['status'], enrollmentLockedForGuardianStatuses(), true)
+                                    && ($documentCount < $requiredDocumentCount || $needsReplacement);
+                                $hasInProgressUpload = $requirementStatus
+                                    && !$canUploadRequirements
+                                    && $documentCount >= $requiredDocumentCount;
+                                $uploadButtonLabel = $needsReplacement ? 'Replace Requirements' : 'Upload Requirements';
+                            ?>
+                            <?php if ($requirementStatus): ?>
+                                <div class="mt-2">
+                                    <span class="badge <?= e(enrollmentStatusBadgeClass($requirementStatus['status'])) ?>">
+                                        <?= e(enrollmentStatusLabel($requirementStatus['status'])) ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ($canUploadRequirements): ?>
+                                <div class="mt-2">
+                                    <a class="btn btn-sm btn-outline-primary" href="<?= APP_URL ?>/guardian/enrollment/requirements.php?enrollment_id=<?= (int)$requirementStatus['enrollment_id'] ?>">
+                                        <i class="bi bi-upload me-1"></i><?= e($uploadButtonLabel) ?>
+                                    </a>
+                                    <?php if ($needsReplacement): ?>
+                                        <div class="small text-danger mt-1">
+                                            Needs replacement: <?= e(implode(', ', $documentSummary['needs_replacement_labels'])) ?>
+                                        </div>
+                                        <?php foreach ($needsReplacementNotes as $note): ?>
+                                            <div class="small text-muted mt-1">
+                                                <i class="bi bi-chat-left-text me-1"></i>
+                                                <strong><?= e($note['label'] ?? 'Clerk note') ?>:</strong>
+                                                <?= e($note['note'] ?? '') ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                            <?php elseif ($hasInProgressUpload): ?>
+                                <div class="mt-2">
+                                    <?php if ($documentsAccepted): ?>
+                                        <span class="badge badge-doc-review-accepted"><i class="bi bi-check-circle me-1"></i>Requirements Accepted</span>
+                                    <?php elseif ($hasPendingReview): ?>
+                                        <span class="badge badge-doc-review-pending"><i class="bi bi-hourglass-split me-1"></i>Under Clerk Review</span>
+                                    <?php else: ?>
+                                        <span class="badge badge-status-active"><i class="bi bi-check-circle me-1"></i>Requirements Uploaded</span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <?php endforeach; ?>
@@ -186,7 +325,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <table class="table table-sm mb-0">
                         <tr>
                             <th>Date</th><td><?= e($latestPayment['paid_at'] ? date('M d, Y', strtotime($latestPayment['paid_at'])) : 'Pending') ?></td>
-                            <th>Amount</th><td>₱<?= number_format($latestPayment['amount'], 2) ?></td>
+                            <th>Amount</th><td>₱<?= e(number_format((float)$latestPayment['amount'], 2)) ?></td>
                         </tr>
                         <tr>
                             <th>Method</th><td><?= e(ucfirst($latestPayment['method'])) ?></td>
@@ -196,6 +335,13 @@ require_once __DIR__ . '/../includes/header.php';
                             <th>Reference</th><td colspan="3"><?= e($latestPayment['reference_no'] ?? 'N/A') ?></td>
                         </tr>
                     </table>
+                    <?php if ($latestPayment['status'] !== 'paid' && canGuardianSubmitEnrollmentPayment((string)($latestPayment['enrollment_status'] ?? ''))): ?>
+                        <div class="mt-3">
+                            <a class="btn btn-success btn-sm" href="<?= e(APP_URL . '/guardian/enrollment/payment.php?' . http_build_query(['enrollment_id' => (int)$latestPayment['enrollment_id']])) ?>">
+                                <i class="bi bi-send-check me-1"></i>Submit Payment Reference
+                            </a>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <?php else: ?>
                     <p class="text-muted mb-0">No payment records found.</p>

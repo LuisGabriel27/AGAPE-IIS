@@ -1,7 +1,7 @@
 <?php
 /**
  * Guardian Grades Page
- * View student grades filtered by school year and term.
+ * View student grades filtered by school year using DepEd K-12 grading periods.
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -12,72 +12,113 @@ require_once __DIR__ . '/../includes/helpers.php';
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
 
-// Get guardian and students
 $stmt = $pdo->prepare("SELECT id FROM guardians WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
 $guardian = $stmt->fetch();
 
 $students = [];
 if ($guardian) {
-    $stmt = $pdo->prepare("SELECT id, full_name FROM students WHERE guardian_id = :gid");
+    $stmt = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE guardian_id = :gid ORDER BY last_name, first_name");
     $stmt->execute([':gid' => $guardian['id']]);
     $students = $stmt->fetchAll();
 }
 
-// Filters
-$selectedStudent = (int)($_GET['student_id'] ?? ($students[0]['id'] ?? 0));
-$selectedYear    = $_GET['school_year'] ?? currentSchoolYear();
-$selectedTerm    = $_GET['term'] ?? '1st Semester';
+$allowedStudentIds = array_map('intval', array_column($students, 'id'));
+$requestedStudent = isset($_GET['student_id']) ? (int)$_GET['student_id'] : 0;
+$accessDenied = false;
+$selectedStudent = (int)($students[0]['id'] ?? 0);
 
-// Fetch grades
-$grades = [];
-$gwa    = 0;
-if ($selectedStudent) {
-    $stmt = $pdo->prepare("
-        SELECT g.*, sub.code, sub.name AS subject_name, sub.units
-        FROM grades g
-        JOIN subjects sub ON g.subject_id = sub.id
-        WHERE g.student_id = :sid AND g.school_year = :sy AND g.term = :term
-        ORDER BY sub.name
-    ");
-    $stmt->execute([':sid' => $selectedStudent, ':sy' => $selectedYear, ':term' => $selectedTerm]);
-    $grades = $stmt->fetchAll();
-
-    // Calculate GWA
-    $totalUnits = 0;
-    $totalWeighted = 0;
-    foreach ($grades as $g) {
-        if ($g['final_grade'] !== null) {
-            $totalWeighted += $g['final_grade'] * $g['units'];
-            $totalUnits += $g['units'];
-        }
+if ($requestedStudent > 0) {
+    if (in_array($requestedStudent, $allowedStudentIds, true)) {
+        $selectedStudent = $requestedStudent;
+    } else {
+        http_response_code(403);
+        $selectedStudent = 0;
+        $accessDenied = true;
     }
-    $gwa = $totalUnits > 0 ? round($totalWeighted / $totalUnits, 2) : 0;
 }
 
-// Get available school years
+$selectedYear = trim((string)($_GET['school_year'] ?? currentSchoolYear()));
+$selectedTerm = normalizeAcademicTerm($_GET['term'] ?? currentAcademicTerm());
+
+$grades = [];
+$generalAverage = null;
+if ($selectedStudent && !$accessDenied) {
+    $gradeParams = [
+        ':sid' => $selectedStudent,
+        ':sy' => $selectedYear,
+    ];
+    $gradeTermClause = academicTermWhereClause('g.term', 'grade_term', $gradeParams, $selectedTerm, true);
+    $stmt = $pdo->prepare("
+        SELECT sub.id AS subject_id, sub.code, sub.name AS subject_name,
+               MAX(g.quarter1) AS quarter1,
+               MAX(g.quarter2) AS quarter2,
+               MAX(g.quarter3) AS quarter3,
+               MAX(g.quarter4) AS quarter4
+        FROM grades g
+        JOIN subjects sub ON g.subject_id = sub.id
+        WHERE g.student_id = :sid
+          AND g.school_year = :sy
+          AND {$gradeTermClause}
+          AND g.published = 1
+        GROUP BY sub.id, sub.code, sub.name
+        ORDER BY sub.name
+    ");
+    $stmt->execute($gradeParams);
+    $grades = $stmt->fetchAll();
+
+    $finalRatings = [];
+    foreach ($grades as $idx => $g) {
+        $finalRating = finalRatingFromQuarterGrades($g);
+        $grades[$idx]['final_grade'] = $finalRating;
+        if ($finalRating !== null) {
+            $finalRatings[] = $finalRating;
+        }
+    }
+    $generalAverage = !empty($finalRatings) ? round(array_sum($finalRatings) / count($finalRatings), 2) : null;
+}
+
 $years = $pdo->query("SELECT DISTINCT school_year FROM grades ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
-if (empty($years)) $years = [currentSchoolYear()];
+if (empty($years)) {
+    $years = [currentSchoolYear()];
+}
+$terms = array_keys(academicTermOptions());
 
 $pageTitle = 'Grades';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="row mb-4">
-    <div class="col-12">
-        <h4 class="fw-bold"><i class="bi bi-card-checklist me-2"></i>Student Grades</h4>
+    <div class="col-md-8">
+        <div class="page-header-guardian">
+            <h4><i class="bi bi-card-checklist me-2"></i>Student Grades</h4>
+            <div class="small text-muted">Active period: <?= activeAcademicPeriodBadge() ?></div>
+        </div>
+    </div>
+    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+        <?php if ($selectedStudent > 0): ?>
+            <a class="btn btn-outline-primary"
+               href="<?= e(APP_URL . '/guardian/report-card.php?' . http_build_query(['student_id' => $selectedStudent, 'school_year' => $selectedYear, 'term' => $selectedTerm])) ?>"
+               target="_blank" rel="noopener">
+                <i class="bi bi-printer me-1"></i>Print Report Card
+            </a>
+        <?php endif; ?>
     </div>
 </div>
 
-<!-- Filters -->
 <div class="card mb-4">
     <div class="card-body">
+        <?php if ($accessDenied): ?>
+            <div class="alert alert-danger mb-3">
+                You are not allowed to view grades for the selected student.
+            </div>
+        <?php endif; ?>
         <form method="GET" class="row g-3 align-items-end" id="grades-filter">
-            <div class="col-md-4">
+            <div class="col-md-5">
                 <label for="student_id" class="form-label">Student</label>
                 <select class="form-select" name="student_id" id="student_id">
                     <?php foreach ($students as $stu): ?>
-                        <option value="<?= $stu['id'] ?>" <?= $selectedStudent == $stu['id'] ? 'selected' : '' ?>><?= e($stu['full_name']) ?></option>
+                        <option value="<?= (int)$stu['id'] ?>" <?= $selectedStudent == $stu['id'] ? 'selected' : '' ?>><?= e(format_name($stu['first_name'], $stu['last_name'])) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -89,11 +130,12 @@ require_once __DIR__ . '/../includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-3">
-                <label for="term" class="form-label">Term</label>
+            <div class="col-md-2">
+                <label for="term" class="form-label">Quarter</label>
                 <select class="form-select" name="term" id="term">
-                    <option value="1st Semester" <?= $selectedTerm === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-                    <option value="2nd Semester" <?= $selectedTerm === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
+                    <?php foreach ($terms as $term): ?>
+                        <option value="<?= e($term) ?>" <?= $selectedTerm === $term ? 'selected' : '' ?>><?= e($term) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-2">
@@ -103,44 +145,38 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
-<!-- Grades Table -->
-<div class="table-container p-0">
+<div class="table-container p-0 mb-4">
     <div class="table-responsive">
         <table class="table table-hover mb-0" id="grades-table">
             <thead>
                 <tr>
                     <th>Subject Code</th>
                     <th>Subject</th>
-                    <th class="text-center">Units</th>
-                    <th class="text-center">Midterm</th>
-                    <th class="text-center">Finals</th>
-                    <th class="text-center">Final Grade</th>
+                    <th class="text-center">1st</th>
+                    <th class="text-center">2nd</th>
+                    <th class="text-center">3rd</th>
+                    <th class="text-center">4th</th>
+                    <th class="text-center">Final Rating</th>
+                    <th class="text-center">Descriptor</th>
                     <th class="text-center">Remarks</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($grades)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-4">No grades available for the selected filters.</td></tr>
+                    <?= emptyStateRow(9, 'No grades to show for the selected student and school year.', 'Grades become visible here once the class teacher encodes and publishes them. If you expect grades this quarter, please follow up with the school.', 'bi-card-checklist') ?>
                 <?php else: ?>
                     <?php foreach ($grades as $g): ?>
+                    <?php $final = $g['final_grade'] !== null ? (float)$g['final_grade'] : null; ?>
                     <tr>
                         <td><?= e($g['code']) ?></td>
                         <td><?= e($g['subject_name']) ?></td>
-                        <td class="text-center"><?= $g['units'] ?></td>
-                        <td class="text-center"><?= $g['midterm'] !== null ? number_format($g['midterm'], 2) : '—' ?></td>
-                        <td class="text-center"><?= $g['finals'] !== null ? number_format($g['finals'], 2) : '—' ?></td>
-                        <td class="text-center fw-bold"><?= $g['final_grade'] !== null ? number_format($g['final_grade'], 2) : '—' ?></td>
-                        <td class="text-center">
-                            <?php if ($g['final_grade'] !== null): ?>
-                                <?php if ($g['final_grade'] >= 75): ?>
-                                    <span class="badge bg-success">Passed</span>
-                                <?php else: ?>
-                                    <span class="badge bg-danger">Failed</span>
-                                <?php endif; ?>
-                            <?php else: ?>
-                                <span class="badge bg-secondary">Pending</span>
-                            <?php endif; ?>
-                        </td>
+                        <td class="text-center"><?= e($g['quarter1'] !== null ? number_format((float)$g['quarter1'], 2) : '-') ?></td>
+                        <td class="text-center"><?= e($g['quarter2'] !== null ? number_format((float)$g['quarter2'], 2) : '-') ?></td>
+                        <td class="text-center"><?= e($g['quarter3'] !== null ? number_format((float)$g['quarter3'], 2) : '-') ?></td>
+                        <td class="text-center"><?= e($g['quarter4'] !== null ? number_format((float)$g['quarter4'], 2) : '-') ?></td>
+                        <td class="text-center fw-bold"><?= e($final !== null ? number_format($final, 2) : 'Pending') ?></td>
+                        <td class="text-center"><?= e(depedDescriptor($final)) ?></td>
+                        <td class="text-center"><span class="badge <?= e(depedRemarkBadgeClass($final)) ?>"><?= e(depedRemark($final)) ?></span></td>
                     </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -148,13 +184,32 @@ require_once __DIR__ . '/../includes/header.php';
             <?php if (!empty($grades)): ?>
             <tfoot>
                 <tr class="table-primary fw-bold">
-                    <td colspan="5" class="text-end">General Weighted Average (GWA):</td>
-                    <td class="text-center"><?= $gwa > 0 ? number_format($gwa, 2) : 'N/A' ?></td>
+                    <td colspan="6" class="text-end">General Average:</td>
+                    <td class="text-center"><?= e($generalAverage !== null ? number_format($generalAverage, 2) : 'N/A') ?></td>
+                    <td class="text-center"><?= e($generalAverage !== null ? depedDescriptor($generalAverage) : 'Pending') ?></td>
                     <td></td>
                 </tr>
             </tfoot>
             <?php endif; ?>
         </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white fw-semibold">Descriptors, Grading Scale, and Remarks</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead><tr><th>Descriptor</th><th class="text-center">Grading Scale</th><th class="text-center">Remarks</th></tr></thead>
+                <tbody>
+                    <tr><td>Outstanding</td><td class="text-center">90-100</td><td class="text-center">Passed</td></tr>
+                    <tr><td>Very Satisfactory</td><td class="text-center">85-89</td><td class="text-center">Passed</td></tr>
+                    <tr><td>Satisfactory</td><td class="text-center">80-84</td><td class="text-center">Passed</td></tr>
+                    <tr><td>Fairly Satisfactory</td><td class="text-center">75-79</td><td class="text-center">Passed</td></tr>
+                    <tr><td>Did Not Meet Expectations</td><td class="text-center">Below 75</td><td class="text-center">Failed</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

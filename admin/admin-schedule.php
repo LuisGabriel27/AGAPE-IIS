@@ -1,6 +1,6 @@
 <?php
 /**
- * Admin Schedules — CRUD: assign subject + section + teacher + room + day/time
+ * Admin Schedules â€” CRUD: assign subject + section + teacher + room + day/time
  */
 
 require_once __DIR__ . '/../includes/session-check.php';
@@ -13,6 +13,8 @@ $pdo    = getDB();
 $action = $_GET['action'] ?? '';
 $id     = (int)($_GET['id'] ?? 0);
 $errors = [];
+$activeYear = currentSchoolYear();
+$activeTerm = currentAcademicTerm();
 
 if ($action === 'delete' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -32,8 +34,8 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
         'day_of_week' => trim($_POST['day_of_week'] ?? ''),
         'time_start'  => trim($_POST['time_start'] ?? ''),
         'time_end'    => trim($_POST['time_end'] ?? ''),
-        'school_year' => trim($_POST['school_year'] ?? currentSchoolYear()),
-        'term'        => trim($_POST['term'] ?? '1st Semester'),
+        'school_year' => trim($_POST['school_year'] ?? $activeYear),
+        'term'        => normalizeAcademicTerm($_POST['term'] ?? $activeTerm),
     ];
 
     if (!$data['subject_id']) $errors[] = 'Subject is required.';
@@ -41,12 +43,26 @@ if (in_array($action, ['create', 'edit']) && $_SERVER['REQUEST_METHOD'] === 'POS
     if (!$data['teacher_id']) $errors[] = 'Teacher is required.';
     if (empty($data['day_of_week'])) $errors[] = 'Day is required.';
     if (empty($data['time_start']) || empty($data['time_end'])) $errors[] = 'Time range is required.';
+    if ($data['subject_id'] && $data['section_id']) {
+        $stmt = $pdo->prepare("
+            SELECT sub.grade_level AS subject_grade_level, sec.grade_level AS section_grade_level
+            FROM subjects sub
+            CROSS JOIN sections sec
+            WHERE sub.id = :subid AND sec.id = :secid
+            LIMIT 1
+        ");
+        $stmt->execute([':subid' => $data['subject_id'], ':secid' => $data['section_id']]);
+        $gradeMatch = $stmt->fetch();
+        if ($gradeMatch && !empty($gradeMatch['subject_grade_level']) && $gradeMatch['subject_grade_level'] !== $gradeMatch['section_grade_level']) {
+            $errors[] = 'Subject grade level must match the selected section grade level.';
+        }
+    }
 
     if (empty($errors)) {
         if ($action === 'create') {
-            $stmt = $pdo->prepare("INSERT INTO schedules (subject_id, section_id, teacher_id, room, day_of_week, time_start, time_end, school_year, term) VALUES (:sub,:sec,:tch,:rm,:day,:ts,:te,:sy,:trm)");
+            $stmt = $pdo->prepare("INSERT INTO schedules (subject_id, section_id, teacher_id, room, day_of_week, time_start, time_end, school_year, term) VALUES (:sub,:sec,:tch,:rm,:day,:ts,:te,:sy,:trm) RETURNING id");
             $stmt->execute([':sub'=>$data['subject_id'],':sec'=>$data['section_id'],':tch'=>$data['teacher_id'],':rm'=>$data['room'],':day'=>$data['day_of_week'],':ts'=>$data['time_start'],':te'=>$data['time_end'],':sy'=>$data['school_year'],':trm'=>$data['term']]);
-            auditLog('create_schedule', 'schedules', (int)$pdo->lastInsertId());
+            auditLog('create_schedule', 'schedules', (int)$stmt->fetchColumn());
             setFlash('success', 'Schedule created.');
         } else {
             $stmt = $pdo->prepare("UPDATE schedules SET subject_id=:sub, section_id=:sec, teacher_id=:tch, room=:rm, day_of_week=:day, time_start=:ts, time_end=:te, school_year=:sy, term=:trm WHERE id=:id");
@@ -65,23 +81,47 @@ if ($action === 'edit' && $id) {
     $editSched = $stmt->fetch();
 }
 
-$subjectsList = $pdo->query("SELECT id, code, name FROM subjects ORDER BY name")->fetchAll();
+$subjectsList = $pdo->query("
+    SELECT id, code, name, grade_level
+    FROM subjects
+    ORDER BY CASE grade_level
+        WHEN 'Preschool' THEN 0
+        WHEN 'Kindergarten' THEN 1
+        WHEN '1' THEN 2
+        WHEN '2' THEN 3
+        WHEN '3' THEN 4
+        WHEN '4' THEN 5
+        WHEN '5' THEN 6
+        WHEN '6' THEN 7
+        ELSE 99
+    END, name
+")->fetchAll();
 $sectionsList = $pdo->query("SELECT id, name, grade_level FROM sections ORDER BY grade_level, name")->fetchAll();
-$teachersList = $pdo->query("SELECT id, full_name FROM teachers ORDER BY full_name")->fetchAll();
+$teachersList = $pdo->query("SELECT id, first_name, last_name FROM teachers ORDER BY last_name, first_name")->fetchAll();
 
-$total = $pdo->query("SELECT COUNT(*) FROM schedules")->fetchColumn();
+$scheduleListParams = [':sy' => $activeYear];
+$scheduleListTermClause = academicTermWhereClause('term', 'schedule_list_term', $scheduleListParams, $activeTerm);
+$totalStmt = $pdo->prepare("SELECT COUNT(*) FROM schedules WHERE school_year = :sy AND {$scheduleListTermClause}");
+$totalStmt->execute($scheduleListParams);
+$total = (int)$totalStmt->fetchColumn();
 [$offset, $limit, $page, $totalPages] = paginate($total, 15);
 
-$stmt = $pdo->query("
+$scheduleRowsParams = [':sy' => $activeYear];
+$scheduleRowsTermClause = academicTermWhereClause('sch.term', 'schedule_rows_term', $scheduleRowsParams, $activeTerm);
+$stmt = $pdo->prepare("
     SELECT sch.*, sub.name AS subject_name, sub.code AS subject_code,
-           sec.name AS section_name, sec.grade_level, t.full_name AS teacher_name
+           sec.name AS section_name, sec.grade_level,
+           CASE WHEN t.first_name = '' THEN t.last_name ELSE t.last_name || ', ' || t.first_name END AS teacher_name
     FROM schedules sch
     JOIN subjects sub ON sch.subject_id = sub.id
     JOIN sections sec ON sch.section_id = sec.id
     JOIN teachers t ON sch.teacher_id = t.id
-    ORDER BY FIELD(sch.day_of_week,'Monday','Tuesday','Wednesday','Thursday','Friday'), sch.time_start
+    WHERE sch.school_year = :sy
+      AND {$scheduleRowsTermClause}
+    ORDER BY CASE sch.day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 END, sch.time_start
     LIMIT {$limit} OFFSET {$offset}
 ");
+$stmt->execute($scheduleRowsParams);
 $schedules = $stmt->fetchAll();
 
 $pageTitle = 'Manage Schedules';
@@ -90,7 +130,10 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 ?>
 
 <div class="row mb-4">
-    <div class="col-md-6"><h4 class="fw-bold"><i class="bi bi-calendar3 me-2"></i>Class Schedules</h4></div>
+    <div class="col-md-6">
+        <h4 class="fw-bold"><i class="bi bi-calendar3 me-2"></i>Class Schedules</h4>
+        <div class="text-muted small">Showing active period: <?= activeAcademicPeriodBadge() ?></div>
+    </div>
     <div class="col-md-6 text-md-end"><a href="?action=create" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i>Add Schedule</a></div>
 </div>
 
@@ -100,17 +143,19 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 
 <?php if (in_array($action, ['create', 'edit'])): ?>
 <div class="card mb-4">
-    <div class="card-header bg-white fw-bold"><?= $action === 'create' ? 'Add Schedule' : 'Edit Schedule' ?></div>
+    <div class="card-header bg-white fw-bold"><?= e($action === 'create' ? 'Add Schedule' : 'Edit Schedule') ?></div>
     <div class="card-body">
         <form method="POST" id="schedule-form">
-            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Subject <span class="text-danger">*</span></label>
                     <select class="form-select" name="subject_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($subjectsList as $s): ?>
-                            <option value="<?= $s['id'] ?>" <?= ($editSched['subject_id'] ?? 0) == $s['id'] ? 'selected' : '' ?>><?= e($s['code'] . ' — ' . $s['name']) ?></option>
+                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['subject_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>>
+                                <?= e(formatGradeLevel($s['grade_level'] ?? '') . ' - ' . $s['code'] . ' - ' . $s['name']) ?>
+                            </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -119,7 +164,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <select class="form-select" name="section_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($sectionsList as $s): ?>
-                            <option value="<?= $s['id'] ?>" <?= ($editSched['section_id'] ?? 0) == $s['id'] ? 'selected' : '' ?>><?= e($s['name'] . ' (Gr. ' . $s['grade_level'] . ')') ?></option>
+                            <option value="<?= (int)$s['id'] ?>" <?= e(($editSched['section_id'] ?? 0) == $s['id'] ? 'selected' : '') ?>><?= e($s['name'] . ' (' . formatGradeLevel((string)$s['grade_level']) . ')') ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -128,7 +173,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <select class="form-select" name="teacher_id" required>
                         <option value="">Select...</option>
                         <?php foreach ($teachersList as $t): ?>
-                            <option value="<?= $t['id'] ?>" <?= ($editSched['teacher_id'] ?? 0) == $t['id'] ? 'selected' : '' ?>><?= e($t['full_name']) ?></option>
+                            <option value="<?= (int)$t['id'] ?>" <?= e(($editSched['teacher_id'] ?? 0) == $t['id'] ? 'selected' : '') ?>><?= e(format_name($t['first_name'], $t['last_name'])) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -136,7 +181,7 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                     <label class="form-label">Day <span class="text-danger">*</span></label>
                     <select class="form-select" name="day_of_week" required>
                         <?php foreach ($days as $d): ?>
-                            <option value="<?= $d ?>" <?= ($editSched['day_of_week'] ?? '') === $d ? 'selected' : '' ?>><?= $d ?></option>
+                            <option value="<?= e($d) ?>" <?= e(($editSched['day_of_week'] ?? '') === $d ? 'selected' : '') ?>><?= e($d) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -154,10 +199,19 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">School Year</label>
-                    <input type="text" class="form-control" name="school_year" value="<?= e($editSched['school_year'] ?? currentSchoolYear()) ?>">
+                    <input type="text" class="form-control" name="school_year" value="<?= e($editSched['school_year'] ?? $activeYear) ?>">
                 </div>
             </div>
-            <input type="hidden" name="term" value="<?= e($editSched['term'] ?? '1st Semester') ?>">
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Quarter</label>
+                    <select class="form-select" name="term">
+                        <?php foreach (academicTermOptions() as $termValue => $termLabel): ?>
+                            <option value="<?= e($termValue) ?>" <?= normalizeAcademicTerm($editSched['term'] ?? $activeTerm) === $termValue ? 'selected' : '' ?>><?= e($termLabel) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
             <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save</button>
             <a href="<?= APP_URL ?>/admin/admin-schedule.php" class="btn btn-outline-secondary">Cancel</a>
         </form>
@@ -170,20 +224,20 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
         <thead><tr><th>Day</th><th>Time</th><th>Subject</th><th>Section</th><th>Teacher</th><th>Room</th><th>Actions</th></tr></thead>
         <tbody>
             <?php if (empty($schedules)): ?>
-                <tr><td colspan="7" class="text-center text-muted py-3">No schedules found.</td></tr>
+                <?= emptyStateRow(7, 'No class schedules for the active school year.', 'Add schedule entries using the form above. Guardians and teachers will see timetables only after schedules exist for the active school year.', 'bi-calendar-week') ?>
             <?php else: foreach ($schedules as $s): ?>
             <tr>
                 <td><?= e($s['day_of_week']) ?></td>
-                <td><?= e(date('g:i A', strtotime($s['time_start']))) ?> – <?= e(date('g:i A', strtotime($s['time_end']))) ?></td>
+                <td><?= e(date('g:i A', strtotime($s['time_start']))) ?> - <?= e(date('g:i A', strtotime($s['time_end']))) ?></td>
                 <td><span class="badge bg-secondary"><?= e($s['subject_code']) ?></span> <?= e($s['subject_name']) ?></td>
-                <td><?= e($s['section_name']) ?> (Gr. <?= e($s['grade_level']) ?>)</td>
+                <td><?= e($s['section_name']) ?> (<?= e(formatGradeLevel((string)$s['grade_level'])) ?>)</td>
                 <td><?= e($s['teacher_name']) ?></td>
                 <td><?= e($s['room'] ?? 'TBD') ?></td>
                 <td>
-                    <a href="?action=edit&id=<?= $s['id'] ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-                    <form method="POST" action="?action=delete&id=<?= $s['id'] ?>" class="d-inline" onsubmit="return confirm('Delete?')">
-                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
-                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    <a href="?action=edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit schedule entry" aria-label="Edit schedule entry"><i class="bi bi-pencil"></i></a>
+                    <form method="POST" action="?action=delete&id=<?= (int)$s['id'] ?>" class="d-inline" data-confirm="Delete this schedule entry? This cannot be undone." data-confirm-variant="danger">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                        <button class="btn btn-sm btn-outline-danger" title="Delete schedule entry" aria-label="Delete schedule entry"><i class="bi bi-trash"></i></button>
                     </form>
                 </td>
             </tr>
@@ -193,3 +247,4 @@ $days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 </div></div>
 <?= paginationLinks($page, $totalPages, '?x=1') ?>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+

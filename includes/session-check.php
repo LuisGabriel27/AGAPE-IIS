@@ -4,19 +4,27 @@
  *
  * Usage at the top of every protected page:
  *   require_once __DIR__ . '/../includes/session-check.php';
- *   requireRole('guardian');          // single role
- *   requireRole(['admin','teacher']); // multiple allowed roles
+ *   requireRole('guardian');              // single role
+ *   requireRole(['admin','clerk']);       // multiple allowed roles
  */
 
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/helpers.php';
 
-// Start session with secure cookie params
+// Start session with secure cookie params. Local XAMPP can keep HTTP cookies;
+// production/proxied HTTPS receives Secure cookies automatically.
 if (session_status() === PHP_SESSION_NONE) {
+    $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? '') === '443')
+        || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https')
+        || (stripos((string)APP_URL, 'https://') === 0);
+
+    ini_set('session.use_strict_mode', '1');
     session_set_cookie_params([
         'lifetime' => SESSION_LIFETIME,
         'path'     => '/',
         'domain'   => '',
-        'secure'   => false,   // set true in production with HTTPS
+        'secure'   => $isHttps,
         'httponly'  => true,
         'samesite'  => 'Strict',
     ]);
@@ -32,7 +40,27 @@ function isLoggedIn(): bool
 }
 
 /**
- * Require a specific role (or array of roles). Redirects guests to role selection.
+ * Return all roles the current user holds (primary + secondary).
+ * Populated at login time and stored in $_SESSION['all_roles'].
+ */
+function getAllRoles(): array
+{
+    return $_SESSION['all_roles'] ?? [$_SESSION['role'] ?? ''];
+}
+
+/**
+ * Check whether the current user holds a specific role
+ * (works for both primary and secondary roles).
+ */
+function hasRole(string $role): bool
+{
+    return in_array($role, getAllRoles(), true);
+}
+
+/**
+ * Require a specific role (or array of roles).
+ * Checks against ALL roles the user holds, not just the active one.
+ * Redirects guests to role selection.
  *
  * @param string|array $roles
  */
@@ -47,20 +75,68 @@ function requireRole($roles): void
         $roles = [$roles];
     }
 
-    if (!in_array($_SESSION['role'], $roles, true)) {
-        header('Location: ' . getRoleDashboardUrl());
+    $deploymentAllowedRoles = deploymentAllowedRoles();
+    $rolesAllowedHere = array_values(array_filter(
+        $roles,
+        static fn(string $role): bool => in_array($role, $deploymentAllowedRoles, true)
+    ));
+
+    if (empty($rolesAllowedHere)) {
+        $activeRole = (string)($_SESSION['role'] ?? '');
+        if ($activeRole !== '' && isDeploymentRoleAllowed($activeRole)) {
+            setFlash('warning', deploymentAccessMessage($roles[0] ?? null));
+            header('Location: ' . getRoleDashboardUrl());
+            exit;
+        }
+
+        foreach (getAllRoles() as $userRole) {
+            if (isDeploymentRoleAllowed((string)$userRole)) {
+                $_SESSION['role'] = (string)$userRole;
+                setFlash('warning', deploymentAccessMessage($roles[0] ?? null));
+                header('Location: ' . getRoleDashboardUrl());
+                exit;
+            }
+        }
+
+        session_unset();
+        session_destroy();
+        header('Location: ' . APP_URL . '/auth/select-role.php?error=deployment_role_blocked');
         exit;
     }
+
+    $userRoles = getAllRoles();
+    foreach ($rolesAllowedHere as $r) {
+        if (in_array($r, $userRoles, true)) {
+            return; // access granted
+        }
+    }
+
+    // Not authorised — redirect to their current active dashboard
+    header('Location: ' . getRoleDashboardUrl());
+    exit;
 }
 
 /**
- * Get the base URL path for the current user's role.
+ * Get the dashboard URL for the currently active role.
  */
 function getRoleDashboardUrl(): string
 {
-    switch ($_SESSION['role'] ?? '') {
+    $role = (string)($_SESSION['role'] ?? '');
+    if ($role !== '' && !isDeploymentRoleAllowed($role)) {
+        foreach (getAllRoles() as $candidate) {
+            if (isDeploymentRoleAllowed((string)$candidate)) {
+                $_SESSION['role'] = (string)$candidate;
+                $role = (string)$candidate;
+                break;
+            }
+        }
+    }
+
+    switch ($role) {
         case 'admin':
             return APP_URL . '/admin/admin-dashboard.php';
+        case 'clerk':
+            return APP_URL . '/admin/clerk-dashboard.php';
         case 'teacher':
             return APP_URL . '/teacher/teacher-dashboard.php';
         case 'guardian':
@@ -68,4 +144,23 @@ function getRoleDashboardUrl(): string
         default:
             return APP_URL . '/auth/select-role.php';
     }
+}
+
+/**
+ * Switch the active role for the current session.
+ * Only allows switching to a role the user actually holds.
+ */
+function switchRole(string $newRole): bool
+{
+    if (!isLoggedIn()) {
+        return false;
+    }
+    if (!isDeploymentRoleAllowed($newRole)) {
+        return false;
+    }
+    if (!in_array($newRole, getAllRoles(), true)) {
+        return false;
+    }
+    $_SESSION['role'] = $newRole;
+    return true;
 }

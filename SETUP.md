@@ -1,9 +1,18 @@
-# Academy Information System — Setup Checklist
+﻿# Academy Information System â€” Setup Checklist
 
 ## Prerequisites
+
+> Active branch note: this `w/supabase` branch uses **Supabase PostgreSQL**. For the active database setup path, use [database/README.md](database/README.md). The older MySQL/phpMyAdmin setup notes in this file are retained only as legacy reference.
+>
+> Online/offline scope: only **Administrator** and **Enrollment Clerk** should use the school-premises local/offline database path. **Teacher** and **Guardian** must remain online and route directly to Supabase. Use `APP_DEPLOYMENT_MODE=hybrid_role_routed`, keep `DB_*` pointed at the local school database, and keep `SUPABASE_DB_*` pointed at Supabase.
+>
+> Enrollment document storage: use `ENROLLMENT_DOCUMENT_STORAGE_DRIVER=local` unless `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` are all configured and the bucket exists. Missing Supabase Storage credentials fall back to local uploads so guardian enrollment will not fail during development.
+>
+> Docker note for group work: `docker-compose.yml` bind-mounts the PHP source folders into the app container, so normal code pulls are reflected after `docker compose up -d`. The local PostgreSQL volume is separate from Git; if dashboard enrollment/revenue data looks stale, open **Admin -> Manual Sync** and refresh the local copy from Supabase.
+
 - **XAMPP** installed with Apache + MySQL running
 - **PHP 7.4+** (PHP 8.x recommended)
-- **Composer** installed globally — [https://getcomposer.org](https://getcomposer.org)
+- **Composer** installed globally â€” [https://getcomposer.org](https://getcomposer.org)
 
 ---
 
@@ -34,11 +43,11 @@ This installs `google/apiclient` and creates the `vendor/` directory with the au
 3. Select the file: `database/schema.sql`
 4. Click **Go** to execute
 
-This creates the `academy_db` database with all 12 tables and a default admin account:
+This creates the `academy_db` database with all 16 tables and a default admin account:
 - **Email**: `admin@academy.edu`
 - **Password**: `Admin@1234`
 
-> ⚠️ **Change the admin password on first login!**
+> âš ï¸ **Change the admin password on first login!**
 
 ---
 
@@ -59,8 +68,8 @@ define('DB_PASS', '');    // default XAMPP password
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select existing)
-3. Navigate to **APIs & Services → Credentials**
-4. Click **Create Credentials → OAuth client ID**
+3. Navigate to **APIs & Services â†’ Credentials**
+4. Click **Create Credentials â†’ OAuth client ID**
 5. Configure the **consent screen**:
    - App name: `Academy Information System`
    - User support email: your email
@@ -113,9 +122,9 @@ mkdir C:\xampp\htdocs\softeng\logs
 1. **Navigate to**: `http://localhost/softeng/auth/select-role.php`
 2. **Choose Administrator**, then log in as admin: `admin@academy.edu` / `Admin@1234`
 3. **Verify admin dashboard** loads with KPI cards
-4. **Create a test teacher** via Admin → Teachers
+4. **Create a test teacher** via Admin â†’ Teachers
 5. **Logout and register** a guardian account via Sign Up
-6. **Test enrollment** workflow as guardian
+6. **Test enrollment** workflow through guardian requirement uploads, Enrollment Clerk review, Cashier payment, and Registrar submission
 7. **Test Google Login** (if credentials configured):
    - Click "Sign in with Google" on login page
    - Complete Google consent screen
@@ -126,61 +135,65 @@ mkdir C:\xampp\htdocs\softeng\logs
 ## Folder Structure
 
 ```
-softeng/
-├── admin/
-│   ├── admin-calendar.php
-│   ├── admin-dashboard.php
-│   ├── admin-enrollments.php
-│   ├── admin-grades.php
-│   ├── admin-guardians.php
-│   ├── admin-payments.php
-│   ├── admin-schedule.php
-│   ├── admin-sections.php
-│   ├── admin-students.php
-│   ├── admin-subjects.php
-│   ├── admin-teachers.php
-│   └── admin-users.php
-├── assets/
-│   └── css/
-│       └── style.css
-├── auth/
-│   ├── complete-profile.php
-│   ├── login.php
-│   ├── logout.php
-│   ├── oauth-callback.php
-│   └── signup.php
-├── config/
-│   ├── config.php
-│   └── google.php
-├── database/
-│   └── schema.sql
-├── guardian/
-│   ├── dashboard.php
-│   ├── enrollment.php
-│   ├── grades.php
-│   ├── payments.php
-│   ├── profile-edit.php
-│   ├── profile-view.php
-│   └── schedule.php
-├── includes/
-│   ├── csrf.php
-│   ├── db.php
-│   ├── footer.php
-│   ├── header.php
-│   ├── helpers.php
-│   └── session-check.php
-├── logs/
-├── teacher/
-│   ├── teacher-dashboard.php
-│   ├── teacher-grades.php
-│   └── teacher-schedule.php
-├── vendor/              ← created by Composer
-├── .gitignore
-├── composer.json
-├── index.php
-└── SETUP.md
+AGAPE-IIS/
+|-- admin/
+|   |-- login.php
+|   |-- admin-dashboard.php
+|   |-- admin-students.php
+|   |-- admin-teachers.php
+|   |-- admin-users.php
+|   |-- admin-enrollments.php
+|   |-- admin-subjects.php
+|   |-- admin-sections.php
+|   |-- admin-grades.php
+|   |-- admin-schedule.php
+|   |-- admin-calendar.php
+|   |-- admin-attendance.php
+|   `-- admin-payments.php
+|-- teacher/
+|   |-- login.php
+|   |-- teacher-dashboard.php
+|   |-- teacher-grades.php
+|   `-- teacher-schedule.php
+|-- guardian/
+|   |-- login.php
+|   |-- complete-profile.php
+|   |-- dashboard.php
+|   |-- enrollment/
+|   |   |-- index.php
+|   |   |-- requirements.php
+|   |   |-- payment.php
+|   |   `-- certificate.php
+|   |-- grades.php
+|   |-- payments.php
+|   |-- profile-view.php
+|   |-- profile-edit.php
+|   `-- schedule.php
+|-- auth/
+|   |-- select-role.php
+|   |-- login.php
+|   |-- logout.php
+|   `-- oauth-callback.php
+|-- includes/
+|   |-- session-check.php
+|   |-- helpers.php
+|   |-- csrf.php
+|   |-- db.php
+|   |-- header.php
+|   |-- footer.php
+|   `-- calendar-widget.php
+|-- assets/
+|   |-- css/style.css
+|   `-- js/face-api.min.js
+|-- config/
+|-- database/
+|-- models/
+|-- vendor/
+|-- composer.json
+|-- composer.lock
+|-- index.php
+`-- SETUP.md
 ```
-
 ---
 
 ## Default Accounts
@@ -199,6 +212,7 @@ Teacher and guardian accounts are created through the admin panel or self-regist
 - Passwords are hashed with bcrypt
 - SQL injection prevented via PDO prepared statements
 - XSS prevented via `htmlspecialchars()` on all output
-- Brute-force protection: 5 attempts → 15-minute lockout
+- Brute-force protection: 5 attempts â†’ 15-minute lockout
 - Sessions use HttpOnly, SameSite=Strict cookies
 - Sensitive config excluded from `.gitignore`
+

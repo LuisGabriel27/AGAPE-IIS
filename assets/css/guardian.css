@@ -1,0 +1,331 @@
+/* ======================================================
+   Guardian Portal — Custom Theme Override
+   Loaded ONLY for guardian role pages.
+   Provides a warmer, parent-friendly visual identity.
+   ====================================================== */
+
+/* ── Guardian Color Overrides ─────────────────────────── */
+:root {
+    --primary: #0D9488;
+    --primary-dark: #0F766E;
+    --primary-light: #CCFBF1;
+    --primary-50: #F0FDFA;
+}
+
+/* ── Sidebar Teal Theme ──────────────────────────────── */
+.sidebar {
+    background: linear-gradient(180deg, #0D9488 0%, #0F766E 100%);
+    border-right: none;
+}
+
+.sidebar-brand {
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+
+.sidebar-brand-text {
+    color: #FFFFFF;
+}
+
+.sidebar-brand-text small {
+    color: rgba(255,255,255,0.7);
+}
+
+.sidebar-section {
+    color: rgba(255,255,255,0.5);
+}
+
+.sidebar-link {
+    color: rgba(255,255,255,0.85);
+}
+
+.sidebar-link:hover {
+    background: rgba(255,255,255,0.12);
+    color: #FFFFFF;
+}
+
+.sidebar-link.active {
+    background: rgba(255,255,255,0.18);
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+.sidebar-link.active::before {
+    background: #FFFFFF;
+}
+
+.sidebar-footer {
+    border-top: 1px solid rgba(255,255,255,0.15);
+}
+
+.sidebar-footer .sidebar-link {
+    color: rgba(255,200,200,0.9) !important;
+}
+
+.sidebar-footer .sidebar-link:hover {
+    background: rgba(255,255,255,0.1);
+    color: #FCA5A5 !important;
+}
+
+/* ── Cards — Softer Radius ────────────────────────────── */
+.card {
+    --card-radius: 16px;
+    border-radius: 16px;
+}
+
+.card-header {
+    border-radius: 16px 16px 0 0 !important;
+}
+
+.card-footer {
+    border-radius: 0 0 16px 16px;
+}
+
+.kpi-card {
+    border-radius: 16px;
+}
+
+/* ── Guardian Hero Banner ─────────────────────────────── */
+.guardian-hero {
+    background: linear-gradient(135deg, #0D9488 0%, #10B981 50%, #34D399 100%);
+    border-radius: 16px;
+    padding: 32px 36px;
+    color: white;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+
+.guardian-hero::after {
+    content: '';
+    position: absolute;
+    right: -30px;
+    top: -30px;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+}
+
+.guardian-hero::before {
+    content: '';
+    position: absolute;
+    right: 80px;
+    bottom: -40px;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+}
+
+.guardian-hero .hero-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,0.3);
+}
+
+.guardian-hero .hero-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.guardian-hero .hero-subtitle {
+    opacity: 0.9;
+    font-size: 0.92rem;
+}
+
+.guardian-hero .hero-badge {
+    background: rgba(255,255,255,0.22);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    backdrop-filter: blur(4px);
+}
+
+/* ── Quick Action Cards ───────────────────────────────── */
+.quick-action-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 28px 16px;
+    border-radius: 16px;
+    border: 2px solid #CCFBF1;
+    background: #FFFFFF;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+    height: 100%;
+}
+
+.quick-action-card:hover {
+    border-color: #0D9488;
+    transform: scale(1.02);
+    box-shadow: 0 4px 16px rgba(13,148,136,0.12);
+    color: var(--text-primary);
+}
+
+.quick-action-card .qa-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 12px;
+}
+
+.quick-action-card .qa-label {
+    font-weight: 600;
+    font-size: 0.92rem;
+}
+
+.quick-action-card .qa-sub {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* ── Pastel KPI Cards (replace dark gradients) ────────── */
+.guardian-kpi {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.guardian-kpi:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    transform: translateY(-2px);
+}
+
+.guardian-kpi .kpi-icon-wrap {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+
+.guardian-kpi.kpi-teal .kpi-icon-wrap {
+    background: #CCFBF1;
+    color: #0D9488;
+}
+
+.guardian-kpi.kpi-green .kpi-icon-wrap {
+    background: #D1FAE5;
+    color: #059669;
+}
+
+.guardian-kpi.kpi-amber .kpi-icon-wrap {
+    background: #FEF3C7;
+    color: #D97706;
+}
+
+.guardian-kpi.kpi-rose .kpi-icon-wrap {
+    background: #FFE4E6;
+    color: #E11D48;
+}
+
+.guardian-kpi .kpi-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+}
+
+.guardian-kpi .kpi-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-primary);
+}
+
+/* ── Page Header — Guardian Accent ────────────────────── */
+.page-header-guardian {
+    border-left: 4px solid #0D9488;
+    padding-left: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.page-header-guardian h4 {
+    font-weight: 700;
+    margin-bottom: 0;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.page-header-guardian p {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 0;
+    margin-top: 4px;
+}
+
+/* ── Typography Adjustments ───────────────────────────── */
+body {
+    font-size: 0.92rem;
+}
+
+.card-header {
+    font-size: 1.1rem;
+}
+
+/* ── Badge Override for Guardian ──────────────────────── */
+.badge.bg-primary {
+    background-color: #0D9488 !important;
+}
+
+/* ── Buttons — Teal Primary ──────────────────────────── */
+.btn-primary {
+    background-color: #0D9488;
+    border-color: #0D9488;
+}
+
+.btn-primary:hover {
+    background-color: #0F766E;
+    border-color: #0F766E;
+}
+
+.btn-outline-primary {
+    color: #0D9488;
+    border-color: #0D9488;
+}
+
+.btn-outline-primary:hover {
+    background-color: #0D9488;
+    border-color: #0D9488;
+    color: white;
+}
+
+/* ── Card Header Icon Color ──────────────────────────── */
+.card-header i {
+    color: #0D9488;
+}
+
+/* ── Active sidebar indicator ────────────────────────── */
+.sidebar-link.active::before {
+    background: #FFFFFF;
+}

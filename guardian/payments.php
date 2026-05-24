@@ -12,7 +12,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 $pdo    = getDB();
 $userId = $_SESSION['user_id'];
 
-// Get guardian → students → enrollments → payments
+// Get guardian â†’ students â†’ enrollments â†’ payments
 $stmt = $pdo->prepare("SELECT id FROM guardians WHERE user_id = :uid LIMIT 1");
 $stmt->execute([':uid' => $userId]);
 $guardian = $stmt->fetch();
@@ -24,7 +24,8 @@ if ($guardian) {
     $dir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 
     $stmt = $pdo->prepare("
-        SELECT p.*, e.school_year, e.term, s.full_name AS student_name
+        SELECT p.*, e.id AS enrollment_id, e.status AS enrollment_status, e.school_year, e.term,
+               CASE WHEN s.first_name = '' THEN s.last_name ELSE s.last_name || ', ' || s.first_name END AS student_name
         FROM payments p
         JOIN enrollments e ON p.enrollment_id = e.id
         JOIN students s ON e.student_id = s.id
@@ -58,8 +59,10 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 
 <div class="row mb-4">
     <div class="col-12 d-flex justify-content-between align-items-center">
-        <h4 class="fw-bold mb-0"><i class="bi bi-credit-card me-2"></i>Payment History</h4>
-        <span class="badge bg-success fs-6">Total Paid: ₱<?= number_format($totalPaid, 2) ?></span>
+        <div class="page-header-guardian">
+            <h4><i class="bi bi-credit-card me-2"></i>Payment History</h4>
+        </div>
+        <span class="badge bg-success fs-6">Total Paid: &#8369;<?= e(number_format($totalPaid, 2)) ?></span>
     </div>
 </div>
 
@@ -71,30 +74,47 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
                     <th><?= sortLink('paid_at', 'Date', $currentSort, $currentDir) ?></th>
                     <th>Student</th>
                     <th>Description</th>
-                    <th>School Year</th>
+                    <th>School Year / Quarter</th>
                     <th class="text-end"><?= sortLink('amount', 'Amount', $currentSort, $currentDir) ?></th>
                     <th>Method</th>
                     <th>Reference No.</th>
                     <th class="text-center"><?= sortLink('status', 'Status', $currentSort, $currentDir) ?></th>
+                    <th class="text-center">Action</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($payments)): ?>
-                    <tr><td colspan="8" class="text-center text-muted py-4">No payment records found.</td></tr>
+                    <?= emptyStateRow(9, 'No payment records yet.', 'Payments appear here after the enrollment clerk issues a fee assessment. There is nothing for you to do until an assessment is issued.', 'bi-receipt') ?>
                 <?php else: ?>
                     <?php $runningTotal = 0; ?>
                     <?php foreach ($payments as $pay): ?>
                         <?php if ($pay['status'] === 'paid') $runningTotal += $pay['amount']; ?>
                     <tr>
-                        <td><?= $pay['paid_at'] ? e(date('M d, Y', strtotime($pay['paid_at']))) : '—' ?></td>
+                        <td><?= e($pay['paid_at'] ? date('M d, Y', strtotime($pay['paid_at'])) : '-') ?></td>
                         <td><?= e($pay['student_name']) ?></td>
                         <td><?= e($pay['description'] ?? 'Payment') ?></td>
-                        <td><?= e($pay['school_year']) ?> — <?= e($pay['term']) ?></td>
-                        <td class="text-end fw-bold">₱<?= number_format($pay['amount'], 2) ?></td>
+                        <td><?= e($pay['school_year']) ?> - <?= e(normalizeAcademicTerm($pay['term'] ?? '')) ?></td>
+                        <td class="text-end fw-bold">&#8369;<?= e(number_format($pay['amount'], 2)) ?></td>
                         <td><?= e(ucfirst($pay['method'])) ?></td>
                         <td><?= e($pay['reference_no'] ?? 'N/A') ?></td>
                         <td class="text-center">
-                            <span class="badge badge-status-<?= e($pay['status']) ?>"><?= e(ucfirst($pay['status'])) ?></span>
+                            <span class="badge <?= e(paymentStatusBadgeClass($pay['status'])) ?>"><?= e(paymentStatusLabel($pay['status'])) ?></span>
+                        </td>
+                        <td class="text-center">
+                            <?php if ($pay['status'] === 'paid'): ?>
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="<?= e(APP_URL . '/guardian/payment-receipt.php?' . http_build_query(['payment_id' => (int)$pay['id']])) ?>"
+                                   target="_blank" rel="noopener">
+                                    <i class="bi bi-receipt me-1"></i>Receipt
+                                </a>
+                            <?php elseif (canGuardianSubmitEnrollmentPayment((string)($pay['enrollment_status'] ?? ''))): ?>
+                                <a class="btn btn-sm btn-success"
+                                   href="<?= e(APP_URL . '/guardian/enrollment/payment.php?' . http_build_query(['enrollment_id' => (int)$pay['enrollment_id']])) ?>">
+                                    <i class="bi bi-send-check me-1"></i><?= $pay['status'] === 'failed' ? 'Resubmit' : 'Submit Reference' ?>
+                                </a>
+                            <?php else: ?>
+                                <span class="text-muted">-</span>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -105,3 +125,4 @@ $currentDir  = ($_GET['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
