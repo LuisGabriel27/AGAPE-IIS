@@ -6,3 +6,4 @@ config/config.php
 !.env.example
 *.log
 /uploads/attendance-faces/
+/uploads/
